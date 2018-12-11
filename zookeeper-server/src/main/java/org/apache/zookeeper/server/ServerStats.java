@@ -24,6 +24,7 @@ import org.apache.zookeeper.server.metric.AvgMinMaxCounter;
 import org.apache.zookeeper.server.quorum.BufferStats;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.zookeeper.ZooDefs;
 
 /**
  * Basic Server Statistics
@@ -32,14 +33,31 @@ public class ServerStats {
 
     private static final Logger LOG = LoggerFactory.getLogger(ServerStats.class);
 
-    private final AtomicLong packetsSent = new AtomicLong();
-    private final AtomicLong packetsReceived = new AtomicLong();
+    private AtomicLong packetsSent = new AtomicLong();
+    private AtomicLong packetsReceived = new AtomicLong();
 
     private final AvgMinMaxCounter requestLatency = new AvgMinMaxCounter("request_latency");
 
     private final AtomicLong fsyncThresholdExceedCount = new AtomicLong(0);
 
     private final BufferStats clientResponseStats = new BufferStats();
+
+    private long totalReadCount = 0;
+    private long totalWriteCount = 0;
+
+    private long readCount = 0;
+    private long totalReadLatency = 0;
+    private long maxReadLatency;
+    private long minReadLatency = Long.MAX_VALUE;
+    private long writeCount = 0;
+    private long totalWriteLatency = 0;
+    private long maxWriteLatency;
+    private long minWriteLatency = Long.MAX_VALUE;
+
+    private long connectionCreateCount = 0;
+    private long connectionCloseCount = 0;
+    private long sessionCloseCount = 0;
+    private long sessionCreateCount = 0;
 
     private final Provider provider;
     private final long startTime = Time.currentElapsedTime();
@@ -70,6 +88,44 @@ public class ServerStats {
 
     public long getMaxLatency() {
         return requestLatency.getMax();
+    }
+
+    synchronized public long getMinReadLatency() {
+        return minReadLatency == Long.MAX_VALUE ? 0 : minReadLatency;
+    }
+
+    synchronized public long getMinWriteLatency() {
+        return minWriteLatency == Long.MAX_VALUE ? 0 : minWriteLatency;
+    }
+
+    synchronized public long getAvgReadLatency() {
+        if (readCount != 0) {
+            return totalReadLatency / readCount;
+        }
+        return 0;
+    }
+
+    synchronized public long getAvgWriteLatency() {
+        if (writeCount != 0) {
+            return totalWriteLatency / writeCount;
+        }
+        return 0;
+    }
+
+    synchronized public long getMaxReadLatency() {
+        return maxReadLatency;
+    }
+
+    synchronized public long getMaxWriteLatency() {
+        return maxWriteLatency;
+    }
+
+    synchronized public long getReadCount() {
+        return totalReadCount;
+    }
+
+    synchronized public long getWriteCount() {
+        return totalWriteCount;
     }
 
     public long getOutstandingRequests() {
@@ -113,6 +169,22 @@ public class ServerStats {
         return provider == null;
     }
 
+    synchronized public long getConnectionCreateCount() {
+        return connectionCreateCount;
+    }
+
+    synchronized public long getConnectionCloseCount() {
+        return connectionCloseCount;
+    }
+
+    synchronized public long getSessionCloseCount() {
+        return sessionCloseCount;
+    }
+
+    synchronized public long getSessionCreateCount() {
+        return sessionCreateCount;
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
@@ -133,7 +205,7 @@ public class ServerStats {
      * Update request statistic. This should only be called from a request
      * that originated from that machine.
      */
-    public void updateLatency(Request request, long currentTime) {
+    synchronized public void updateLatency(int type, Request request, long currentTime) {
         long latency = currentTime - request.createTime;
         if (latency < 0) {
             return;
@@ -146,14 +218,87 @@ public class ServerStats {
             // All read request should goes here
             ServerMetrics.getMetrics().READ_LATENCY.add(latency);
         }
+
+        switch (getType(type)) {
+            case READ:
+                totalReadLatency += latency;
+                totalReadCount++;
+                readCount++;
+                if (latency < minReadLatency) {
+                    minReadLatency = latency;
+                }
+                if (latency > maxReadLatency) {
+                    maxReadLatency = latency;
+                }
+                break;
+            case WRITE:
+                totalWriteLatency += latency;
+                totalWriteCount++;
+                writeCount++;
+                if (latency < minWriteLatency) {
+                    minWriteLatency = latency;
+                }
+                if (latency > maxWriteLatency) {
+                    maxWriteLatency = latency;
+                }
+                break;
+            default:
+                // ignore the other types
+                break;
+        }
     }
 
-    public void resetLatency() {
+    private enum OpType {
+      READ,
+      WRITE,
+      DEFAULT
+    }
+
+    private OpType getType(int type) {
+      switch (type) {
+      case ZooDefs.OpCode.exists:
+      case ZooDefs.OpCode.getACL:
+      case ZooDefs.OpCode.getChildren:
+      case ZooDefs.OpCode.getChildren2:
+      case ZooDefs.OpCode.getData:
+        return OpType.READ;
+      case ZooDefs.OpCode.create:
+      case ZooDefs.OpCode.delete:
+      case ZooDefs.OpCode.setACL:
+      case ZooDefs.OpCode.setData:
+      case ZooDefs.OpCode.multi:
+        return OpType.WRITE;
+      case ZooDefs.OpCode.setWatches:
+      case ZooDefs.OpCode.auth:
+      case ZooDefs.OpCode.sasl:
+      case ZooDefs.OpCode.error:
+      case ZooDefs.OpCode.notification:
+      case ZooDefs.OpCode.closeSession:
+      case ZooDefs.OpCode.createSession:
+      case ZooDefs.OpCode.check:
+      case ZooDefs.OpCode.sync:
+      case ZooDefs.OpCode.ping:
+      default:
+        return OpType.DEFAULT;
+      }
+    }
+
+    synchronized public void resetLatency() {
         requestLatency.reset();
+        totalReadLatency = 0;
+        totalWriteLatency = 0;
+        readCount = 0;
+        writeCount = 0;
+        maxWriteLatency = 0;
+        minWriteLatency = Long.MAX_VALUE;
+        maxReadLatency = 0;
+        minReadLatency = Long.MAX_VALUE;
     }
 
-    public void resetMaxLatency() {
+    synchronized public void resetMaxLatency() {
         requestLatency.resetMax();
+        maxReadLatency = getMinReadLatency();
+        maxWriteLatency = getMinWriteLatency();
     }
 
     public void incrementPacketsReceived() {
@@ -164,9 +309,11 @@ public class ServerStats {
         packetsSent.incrementAndGet();
     }
 
-    public void resetRequestCounters() {
+    synchronized public void resetRequestCounters() {
         packetsReceived.set(0);
         packetsSent.set(0);
+        totalReadCount = 0;
+        totalWriteCount = 0;
     }
 
     public long getFsyncThresholdExceedCount() {
@@ -180,10 +327,29 @@ public class ServerStats {
     public void resetFsyncThresholdExceedCount() {
         fsyncThresholdExceedCount.set(0);
     }
+    synchronized public void incrementSessionCreated() {
+        sessionCreateCount++;
+    }
+    synchronized public void incrementSessionClosed() {
+        sessionCloseCount++;
+    }
+    synchronized public void incrementConnectionCreated() {
+        connectionCreateCount++;
+    }
+    synchronized public void incrementConnectionClosed() {
+        connectionCloseCount++;
+    }
+    synchronized public void resetConnectionCounters() {
+        sessionCreateCount = 0;
+        sessionCloseCount = 0;
+        connectionCreateCount = 0;
+        connectionCloseCount = 0;
+    }
 
     public void reset() {
         resetLatency();
         resetRequestCounters();
+        resetConnectionCounters();
         clientResponseStats.reset();
         ServerMetrics.getMetrics().resetAll();
     }
