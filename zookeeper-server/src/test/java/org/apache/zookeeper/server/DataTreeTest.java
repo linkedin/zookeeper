@@ -18,12 +18,7 @@
 
 package org.apache.zookeeper.server;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -36,6 +31,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
@@ -44,9 +40,12 @@ import org.apache.jute.Record;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.apache.zookeeper.Quotas;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.common.PathTrie;
+import org.apache.zookeeper.data.PathWithStat;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.metrics.MetricsUtils;
 import org.apache.zookeeper.txn.CreateTxn;
@@ -304,6 +303,79 @@ public class DataTreeTest extends ZKTestCase {
 
         //Let's make sure that we hit the code that ran the real assertion above
         assertTrue("Didn't find the expected node", ranTestCase.get());
+    }
+
+    @Test(timeout = 60000)
+    public void getChildrenPaginated() throws NodeExistsException, NoNodeException {
+        final String rootPath   = "/children";
+        final int firstZkID     = 1000;
+        final int countNodes    = 10;
+        DataTree dt = new DataTree();
+
+        //  Create the parent node
+        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion()+1, 1, 1);
+
+        //  Create 10 child nodes
+        for (int i = 0; i < countNodes; ++i) {
+            dt.createNode(rootPath + "/test-" + i, new byte[0], null, 0, dt.getNode(rootPath).stat.getCversion() + i + 1, firstZkID + i, 1);
+        }
+
+        //  Asking from a negative would give me all children, and set the watch
+        int curWatchCount = dt.getWatchCount();
+        List<PathWithStat> result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), countNodes, -1);
+        assertEquals(countNodes, result.size());
+        assertEquals("The watch should have been set", curWatchCount + 1, dt.getWatchCount());
+        //  Verify that the list is sorted
+        String before = "";
+        for (final PathWithStat s: result) {
+            final String path = s.getPath();
+            assertTrue(String.format("The next path (%s) should be > previons (%s)", path, before),
+                    path.compareTo(before) > 0);
+            before = path;
+        }
+
+        //  Asking from the next to last one should return only onde node
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, 1000 + countNodes - 2);
+        assertEquals(1, result.size());
+        assertEquals("test-" + (countNodes - 1), result.get(0).getPath());
+        assertEquals(firstZkID + countNodes - 1, result.get(0).getStat().getMzxid());
+        assertEquals("The watch should have been set", curWatchCount + 1, dt.getWatchCount());
+
+        //  Asking from the last created node should return an empty list and set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, 1000 + countNodes - 1);
+        assertTrue("The result should be an empty list", result.isEmpty());
+        assertEquals("The watch should have been set", curWatchCount + 1, dt.getWatchCount());
+
+        //  Asking from -1 for one node should return two, and NOT set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 1, -1);
+        assertEquals("No watch should be set", curWatchCount, dt.getWatchCount());
+        assertEquals("We only return up to ", 2, result.size());
+        //  Check that we ordered correctly
+        assertEquals("test-0", result.get(0).getPath());
+        assertEquals("test-1", result.get(1).getPath());
+    }
+
+    @Test(timeout = 60000)
+    public void getChildrenPaginatedEmpty() throws NodeExistsException, NoNodeException {
+        final String rootPath   = "/children";
+        final int firstZkID     = 1000;
+        DataTree dt = new DataTree();
+
+        //  Create the parent node
+        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion()+1, 1, 1);
+
+        //  Asking from a negative would give me all children, and set the watch
+        int curWatchCount = dt.getWatchCount();
+        List<PathWithStat> result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 100, -1);
+        assertTrue("The result should be empty", result.isEmpty());
+        assertEquals("The watch should have been set", curWatchCount + 1, dt.getWatchCount());
+    }
+
+    private class DummyWatcher implements Watcher {
+        @Override public void process(WatchedEvent ignored) { }
     }
 
     /* ZOOKEEPER-3531 - similarly for aclCache.deserialize, we should not hold lock either
