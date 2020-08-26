@@ -75,47 +75,9 @@
     <tag>release-3.6.1-1</tag>
   </scm>
   <issueManagement>
-    <system>JIRA</system>
-    <url>http://issues.apache.org/jira/browse/ZOOKEEPER</url>
+    <system>GitHub Issues</system>
+    <url>https://github.com/linkedin/zookeeper/issues</url>
   </issueManagement>
-  <ciManagement>
-    <system>jenkins</system>
-    <url>https://builds.apache.org/view/S-Z/view/ZooKeeper/</url>
-  </ciManagement>
-  <mailingLists>
-    <mailingList>
-      <name>User List</name>
-      <subscribe>user-subscribe@zookeeper.apache.org</subscribe>
-      <unsubscribe>user-unsubscribe@zookeeper.apache.org</unsubscribe>
-      <post>user@zookeeper.apache.org</post>
-      <archive>http://mail-archives.apache.org/mod_mbox/zookeeper-user/</archive>
-    </mailingList>
-    <mailingList>
-      <name>Developer List</name>
-      <subscribe>dev-subscribe@zookeeper.apache.org</subscribe>
-      <unsubscribe>dev-unsubscribe@zookeeper.apache.org</unsubscribe>
-      <post>dev@zookeeper.apache.org</post>
-      <archive>http://mail-archives.apache.org/mod_mbox/zookeeper-dev/</archive>
-    </mailingList>
-    <mailingList>
-      <name>Commits List</name>
-      <subscribe>commits-subscribe@zookeeper.apache.org</subscribe>
-      <unsubscribe>commits-unsubscribe@zookeeper.apache.org</unsubscribe>
-      <archive>http://mail-archives.apache.org/mod_mbox/zookeeper-commits/</archive>
-    </mailingList>
-    <mailingList>
-      <name>Issues List</name>
-      <subscribe>issues-subscribe@zookeeper.apache.org</subscribe>
-      <unsubscribe>issues-unsubscribe@zookeeper.apache.org</unsubscribe>
-      <archive>https://lists.apache.org/list.html?issues@zookeeper.apache.org</archive>
-    </mailingList>
-    <mailingList>
-      <name>Notifications List</name>
-      <subscribe>notifications-subscribe@zookeeper.apache.org</subscribe>
-      <unsubscribe>notifications-unsubscribe@zookeeper.apache.org</unsubscribe>
-      <archive>https://lists.apache.org/list.html?notifications@zookeeper.apache.org</archive>
-    </mailingList>
-  </mailingLists>
   <developers>
     <developer>
       <id>tdunning</id>
