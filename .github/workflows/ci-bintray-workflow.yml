@@ -39,4 +39,7 @@ jobs:
     - name: Build with Maven
       run: |
         mvn clean deploy -DskipTests -s .github/workflows/settings.xml -DretryFailedDeploymentCount=3
+      env:
+        MVN_DEPLOY_BINTRAY_KEY: ${{ secrets.MVN_DEPLOY_BINTRAY_KEY }}
+        MVN_DEPLOY_BINTRAY_USER: ${{ secrets.MVN_DEPLOY_BINTRAY_USER }}
 
