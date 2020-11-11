@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,21 +18,26 @@
 
 package org.apache.zookeeper.test;
 
-import org.apache.zookeeper.*;
-import org.apache.zookeeper.ZooDefs.Ids;
-import org.apache.zookeeper.data.PathWithStat;
-import org.apache.zookeeper.data.Stat;
-import org.junit.Assert;
-import org.junit.Test;
-
+import static org.junit.Assert.fail;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.UUID;
-
-import static org.junit.Assert.fail;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.OpResult;
+import org.apache.zookeeper.RemoteIterator;
+import org.apache.zookeeper.Transaction;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooDefs.Ids;
+import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.PathWithStat;
+import org.apache.zookeeper.data.Stat;
+import org.junit.Assert;
+import org.junit.Test;
 
 public class GetChildrenPaginatedTest extends ClientBase {
     private ZooKeeper zk;
@@ -105,16 +110,16 @@ public class GetChildrenPaginatedTest extends ClientBase {
         final String testId = UUID.randomUUID().toString();
         final String basePath = "/testPagination-" + testId;
 
-        Map<String, Stat> createdChildrenMetadata = createChildren(basePath, random.nextInt(50)+1, 0);
+        Map<String, Stat> createdChildrenMetadata = createChildren(basePath, random.nextInt(50) + 1, 0);
 
         Map<String, Stat> readChildrenMetadata = new HashMap<String, Stat>();
 
-        final int batchSize = random.nextInt(3)+1;
+        final int batchSize = random.nextInt(3) + 1;
 
         RemoteIterator<PathWithStat> childrenIterator = zk.getChildrenIterator(basePath, null, batchSize, -1);
 
 
-        while(childrenIterator.hasNext()) {
+        while (childrenIterator.hasNext()) {
             PathWithStat child = childrenIterator.next();
 
             final String nodePath = child.getPath();
@@ -146,20 +151,20 @@ public class GetChildrenPaginatedTest extends ClientBase {
         final String testId = UUID.randomUUID().toString();
         final String basePath = "/testPagination-" + testId;
 
-        Map<String, Stat> createdChildrenMetadata = createChildren(basePath, random.nextInt(15)+10, 0);
+        Map<String, Stat> createdChildrenMetadata = createChildren(basePath, random.nextInt(15) + 10, 0);
 
         Map<String, Stat> readChildrenMetadata = new HashMap<String, Stat>();
 
-        final int batchSize = random.nextInt(3)+1;
+        final int batchSize = random.nextInt(3) + 1;
 
         RemoteIterator<PathWithStat> childrenIterator = zk.getChildrenIterator(basePath, null, batchSize, -1);
 
         boolean serverDown = false;
 
-        while(childrenIterator.hasNext()) {
+        while (childrenIterator.hasNext()) {
 
             // Randomly change the up/down state of the server
-            if(random.nextBoolean()) {
+            if (random.nextBoolean()) {
                 if (serverDown) {
                     LOG.info("Bringing server UP");
                     startServer();
@@ -177,12 +182,12 @@ public class GetChildrenPaginatedTest extends ClientBase {
             boolean exception = false;
             try {
                 child = childrenIterator.next();
-            } catch (InterruptedException|KeeperException e) {
+            } catch (InterruptedException | KeeperException e) {
                 LOG.info("Exception in #next(): " + e.getMessage());
                 exception = true;
             }
 
-            if (! exception) {
+            if (!exception) {
                 // next() returned (either more elements in current batch or server is up)
                 Assert.assertNotNull(child);
 
@@ -247,14 +252,14 @@ public class GetChildrenPaginatedTest extends ClientBase {
             minCzxId = nodeStat.getCzxid();
 
             // Create more children before pagination is completed -- should NOT trigger watch
-            if(childrenIndex < 6) {
+            if (childrenIndex < 6) {
                 String childPath = basePath + "/" + "before-pagination-" + childrenIndex;
                 zk.create(childPath, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
             }
 
             // Modify the first child of each page.
             // This should not trigger additional watches or create duplicates in the set of children returned
-            if(childrenIndex % pageSize == 0) {
+            if (childrenIndex % pageSize == 0) {
                 zk.setData(basePath + "/" + pathWithStat.getPath(), new byte[3], -1);
             }
 
@@ -313,7 +318,7 @@ public class GetChildrenPaginatedTest extends ClientBase {
 
         Map<String, Stat> createdChildrenMetadata = new HashMap<String, Stat>();
 
-        for (int i = firstChildrenNameOffset; i < (firstChildrenNameOffset+numChildren); i++) {
+        for (int i = firstChildrenNameOffset; i < (firstChildrenNameOffset + numChildren); i++) {
             String childPath = basePath + "/" + i;
             zk.create(childPath, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
             final Stat stat = zk.exists(childPath, null);

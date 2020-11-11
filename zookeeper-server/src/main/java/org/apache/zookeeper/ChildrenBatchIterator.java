@@ -18,11 +18,10 @@
 
 package org.apache.zookeeper;
 
-import org.apache.zookeeper.data.PathWithStat;
-
 import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import org.apache.zookeeper.data.PathWithStat;
 
 /**
  * Iterator over children nodes of a given path.
@@ -59,7 +58,7 @@ class ChildrenBatchIterator implements RemoteIterator<PathWithStat> {
     public boolean hasNext() {
 
         // next() never lets childrenQueue empty unless we iterated over all children
-        return ! childrenQueue.isEmpty();
+        return !childrenQueue.isEmpty();
     }
 
     @Override

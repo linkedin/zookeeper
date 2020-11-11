@@ -32,11 +32,11 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
@@ -312,13 +312,13 @@ public class DataTreeTest extends ZKTestCase {
 
     @Test(timeout = 60000)
     public void getChildrenPaginated() throws NodeExistsException, NoNodeException {
-        final String rootPath   = "/children";
-        final int firstCzxId    = 1000;
-        final int countNodes    = 10;
+        final String rootPath = "/children";
+        final int firstCzxId = 1000;
+        final int countNodes = 10;
 
         //  Create the parent node
         DataTree dt = new DataTree();
-        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion()+1, 1, 1);
+        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, 1, 1);
 
         //  Create 10 child nodes
         for (int i = 0; i < countNodes; ++i) {
@@ -332,7 +332,7 @@ public class DataTreeTest extends ZKTestCase {
         assertEquals("The watch not should have been set", curWatchCount, dt.getWatchCount());
         //  Verify that the list is sorted
         String before = "";
-        for (final PathWithStat s: result) {
+        for (final PathWithStat s : result) {
             final String path = s.getPath();
             assertTrue(String.format("The next path (%s) should be > previons (%s)", path, before),
                     path.compareTo(before) > 0);
@@ -346,7 +346,7 @@ public class DataTreeTest extends ZKTestCase {
         assertEquals("The watch should have been set", curWatchCount + 1, dt.getWatchCount());
         //  Verify that the list is sorted
         before = "";
-        for (final PathWithStat s: result) {
+        for (final PathWithStat s : result) {
             final String path = s.getPath();
             assertTrue(String.format("The next path (%s) should be > previons (%s)", path, before),
                     path.compareTo(before) > 0);
@@ -378,19 +378,19 @@ public class DataTreeTest extends ZKTestCase {
 
     @Test(timeout = 60000)
     public void getChildrenPaginatedWithOffset() throws NodeExistsException, NoNodeException {
-        final String rootPath   = "/children";
-        final int childrenCzxId    = 1000;
-        final int countNodes    = 9;
-        final int allNodes    = countNodes+2;
+        final String rootPath = "/children";
+        final int childrenCzxId = 1000;
+        final int countNodes = 9;
+        final int allNodes = countNodes + 2;
 
         //  Create the parent node
         DataTree dt = new DataTree();
-        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion()+1, 1, 1);
+        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, 1, 1);
 
         int parentVersion = dt.getNode(rootPath).stat.getCversion();
 
         //  Create a children sometimes "before"
-        dt.createNode(rootPath + "/test-0", new byte[0], null, 0, parentVersion + 1, childrenCzxId-100, 1);
+        dt.createNode(rootPath + "/test-0", new byte[0], null, 0, parentVersion + 1, childrenCzxId - 100, 1);
 
         //  Create 10 child nodes, all with the same
         for (int i = 1; i <= countNodes; ++i) {
@@ -398,7 +398,7 @@ public class DataTreeTest extends ZKTestCase {
         }
 
         //  Create a children sometimes "after"
-        dt.createNode(rootPath + "/test-999", new byte[0], null, 0, parentVersion + 3, childrenCzxId+100, 1);
+        dt.createNode(rootPath + "/test-999", new byte[0], null, 0, parentVersion + 3, childrenCzxId + 100, 1);
 
         //  Asking from a negative would give me all children, and set the watch
         int curWatchCount = dt.getWatchCount();
@@ -407,7 +407,7 @@ public class DataTreeTest extends ZKTestCase {
         assertEquals("The watch should have been set", curWatchCount + 1, dt.getWatchCount());
         //  Verify that the list is sorted
         String before = "";
-        for (final PathWithStat s: result) {
+        for (final PathWithStat s : result) {
             final String path = s.getPath();
             assertTrue(String.format("The next path (%s) should be > previons (%s)", path, before),
                     path.compareTo(before) > 0);
@@ -416,7 +416,7 @@ public class DataTreeTest extends ZKTestCase {
 
         //  Asking with offset minCzxId below childrenCzxId should not skip anything, regardless of offset
         curWatchCount = dt.getWatchCount();
-        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, childrenCzxId-1, 3);
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, childrenCzxId - 1, 3);
         assertEquals(2, result.size());
         assertEquals("test-1", result.get(0).getPath());
         assertEquals("test-2", result.get(1).getPath());
@@ -439,7 +439,7 @@ public class DataTreeTest extends ZKTestCase {
         assertEquals("test-7", result.get(1).getPath());
         assertEquals("test-8", result.get(2).getPath());
         assertEquals("test-9", result.get(3).getPath());
-        assertEquals("The watch should have been set", curWatchCount+1, dt.getWatchCount());
+        assertEquals("The watch should have been set", curWatchCount + 1, dt.getWatchCount());
 
         //  Asking with offset 5 for fewer nodes than are there should skip nodes 1, 2, 3, 4, 5 (plus 0 due to zxid)
         curWatchCount = dt.getWatchCount();
@@ -461,11 +461,11 @@ public class DataTreeTest extends ZKTestCase {
 
     @Test(timeout = 60000)
     public void getChildrenPaginatedEmpty() throws NodeExistsException, NoNodeException {
-        final String rootPath   = "/children";
+        final String rootPath = "/children";
 
         //  Create the parent node
         DataTree dt = new DataTree();
-        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion()+1, 1, 1);
+        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, 1, 1);
 
         //  Asking from a negative would give me all children, and set the watch
         int curWatchCount = dt.getWatchCount();
@@ -475,7 +475,9 @@ public class DataTreeTest extends ZKTestCase {
     }
 
     private class DummyWatcher implements Watcher {
-        @Override public void process(WatchedEvent ignored) { }
+        @Override
+        public void process(WatchedEvent ignored) {
+        }
     }
 
     /* ZOOKEEPER-3531 - similarly for aclCache.deserialize, we should not hold lock either

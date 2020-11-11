@@ -2793,7 +2793,7 @@ public class ZooKeeper implements AutoCloseable {
         final String clientPath = path;
         PathUtils.validatePath(clientPath);
 
-        if(maxReturned <= 0) {
+        if (maxReturned <= 0) {
             throw new IllegalArgumentException("Cannot return less than 1 children");
         }
 
