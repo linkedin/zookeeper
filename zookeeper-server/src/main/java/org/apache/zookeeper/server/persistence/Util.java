@@ -45,6 +45,28 @@ import org.slf4j.LoggerFactory;
  */
 public class Util {
 
+    /**
+     * Constants and enums added for backup and restore.
+     */
+    public static final String SNAP_PREFIX = FileSnap.SNAPSHOT_FILE_PREFIX;
+    public static final String TXLOG_PREFIX = FileTxnLog.LOG_FILE_PREFIX;
+
+    public enum FileType {
+        SNAPSHOT,
+        TXNLOG;
+
+        public static FileType fromPrefix(String prefix) {
+            switch (prefix) {
+                case SNAP_PREFIX:
+                    return SNAPSHOT;
+                case TXLOG_PREFIX:
+                    return TXNLOG;
+                default:
+                    throw new IllegalArgumentException("Unknown FileType prefix: " + prefix);
+            }
+        }
+    }
+
     private static final Logger LOG = LoggerFactory.getLogger(Util.class);
     private static final String SNAP_DIR = "snapDir";
     private static final String LOG_DIR = "logDir";
