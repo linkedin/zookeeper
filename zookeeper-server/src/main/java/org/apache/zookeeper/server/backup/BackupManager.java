@@ -531,66 +531,61 @@ public class BackupManager {
       }
     }
 
+    /**
+     * Prepares snapshot files to back up and populate filesToBackup.
+     * Note that this implementation persists all snapshots instead of only persisting the
+     * latest snapshot.
+     * @throws IOException
+     */
     protected void startIteration() throws IOException {
       filesToBackup.clear();
 
+      // Get all available snapshots excluding the ones whose lastProcessedZxid falls into the
+      // zxid range [0, backedupSnapZxid]
       List<File> candidateSnapshots = snapLog.findValidSnapshots(0, backedupSnapZxid);
+      // Sort candidateSnapshots from oldest to newest
       Collections.reverse(candidateSnapshots);
 
       if (candidateSnapshots.size() == 0) {
+        // Either no snapshots or no newer snapshots to back up, so return
         return;
       }
 
-      // TODO: Change the following implementation in order to persist ALL snapshots instead of
-      // TODO: the (first and) last snapshot in candidateSnapshots
-      if (backedupSnapZxid == BackupUtil.INVALID_SNAP_ZXID) {
-        File f = candidateSnapshots.get(0);
+      for (int i = 0; i < candidateSnapshots.size(); i++) {
+        File f = candidateSnapshots.get(i);
         ZxidRange zxidRange = Util.getZxidRangeFromName(f.getName(), Util.SNAP_PREFIX);
 
-        // Handle backwards compatibility for snapshots that use old style naming where
-        // only the starting zxid is included.
-        // TODO: Can be removed after all snapshots being produced have ending zxid
-        if (!zxidRange.isHighPresent()) {
-          long latestZxid = snapLog.getLastLoggedZxid();
-          long consistentAt = latestZxid == -1 ? zxidRange.getLow() : latestZxid;
+        if (i == candidateSnapshots.size() - 1) {
+          // This is the most recent snapshot
 
-          // Consistency point can be moved earlier if this is not the only file
-          if (candidateSnapshots.size() > 1) {
-            long nextSnapshotStartZxid =
-                Util.getZxidFromName(
-                    candidateSnapshots.get(1).getName(),
-                    Util.SNAP_PREFIX);
-
-            if (nextSnapshotStartZxid > zxidRange.getLow()) {
-              consistentAt = nextSnapshotStartZxid - 1;
-            }
+          // Handle backwards compatibility for snapshots that use old style naming where
+          // only the starting zxid is included.
+          // TODO: Can be removed after all snapshots being produced have ending zxid
+          if (!zxidRange.isHighPresent()) {
+            // Use the last logged zxid for the zxidRange for the latest snapshot as a best effort
+            // approach
+            // TODO: Because this is the best effort approach, the zxidRange will not be accurate
+            // TODO: Consider rewriting these latest snapshots to backup storage if necessary
+            long latestZxid = snapLog.getLastLoggedZxid();
+            long consistentAt = latestZxid == -1 ? zxidRange.getLow() : latestZxid;
+            zxidRange = new ZxidRange(zxidRange.getLow(), consistentAt);
           }
+        } else {
+          // All newer snapshots that are not the most recent snapshot
 
-          zxidRange = new ZxidRange(zxidRange.getLow(), consistentAt);
+          // Handle backwards compatibility for snapshots that use old style naming where
+          // only the starting zxid is included.
+          // TODO: Can be removed after all snapshots being produced have ending zxid
+          if (!zxidRange.isHighPresent()) {
+            // ZxidRange will be [low, high] where high will be the zxid right before the next
+            // snapshot's lastProcessedZxid
+            long nextSnapshotStartZxid =
+                Util.getZxidFromName(candidateSnapshots.get(i + 1).getName(), Util.SNAP_PREFIX);
+            zxidRange = new ZxidRange(zxidRange.getLow(), nextSnapshotStartZxid - 1);
+          }
         }
-
 
         filesToBackup.add(new BackupFile(f, false, zxidRange));
-      }
-
-      // Always include the last snapshot to be copied as long as it was not already added
-      // above and has not already been backed up.
-      if (backedupSnapZxid != BackupUtil.INVALID_SNAP_ZXID || candidateSnapshots.size() > 1) {
-        File f = candidateSnapshots.get(candidateSnapshots.size() - 1);
-        ZxidRange zxidRange = Util.getZxidRangeFromName(f.getName(), Util.SNAP_PREFIX);
-
-        // Handle backwards compatibility for snapshots that use old style naming where
-        // only the starting zxid is included.
-        // TODO: Can be removed after all snapshots being produced have ending zxid
-        if (!zxidRange.isHighPresent()) {
-          long latestZxid = snapLog.getLastLoggedZxid();
-          zxidRange = new ZxidRange(
-              zxidRange.getLow(), latestZxid == -1 ? zxidRange.getLow() : latestZxid);
-        }
-
-        if (zxidRange.getLow() > backedupSnapZxid) {
-          filesToBackup.add(new BackupFile(f, false, zxidRange));
-        }
       }
     }
 
