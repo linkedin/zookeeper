@@ -21,8 +21,6 @@ package org.apache.zookeeper.server.backup;
 import com.google.common.base.Preconditions;
 import org.apache.commons.lang.NullArgumentException;
 import org.apache.commons.lang.time.StopWatch;
-// TODO: Implement MetricsReceiver
-// import org.apache.zookeeper.metrics.MetricsReceiver;
 import org.apache.zookeeper.server.persistence.*;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
 import org.apache.zookeeper.server.backup.BackupUtil.ZxidPart;
@@ -46,7 +44,6 @@ public class BackupManager {
   private final File dataLogDir;
   private final File tmpDir;
   private final int backupIntervalInMilliseconds;
-  // private final MetricsReceiver metricsReceiver;
   private BackupProcess logBackup = null;
   private BackupProcess snapBackup = null;
 
@@ -358,12 +355,10 @@ public class BackupManager {
       // for the current iteration so we don't keep chasing our own tail as
       // new transactions get written.
       iterationEndPoint = snapLog.getLastLoggedZxid();
-//      getStats().setLastTxnLogBackupIterationStart();
     }
 
     protected void endIteration(boolean errorFree) {
       iterationEndPoint = 0L;
-//      getStats().txnLogIterationDone(errorFree);
     }
 
     /**
@@ -396,8 +391,6 @@ public class BackupManager {
         iter = snapLog.readTxnLog(startingZxid, true);
 
         // Use a temp directory to avoid conflicts with live txnlog files
-        // TODO: Implement MetricsReceiver
-        // newFile = new FileTxnLog(tmpDir, metricsReceiver);
         newFile = new FileTxnLog(tmpDir);
 
         // Check for lost txnlogs; <=1 indicates that no backups have been done before so
@@ -497,10 +490,6 @@ public class BackupManager {
         backupStatus.update(backedupLogZxid, backedupSnapZxid);
       }
 
-//      if (file.exists()) {
-//        getStats().updateTxnLogSent(file.getFile().length());
-//      }
-
       logger.info("Updated backedup tnxlog zxid to {}", ZxidUtils.zxidToString(backedupLogZxid));
     }
   }
@@ -543,8 +532,6 @@ public class BackupManager {
     }
 
     protected void startIteration() throws IOException {
-//      getStats().setLastSnapBackupIterationStart();
-
       filesToBackup.clear();
 
       List<File> candidateSnapshots = snapLog.findValidSnapshots(0, backedupSnapZxid);
@@ -554,14 +541,15 @@ public class BackupManager {
         return;
       }
 
+      // TODO: Change the following implementation in order to persist ALL snapshots instead of
+      // TODO: the (first and) last snapshot in candidateSnapshots
       if (backedupSnapZxid == BackupUtil.INVALID_SNAP_ZXID) {
         File f = candidateSnapshots.get(0);
         ZxidRange zxidRange = Util.getZxidRangeFromName(f.getName(), Util.SNAP_PREFIX);
 
         // Handle backwards compatibility for snapshots that use old style naming where
         // only the starting zxid is included.
-        // TODO: Can be removed after all snapshots being produced have ending zxid --
-        // TODO: see COORD-1947
+        // TODO: Can be removed after all snapshots being produced have ending zxid
         if (!zxidRange.isHighPresent()) {
           long latestZxid = snapLog.getLastLoggedZxid();
           long consistentAt = latestZxid == -1 ? zxidRange.getLow() : latestZxid;
@@ -593,8 +581,7 @@ public class BackupManager {
 
         // Handle backwards compatibility for snapshots that use old style naming where
         // only the starting zxid is included.
-        // TODO: Can be removed after all snapshots being produced have ending zxid --
-        // TODO: see COORD-1947
+        // TODO: Can be removed after all snapshots being produced have ending zxid
         if (!zxidRange.isHighPresent()) {
           long latestZxid = snapLog.getLastLoggedZxid();
           zxidRange = new ZxidRange(
@@ -609,8 +596,6 @@ public class BackupManager {
 
     protected void endIteration(boolean errorFree) {
       filesToBackup.clear();
-      // TODO: enable when Stats is implemented
-      // getStats().snapIterationDone(errorFree);
     }
 
     protected BackupFile getNextFileToBackup() throws IOException {
@@ -627,40 +612,9 @@ public class BackupManager {
         backupStatus.update(backedupLogZxid, backedupSnapZxid);
       }
 
-      // getStats().updateSnapSent(file.getFile().length());
-
       logger.info("Updated backedup snap zxid to {}", ZxidUtils.zxidToString(backedupSnapZxid));
     }
   }
-
-// TODO: Enable when MetricsReceiver is ready
-//  /**
-//   * Constructor for the BackupManager.
-//   * @param snapDir the snapshot directory
-//   * @param dataLogDir the txnlog directory
-//   * @param backupStatusDir the backup status directory
-//   * @param tmpDir temporary directory
-//   * @param backupIntervalInMinutes the interval backups should run at in minutes
-//   */
-//  public BackupManager(File snapDir, File dataLogDir, File backupStatusDir, File tmpDir, int backupIntervalInMinutes,
-//      BackupStorageProvider backupStorageProvider, MetricsReceiver metricsReceiver) throws IOException {
-//    logger = LoggerFactory.getLogger(BackupManager.class);
-//    logger.info("snapDir={}", snapDir.getPath());
-//    logger.info("dataLogDir={}", dataLogDir.getPath());
-//    logger.info("backupStatusDir={}", backupStatusDir.getPath());
-//    logger.info("tmpDir={}", tmpDir.getPath());
-//    logger.info("backupIntervalInMinutes={}", backupIntervalInMinutes);
-//
-//    this.snapDir = snapDir;
-//    this.dataLogDir = dataLogDir;
-//    this.tmpDir = tmpDir;
-//    this.backupStatus = new BackupStatus(backupStatusDir);
-//    this.backupIntervalInMilliseconds = backupIntervalInMinutes * 60 * 1000;
-//    this.backupStorage = backupStorageProvider;
-//    this.metricsReceiver = metricsReceiver;
-//
-//    initialize();
-//  }
 
   /**
    * Constructor for the BackupManager.
@@ -696,8 +650,6 @@ public class BackupManager {
   public synchronized void start() throws IOException {
     logger.info("BackupManager starting.");
 
-//    getStats().updateBackupManagerState(true);
-
     initialize();
 
     (new Thread(logBackup)).start();
@@ -709,8 +661,6 @@ public class BackupManager {
    */
   public void stop() {
     logger.info("BackupManager shutting down.");
-
-//    getStats().updateBackupManagerState(false);
 
     synchronized (this) {
       logBackup.shutdown();
@@ -744,20 +694,17 @@ public class BackupManager {
     }
 
     if (!tmpDir.exists()) {
-      tmpDir.mkdirs();
+      if (!tmpDir.mkdirs()) {
+        String errorMsg = "BackupManager::initialize(): failed to create tmpDir!";
+        logger.error(errorMsg);
+        throw new IOException(errorMsg);
+      }
     }
 
-    // TODO: enable when metricsReceiver is ready
-//    logBackup = new TxnLogBackup(new FileTxnSnapLog(dataLogDir, snapDir, metricsReceiver));
-//    snapBackup = new SnapBackup(new FileTxnSnapLog(dataLogDir, snapDir, metricsReceiver));
     logBackup = new TxnLogBackup(new FileTxnSnapLog(dataLogDir, snapDir));
     snapBackup = new SnapBackup(new FileTxnSnapLog(dataLogDir, snapDir));
 
     logBackup.initialize();
     snapBackup.initialize();
   }
-
-//  public static BackupStats getStats() {
-//    return BackupStats.getSingleton();
-//  }
 }
