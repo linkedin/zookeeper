@@ -566,6 +566,7 @@ public class BackupManager {
             // approach
             // TODO: Because this is the best effort approach, the zxidRange will not be accurate
             // TODO: Consider rewriting these latest snapshots to backup storage if necessary
+            // TODO: when we know the high zxid when we get a newer snapshot
             long latestZxid = snapLog.getLastLoggedZxid();
             long consistentAt = latestZxid == -1 ? zxidRange.getLow() : latestZxid;
             zxidRange = new ZxidRange(zxidRange.getLow(), consistentAt);
