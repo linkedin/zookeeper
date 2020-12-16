@@ -170,6 +170,26 @@ public class Util {
     }
 
     /**
+     * Returns a ZxidRange whose high Zxid could be absent.
+     * @param name
+     * @param prefix
+     * @return
+     */
+    public static ZxidRange getZxidRangeFromName(String name, String prefix) {
+        ZxidRange zxidRange = ZxidRange.INVALID;
+        String nameParts[] = name.split("[\\.-]");
+        try {
+            if (nameParts.length == 2 && nameParts[0].equals(prefix)) {
+                zxidRange = new ZxidRange(Long.parseLong(nameParts[1], 16));
+            } else if (nameParts.length == 3 && nameParts[0].equals(prefix)) {
+                zxidRange = new ZxidRange(Long.parseLong(nameParts[1], 16),
+                    Long.parseLong(nameParts[2], 16));
+            }
+        } catch (NumberFormatException e) {}
+        return zxidRange;
+    }
+
+    /**
      * Reads a transaction entry from the input archive.
      * @param ia archive to read from
      * @return null if the entry is corrupted or EOF has been reached; a buffer
