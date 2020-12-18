@@ -282,7 +282,7 @@ public class BackupManager {
         logger.error("Hit unexpected exception", e);
       }
 
-      logger.warn("Thread exited loop!");
+      logger.warn("BackupProcess thread exited loop!");
     }
 
     /**
@@ -318,7 +318,7 @@ public class BackupManager {
    */
   protected class TxnLogBackup extends BackupProcess {
     private long iterationEndPoint;
-    private FileTxnSnapLog snapLog;
+    private final FileTxnSnapLog snapLog;
 
     /**
      * Constructor for TxnLogBackup
@@ -383,7 +383,7 @@ public class BackupManager {
       FileTxnLog newFile = null;
       long lastZxid = -1;
       int txnCopied = 0;
-      BackupFile ret = null;
+      BackupFile ret;
 
       logger.info("Creating backup file from zxid {}.", ZxidUtils.zxidToString(startingZxid));
 
@@ -393,6 +393,7 @@ public class BackupManager {
         // Use a temp directory to avoid conflicts with live txnlog files
         newFile = new FileTxnLog(tmpDir);
 
+        // TODO: Ideally, we should have have a way to prevent lost TxLogs
         // Check for lost txnlogs; <=1 indicates that no backups have been done before so
         // nothing can be considered lost.
         // If a lost sequence is found then return a file whose name encodes the lost
@@ -469,6 +470,7 @@ public class BackupManager {
         return null;
       }
 
+      // The logFile gets initialized with the first transaction's zxid
       File logFile = backupTxnLog.getCurrentFile();
 
       if (logFile == null) {
@@ -498,8 +500,8 @@ public class BackupManager {
    * Implements snapshot specific logic for BackupProcess
    */
   protected class SnapBackup extends BackupProcess {
-    private FileTxnSnapLog snapLog;
-    private List<BackupFile> filesToBackup = new ArrayList<BackupFile>();
+    private final FileTxnSnapLog snapLog;
+    private final List<BackupFile> filesToBackup = new ArrayList<>();
 
     /**
      * Constructor for SnapBackup
@@ -594,7 +596,7 @@ public class BackupManager {
       filesToBackup.clear();
     }
 
-    protected BackupFile getNextFileToBackup() throws IOException {
+    protected BackupFile getNextFileToBackup() {
       if (filesToBackup.isEmpty()) {
         return null;
       }
