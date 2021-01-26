@@ -64,8 +64,7 @@ public class BackupManagerTest extends ZKTestCase implements Watcher {
   private static String HOSTPORT = "127.0.0.1:" + PortAssignment.unique();
   private static final int CONNECTION_TIMEOUT = 300000;
   private static final Logger LOG = LoggerFactory.getLogger(BackupManagerTest.class);
-  private static final String BACKUP_STORAGE_PATH = "./backup_manager_test";
-  private static final String TEST_NAMESPACE = "test_namespace";
+  private static final String TEST_EMPTY_NAMESPACE = "";
 
   private ZooKeeper connection;
   private File dataDir;
@@ -83,17 +82,6 @@ public class BackupManagerTest extends ZKTestCase implements Watcher {
 
   @Before
   public void setup() throws Exception {
-    // Create a dummy config
-    backupConfig = new BackupConfig.Builder().
-        setEnabled(true).
-        setStatusDir(testBaseDir).
-        setTmpDir(testBaseDir).
-        setBackupStoragePath(BACKUP_STORAGE_PATH).
-        setNamespace(TEST_NAMESPACE).
-        // Use FileSystemBackupStorage with a local path for testing
-        setStorageProviderClassName(FileSystemBackupStorage.class.getName()).
-        build().get();
-
     setupZk();
     connection = createConnection();
   }
@@ -111,6 +99,15 @@ public class BackupManagerTest extends ZKTestCase implements Watcher {
     File backupTmpDir = ClientBase.createTmpDir();
     File backupDir = ClientBase.createTmpDir();
 
+    backupConfig = new BackupConfig.Builder().
+        setEnabled(true).
+        setStatusDir(testBaseDir).
+        setTmpDir(testBaseDir).
+        setBackupStoragePath(backupDir.getAbsolutePath()).
+        setNamespace(TEST_EMPTY_NAMESPACE).
+        // Use FileSystemBackupStorage with a local path for testing
+            setStorageProviderClassName(FileSystemBackupStorage.class.getName()).
+            build().get();
     BackupManager bm = new BackupManager(dataDir, dataDir, dataDir, backupTmpDir, 15,
         new FileSystemBackupStorage(backupConfig));
     bm.initialize();
@@ -501,6 +498,15 @@ public class BackupManagerTest extends ZKTestCase implements Watcher {
     backupStatusDir = ClientBase.createTmpDir();
     backupTmpDir = ClientBase.createTmpDir();
     backupDir = ClientBase.createTmpDir();
+    backupConfig = new BackupConfig.Builder().
+        setEnabled(true).
+        setStatusDir(testBaseDir).
+        setTmpDir(testBaseDir).
+        setBackupStoragePath(backupDir.getAbsolutePath()).
+        setNamespace(TEST_EMPTY_NAMESPACE).
+        // Use FileSystemBackupStorage with a local path for testing
+            setStorageProviderClassName(FileSystemBackupStorage.class.getName()).
+            build().get();
     backupStorage = new FileSystemBackupStorage(backupConfig);
     ClientBase.setupTestEnv();
 
