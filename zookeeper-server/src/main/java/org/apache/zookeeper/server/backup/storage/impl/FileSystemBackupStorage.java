@@ -102,10 +102,8 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
 
     // Read the file info and add to the list. If an exception is thrown, the entire operation will fail
     List<BackupFileInfo> backupFileInfos = new ArrayList<>();
-    if (files != null) {
-      for (File file : files) {
-        backupFileInfos.add(getBackupFileInfo(file));
-      }
+    for (File file : files) {
+      backupFileInfos.add(getBackupFileInfo(file));
     }
     return backupFileInfos;
   }
