@@ -32,6 +32,9 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.zookeeper.server.backup.BackupConfig;
 import org.apache.zookeeper.server.backup.BackupFileInfo;
@@ -53,6 +56,9 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
   private static final Logger LOG = LoggerFactory.getLogger(FileSystemBackupStorage.class);
   private final BackupConfig backupConfig;
   private final String fileRootPath;
+  private final ReadWriteLock rwLock;
+  private final Lock sharedLock;
+  private final Lock exclusiveLock;
 
   /**
    * Constructor using BackupConfig to get backup storage info
@@ -62,6 +68,9 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
     this.backupConfig = backupConfig;
     fileRootPath = String.join(File.separator, this.backupConfig.getBackupStoragePath(),
         this.backupConfig.getNamespace());
+    rwLock = new ReentrantReadWriteLock();
+    sharedLock = rwLock.readLock();
+    exclusiveLock = rwLock.writeLock();
   }
 
   @Override
@@ -138,6 +147,7 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
     String backupTempFilePath;
     File backupTempFile;
 
+    sharedLock.lock();
     try {
       inputStream = open(srcFile);
 
@@ -150,6 +160,10 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
       outputStream = new FileOutputStream(backupTempFile);
 
       BackupStorageUtil.streamData(inputStream, outputStream);
+
+      Files.move(Paths.get(backupTempFilePath),
+          Paths.get(BackupStorageUtil.constructBackupFilePath(destName.getName(), fileRootPath)),
+          StandardCopyOption.REPLACE_EXISTING);
     } finally {
       if (inputStream != null) {
         inputStream.close();
@@ -157,12 +171,8 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
       if (outputStream != null) {
         outputStream.close();
       }
+      sharedLock.unlock();
     }
-
-    Files.move(Paths.get(backupTempFilePath),
-        Paths.get(BackupStorageUtil.constructBackupFilePath(destName.getName(), fileRootPath)),
-        StandardCopyOption.REPLACE_EXISTING);
-    BackupStorageUtil.cleanUpTempFiles(backupTempFile.getParentFile());
   }
 
   @Override
@@ -195,13 +205,20 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
   @Override
   public void delete(File fileToDelete) throws IOException {
     String fileName = fileToDelete == null ? "" : fileToDelete.getName();
-    String backupFilePath =
-        BackupStorageUtil.constructBackupFilePath(fileName, fileRootPath);
+    String backupFilePath = BackupStorageUtil.constructBackupFilePath(fileName, fileRootPath);
     Files.deleteIfExists(Paths.get(backupFilePath));
   }
 
   @Override
   public void cleanupInvalidFiles(File path) throws IOException {
-    BackupStorageUtil.cleanUpTempFiles(path);
+    if (path == null) {
+      path = new File(fileRootPath);
+    }
+    exclusiveLock.lock();
+    try {
+      BackupStorageUtil.cleanUpTempFiles(path);
+    } finally {
+      exclusiveLock.unlock();
+    }
   }
 }

@@ -143,7 +143,8 @@ public class BackupStorageUtil {
       return new File[0];
     }
     FilenameFilter fileFilter = (dir, name) -> name.startsWith(prefix);
-    return directory.listFiles(fileFilter);
+    File[] files = directory.listFiles(fileFilter);
+    return files == null ? new File[0] : files;
   }
 
   /**
