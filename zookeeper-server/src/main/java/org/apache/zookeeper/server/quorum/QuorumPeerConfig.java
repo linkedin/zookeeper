@@ -65,7 +65,7 @@ import org.slf4j.MDC;
 public class QuorumPeerConfig {
 
     private static final Logger LOG = LoggerFactory.getLogger(QuorumPeerConfig.class);
-    private static final int UNSET_SERVERID = -1;
+    public static final int UNSET_SERVERID = -1;
     public static final String nextDynamicConfigFileSuffix = ".dynamic.next";
 
     private static boolean standaloneEnabled = true;
