@@ -28,15 +28,13 @@ public class BackupStats {
   private static final Logger LOG = LoggerFactory.getLogger(BackupStats.class);
 
   private int snapshotErrorCount = 0;
-  private long snapshotTimeSinceLastSuccessfulIteration = Long.MAX_VALUE;
+  private long timeSinceLastSuccessfulSnapshotIteration = Long.MAX_VALUE;
   private boolean snapshotBackupActive = false;
-  private long snapshotIterationDuration = 0;
-  private int snapshotBackupFilesCreatedPerIteration = 0;
+  private long snapshotIterationDuration = 0L;
   private int txnLogErrorCount = 0;
-  private long txnLogTimeSinceLastSuccessfulIteration = Long.MAX_VALUE;
+  private long timeSinceLastSuccessfulTxnLogIteration = Long.MAX_VALUE;
   private boolean txnLogBackupActive = false;
-  private long txnLogIterationDuration = 0;
-  private int txnLogBackupFilesCreatedPerIteration = 0;
+  private long txnLogIterationDuration = 0L;
 
   // Snapshot backup metrics
   /**
@@ -49,8 +47,8 @@ public class BackupStats {
   /**
    * @return Time passed since last successful snapshot backup iteration
    */
-  public long getSnapshotTimeSinceLastSuccessfulIteration() {
-    return snapshotTimeSinceLastSuccessfulIteration;
+  public long getTimeElapsedSinceLastSuccessfulSnapshotIteration() {
+    return timeSinceLastSuccessfulSnapshotIteration;
   }
 
   /**
@@ -61,22 +59,15 @@ public class BackupStats {
   }
 
   /**
-   * @return The elapsed time to complete a snapshot backup iteration
+   * @return How long it took to complete the last successful snapshot backup iteration
    */
   public long getSnapshotIterationDuration() {
     return snapshotIterationDuration;
   }
 
-  /**
-   * @return Number of backup files created in a snapshot backup iteration
-   */
-  public long getSnapshotBackupFilesCreatedPerIteration() {
-    return snapshotBackupFilesCreatedPerIteration;
-  }
-
   // Transaction log backup metrics
   /**
-   * @return Number of txn log backup errors occur after last successful txn log backup iteration
+   * @return Number of txn log backup errors after last successful txn log backup iteration
    */
   public int getTxnLogErrorCount() {
     return txnLogErrorCount;
@@ -85,8 +76,8 @@ public class BackupStats {
   /**
    * @return Time passed since last successful txn log backup iteration
    */
-  public long getTxnLogTimeSinceLastSuccessfulIteration() {
-    return txnLogTimeSinceLastSuccessfulIteration;
+  public long getTimeSinceLastSuccessfulTxnLogIteration() {
+    return timeSinceLastSuccessfulTxnLogIteration;
   }
 
   /**
@@ -97,16 +88,9 @@ public class BackupStats {
   }
 
   /**
-   * @return The elapsed time to complete a txn log backup iteration
+   * @return How long it took to complete the last successful txn log backup iteration
    */
   public long getTxnLogIterationDuration() {
     return txnLogIterationDuration;
-  }
-
-  /**
-   * @return Number of backup files created in a txn log backup iteration
-   */
-  public int getTxnLogBackupFilesCreatedPerIteration() {
-    return txnLogBackupFilesCreatedPerIteration;
   }
 }

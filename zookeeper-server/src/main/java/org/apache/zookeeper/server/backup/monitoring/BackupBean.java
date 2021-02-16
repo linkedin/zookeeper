@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
 /**
  * This class implements ZK backup MBean
  */
-public class BackupBean implements ZKMBeanInfo {
+public class BackupBean implements ZKMBeanInfo, BackupMXBean {
   private static final Logger LOG = LoggerFactory.getLogger(BackupBean.class);
 
   private final BackupStats backupStats;
@@ -47,74 +47,46 @@ public class BackupBean implements ZKMBeanInfo {
   }
 
   // Snapshot backup metrics
-  /**
-   * @return Number of snapshot backup errors occur since last successful snapshot backup iteration
-   */
+  @Override
   public int getSnapshotErrorCount() {
     return backupStats.getSnapshotErrorCount();
   }
 
-  /**
-   * @return Time passed since last successful snapshot backup iteration
-   */
-  public long getSnapshotTimeSinceLastSuccessfulIteration() {
-    return backupStats.getSnapshotTimeSinceLastSuccessfulIteration();
+  @Override
+  public long getTimeElapsedSinceLastSuccessfulSnapshotIteration() {
+    return backupStats.getTimeElapsedSinceLastSuccessfulSnapshotIteration();
   }
 
-  /**
-   * @return If snapshot backup is currently actively ongoing
-   */
+  @Override
   public boolean getSnapshotBackupActiveStatus() {
     return backupStats.getSnapshotBackupActiveStatus();
   }
 
   /**
-   * @return The elapsed time to complete a snapshot backup iteration
+   * @return How long it took to complete the last successful snapshot backup iteration
    */
   public long getSnapshotIterationDuration() {
     return backupStats.getSnapshotIterationDuration();
   }
 
-  /**
-   * @return Number of backup files created in a snapshot backup iteration
-   */
-  public long getSnapshotBackupFilesCreatedPerIteration() {
-    return backupStats.getSnapshotBackupFilesCreatedPerIteration();
-  }
-
   // Transaction log backup metrics
-  /**
-   * @return Number of txn log backup errors occur after last successful txn log backup iteration
-   */
+  @Override
   public int getTxnLogErrorCount() {
     return backupStats.getTxnLogErrorCount();
   }
 
-  /**
-   * @return Time passed since last successful txn log backup iteration
-   */
-  public long getTxnLogTimeSinceLastSuccessfulIteration() {
-    return backupStats.getTxnLogTimeSinceLastSuccessfulIteration();
+  @Override
+  public long getTimeSinceLastSuccessfulTxnLogIteration() {
+    return backupStats.getTimeSinceLastSuccessfulTxnLogIteration();
   }
 
-  /**
-   * @return If txn log backup is currently actively ongoing
-   */
+  @Override
   public boolean getTxnLogBackupActiveStatus() {
     return backupStats.getTxnLogBackupActiveStatus();
   }
 
-  /**
-   * @return The elapsed time to complete a txn log backup iteration
-   */
+  @Override
   public long getTxnLogIterationDuration() {
     return backupStats.getTxnLogIterationDuration();
-  }
-
-  /**
-   * @return Number of backup files created in a txn log backup iteration
-   */
-  public long getTxnLogBackupFilesCreatedPerIteration() {
-    return backupStats.getTxnLogBackupFilesCreatedPerIteration();
   }
 }

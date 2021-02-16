@@ -21,15 +21,13 @@ package org.apache.zookeeper.server.backup;
 import com.google.common.base.Preconditions;
 import org.apache.commons.lang.NullArgumentException;
 import org.apache.commons.lang.time.StopWatch;
+import org.apache.zookeeper.jmx.MBeanRegistry;
+import org.apache.zookeeper.server.backup.monitoring.BackupBean;
+import org.apache.zookeeper.server.backup.monitoring.BackupStats;
 import org.apache.zookeeper.server.backup.storage.BackupStorageProvider;
 import org.apache.zookeeper.server.persistence.*;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
 import org.apache.zookeeper.server.backup.BackupUtil.ZxidPart;
-import org.apache.zookeeper.server.backup.monitoring.BackupBean;
-import org.apache.zookeeper.server.backup.monitoring.BackupStats;
-import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
-import javax.management.JMException;
-import org.apache.zookeeper.jmx.MBeanRegistry;
 import org.apache.zookeeper.server.util.ZxidUtils;
 import org.apache.zookeeper.txn.TxnHeader;
 import org.slf4j.Logger;
@@ -38,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import javax.management.JMException;
 
 /**
  * This class manages the backing up of txnlog and snap files to remote
@@ -633,13 +632,10 @@ public class BackupManager {
    * @param backupStatusDir the backup status directory
    * @param tmpDir temporary directory
    * @param backupIntervalInMinutes the interval backups should run at in minutes
+   * @param namespace the namespace of zk cluster to be backed up
+   * @param serverId the id of the zk server
+   * @throws IOException
    */
-  public BackupManager(File snapDir, File dataLogDir, File backupStatusDir, File tmpDir,
-      int backupIntervalInMinutes, BackupStorageProvider backupStorageProvider) throws IOException {
-    this(snapDir, dataLogDir, backupStatusDir, tmpDir, backupIntervalInMinutes,
-        backupStorageProvider, "UNKNOWN", QuorumPeerConfig.UNSET_SERVERID);
-  }
-
   public BackupManager(File snapDir, File dataLogDir, File backupStatusDir, File tmpDir,
       int backupIntervalInMinutes, BackupStorageProvider backupStorageProvider, String namespace,
       long serverId) throws IOException {
@@ -650,6 +646,7 @@ public class BackupManager {
     logger.info("tmpDir={}", tmpDir.getPath());
     logger.info("backupIntervalInMinutes={}", backupIntervalInMinutes);
     logger.info("serverId={}", serverId);
+    logger.info("namespace={}", namespace);
 
     this.snapDir = snapDir;
     this.dataLogDir = dataLogDir;
@@ -658,7 +655,7 @@ public class BackupManager {
     this.backupIntervalInMilliseconds = backupIntervalInMinutes * 60 * 1000;
     this.backupStorage = backupStorageProvider;
     this.serverId = serverId;
-    this.namespace = namespace;
+    this.namespace = namespace == null ? "UNKNOWN" : namespace;
     initialize();
   }
 
@@ -715,7 +712,8 @@ public class BackupManager {
       MBeanRegistry.getInstance().register(backupBean, null);
       LOG.info("Registered Backup bean {} with JMX.", backupBean.getName());
     } catch (JMException e) {
-      LOG.warn("Failed to register with JMX", e);
+      LOG.warn("Failed to register Backup bean with JMX for namespace {} on server {}.", namespace,
+          serverId, e);
       backupBean = null;
     }
 
