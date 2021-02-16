@@ -28,15 +28,17 @@ public class BackupStats {
   private static final Logger LOG = LoggerFactory.getLogger(BackupStats.class);
 
   private int snapshotErrorCount = 0;
-  private long timeSinceLastSuccessfulSnapshotIteration = Long.MAX_VALUE;
+  private long lastSuccessfulSnapshotBackupIterationFinishTime = System.currentTimeMillis();
   private boolean snapshotBackupActive = false;
   private long snapshotIterationDuration = 0L;
+  private int numberOfSnapshotBackupFilesCreatedLastIteration = 0;
   private int txnLogErrorCount = 0;
-  private long timeSinceLastSuccessfulTxnLogIteration = Long.MAX_VALUE;
+  private long lastSuccessfulTxnLogBackupIterationFinishTime = System.currentTimeMillis();
   private boolean txnLogBackupActive = false;
   private long txnLogIterationDuration = 0L;
 
   // Snapshot backup metrics
+
   /**
    * @return Number of snapshot backup errors occur since last successful snapshot backup iteration
    */
@@ -45,10 +47,10 @@ public class BackupStats {
   }
 
   /**
-   * @return Time passed since last successful snapshot backup iteration
+   * @return Time passed (minutes) since last successful snapshot backup iteration
    */
-  public long getTimeElapsedSinceLastSuccessfulSnapshotIteration() {
-    return timeSinceLastSuccessfulSnapshotIteration;
+  public long getMinutesSinceLastSuccessfulSnapshotIteration() {
+    return (System.currentTimeMillis() - lastSuccessfulSnapshotBackupIterationFinishTime) / (60 * 1000);
   }
 
   /**
@@ -65,7 +67,15 @@ public class BackupStats {
     return snapshotIterationDuration;
   }
 
+  /**
+   * @return Number of backup files created in last snapshot backup iteration
+   */
+  public long getNumberOfSnapshotBackupFilesCreatedLastIteration() {
+    return numberOfSnapshotBackupFilesCreatedLastIteration;
+  }
+
   // Transaction log backup metrics
+
   /**
    * @return Number of txn log backup errors after last successful txn log backup iteration
    */
@@ -74,10 +84,10 @@ public class BackupStats {
   }
 
   /**
-   * @return Time passed since last successful txn log backup iteration
+   * @return Time passed (minutes) since last successful txn log backup iteration
    */
-  public long getTimeSinceLastSuccessfulTxnLogIteration() {
-    return timeSinceLastSuccessfulTxnLogIteration;
+  public long getMinutesSinceLastSuccessfulTxnLogIteration() {
+    return (System.currentTimeMillis() - lastSuccessfulTxnLogBackupIterationFinishTime) / (60 * 1000);
   }
 
   /**

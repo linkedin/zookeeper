@@ -27,9 +27,9 @@ public interface BackupMXBean {
   int getSnapshotErrorCount();
 
   /**
-   * @return Time passed since last successful snapshot backup iteration
+   * @return Time passed (minutes) since last successful snapshot backup iteration
    */
-  long getTimeElapsedSinceLastSuccessfulSnapshotIteration();
+  long getMinutesSinceLastSuccessfulSnapshotIteration();
 
   /**
    * @return If snapshot backup is currently actively ongoing
@@ -41,6 +41,11 @@ public interface BackupMXBean {
    */
   long getSnapshotIterationDuration();
 
+  /**
+   * @return Number of backup files created in last snapshot backup iteration
+   */
+  long getNumberOfSnapshotBackupFilesCreatedLastIteration();
+
   // Transaction log backup metrics
 
   /**
@@ -49,9 +54,9 @@ public interface BackupMXBean {
   int getTxnLogErrorCount();
 
   /**
-   * @return Time passed since last successful txn log backup iteration
+   * @return Time passed (minutes) since last successful txn log backup iteration
    */
-  long getTimeSinceLastSuccessfulTxnLogIteration();
+  long getMinutesSinceLastSuccessfulTxnLogIteration();
 
   /**
    * @return If txn log backup is currently actively ongoing

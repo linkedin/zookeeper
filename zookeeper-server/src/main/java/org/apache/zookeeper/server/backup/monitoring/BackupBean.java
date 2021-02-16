@@ -53,8 +53,8 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
   }
 
   @Override
-  public long getTimeElapsedSinceLastSuccessfulSnapshotIteration() {
-    return backupStats.getTimeElapsedSinceLastSuccessfulSnapshotIteration();
+  public long getMinutesSinceLastSuccessfulSnapshotIteration() {
+    return backupStats.getMinutesSinceLastSuccessfulSnapshotIteration();
   }
 
   @Override
@@ -62,11 +62,14 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
     return backupStats.getSnapshotBackupActiveStatus();
   }
 
-  /**
-   * @return How long it took to complete the last successful snapshot backup iteration
-   */
+  @Override
   public long getSnapshotIterationDuration() {
     return backupStats.getSnapshotIterationDuration();
+  }
+
+  @Override
+  public long getNumberOfSnapshotBackupFilesCreatedLastIteration() {
+    return backupStats.getNumberOfSnapshotBackupFilesCreatedLastIteration();
   }
 
   // Transaction log backup metrics
@@ -76,8 +79,8 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
   }
 
   @Override
-  public long getTimeSinceLastSuccessfulTxnLogIteration() {
-    return backupStats.getTimeSinceLastSuccessfulTxnLogIteration();
+  public long getMinutesSinceLastSuccessfulTxnLogIteration() {
+    return backupStats.getMinutesSinceLastSuccessfulTxnLogIteration();
   }
 
   @Override
