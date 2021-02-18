@@ -26,9 +26,11 @@ public interface BackupMXBean {
 
   /**
    * Counter
-   * @return Number of snapshot backup errors since last successful snapshot backup iteration
+   * For example: if backup iteration A fails, the number is 1; if next backup iteration B succeeds, the number is reset to 0.
+   * If A fails, the number is 1; if then B fails too, the number is incremented to 2.
+   * @return Number of consecutive snapshot backup errors since last successful snapshot backup iteration
    */
-  int getSuccessiveSnapshotIterationErrorCount();
+  int getNumConsecutiveFailedSnapshotIterations();
 
   /**
    * Counter
@@ -58,9 +60,11 @@ public interface BackupMXBean {
 
   /**
    * Counter
-   * @return Number of txn log backup errors occur after last successful txn log backup iteration
+   * For example: if backup iteration A fails, the number is 1; if next backup iteration B succeeds, the number is reset to 0.
+   * If A fails, the number is 1; if then B fails too, the number is incremented to 2.
+   * @return Number of consecutive txn log backup errors since last successful txn log backup iteration
    */
-  int getSuccessiveTxnLogIterationErrorCount();
+  int getNumConsecutiveFailedTxnLogIterations();
 
   /**
    * Counter

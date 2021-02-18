@@ -27,12 +27,12 @@ import org.slf4j.LoggerFactory;
 public class BackupStats {
   private static final Logger LOG = LoggerFactory.getLogger(BackupStats.class);
 
-  private int snapshotErrorCount = 0;
+  private int failedSnapshotIterationCount = 0;
   private long lastSuccessfulSnapshotBackupIterationFinishTime = System.currentTimeMillis();
   private boolean snapshotBackupActive = false;
   private long snapshotIterationDuration = 0L;
   private int numberOfSnapshotFilesBackedUpLastIteration = 0;
-  private int txnLogErrorCount = 0;
+  private int failedTxnLogIterationCount = 0;
   private long lastSuccessfulTxnLogBackupIterationFinishTime = System.currentTimeMillis();
   private boolean txnLogBackupActive = false;
   private long txnLogIterationDuration = 0L;
@@ -41,10 +41,12 @@ public class BackupStats {
 
   /**
    * Counter
-   * @return Number of snapshot backup errors occur since last successful snapshot backup iteration
+   * For example: if backup iteration A fails, the number is 1; if next backup iteration B succeeds, the number is reset to 0.
+   * If A fails, the number is 1; if then B fails too, the number is incremented to 2.
+   * @return Number of consecutive snapshot backup errors since last successful snapshot backup iteration
    */
-  public int getSuccessiveSnapshotIterationErrorCount() {
-    return snapshotErrorCount;
+  public int getNumConsecutiveFailedSnapshotIterations() {
+    return failedSnapshotIterationCount;
   }
 
   /**
@@ -84,10 +86,12 @@ public class BackupStats {
 
   /**
    * Counter
-   * @return Number of txn log backup errors after last successful txn log backup iteration
+   * For example: if backup iteration A fails, the number is 1; if next backup iteration B succeeds, the number is reset to 0.
+   * If A fails, the number is 1; if then B fails too, the number is incremented to 2.
+   * @return Number of consecutive txn log backup errors since last successful txn log backup iteration
    */
-  public int getSuccessiveTxnLogIterationErrorCount() {
-    return txnLogErrorCount;
+  public int getNumConsecutiveFailedTxnLogIterations() {
+    return failedTxnLogIterationCount;
   }
 
   /**

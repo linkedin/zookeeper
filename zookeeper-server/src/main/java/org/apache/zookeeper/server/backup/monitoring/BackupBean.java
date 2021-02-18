@@ -51,8 +51,8 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
 
   // Snapshot backup metrics
   @Override
-  public int getSuccessiveSnapshotIterationErrorCount() {
-    return backupStats.getSuccessiveSnapshotIterationErrorCount();
+  public int getNumConsecutiveFailedSnapshotIterations() {
+    return backupStats.getNumConsecutiveFailedSnapshotIterations();
   }
 
   @Override
@@ -77,8 +77,8 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
 
   // Transaction log backup metrics
   @Override
-  public int getSuccessiveTxnLogIterationErrorCount() {
-    return backupStats.getSuccessiveTxnLogIterationErrorCount();
+  public int getNumConsecutiveFailedTxnLogIterations() {
+    return backupStats.getNumConsecutiveFailedTxnLogIterations();
   }
 
   @Override
