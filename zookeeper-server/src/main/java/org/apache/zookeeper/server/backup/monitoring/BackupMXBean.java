@@ -18,53 +18,65 @@
 
 package org.apache.zookeeper.server.backup.monitoring;
 
+/**
+ * ZK backup MBean
+ */
 public interface BackupMXBean {
   // Snapshot backup metrics
 
   /**
+   * Counter
    * @return Number of snapshot backup errors since last successful snapshot backup iteration
    */
-  int getSnapshotErrorCount();
+  int getSuccessiveSnapshotIterationErrorCount();
 
   /**
+   * Counter
    * @return Time passed (minutes) since last successful snapshot backup iteration
    */
   long getMinutesSinceLastSuccessfulSnapshotIteration();
 
   /**
+   * Gauge
    * @return If snapshot backup is currently actively ongoing
    */
   boolean getSnapshotBackupActiveStatus();
 
   /**
-   * @return How long it took to complete the last successful snapshot backup iteration
+   * Gauge
+   * @return How long it took to complete the last snapshot backup iteration
    */
-  long getSnapshotIterationDuration();
+  long getLastSnapshotIterationDuration();
 
   /**
-   * @return Number of backup files created in last snapshot backup iteration
+   * Gauge
+   * @return Number of snapshot files that were backed up to backup storage in last snapshot backup iteration
    */
-  long getNumberOfSnapshotBackupFilesCreatedLastIteration();
+  long getNumberOfSnapshotFilesBackedUpLastIteration();
 
   // Transaction log backup metrics
 
   /**
+   * Counter
    * @return Number of txn log backup errors occur after last successful txn log backup iteration
    */
-  int getTxnLogErrorCount();
+  int getSuccessiveTxnLogIterationErrorCount();
 
   /**
+   * Counter
    * @return Time passed (minutes) since last successful txn log backup iteration
    */
   long getMinutesSinceLastSuccessfulTxnLogIteration();
 
   /**
+   * Gauge
    * @return If txn log backup is currently actively ongoing
    */
   boolean getTxnLogBackupActiveStatus();
 
   /**
-   * @return How long it took to complete the last successful txn log backup iteration
+   * Gauge
+   * @return How long it took to complete the last txn log backup iteration
    */
-  long getTxnLogIterationDuration();
+  long getLastTxnLogIterationDuration();
 }

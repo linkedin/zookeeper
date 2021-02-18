@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
 
 public class BackupBeanTest extends ZKTestCase {
   private static final Logger LOG = LoggerFactory.getLogger(BackupBeanTest.class);
-  private static String HOSTPORT = "127.0.0.1:" + PortAssignment.unique();
+  private static final String HOSTPORT = "127.0.0.1:" + PortAssignment.unique();
   private static final int CONNECTION_TIMEOUT = 300000;
   private static final String TEST_NAMESPACE = "TEST_NAMESPACE";
 

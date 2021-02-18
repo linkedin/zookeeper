@@ -31,7 +31,7 @@ public class BackupStats {
   private long lastSuccessfulSnapshotBackupIterationFinishTime = System.currentTimeMillis();
   private boolean snapshotBackupActive = false;
   private long snapshotIterationDuration = 0L;
-  private int numberOfSnapshotBackupFilesCreatedLastIteration = 0;
+  private int numberOfSnapshotFilesBackedUpLastIteration = 0;
   private int txnLogErrorCount = 0;
   private long lastSuccessfulTxnLogBackupIterationFinishTime = System.currentTimeMillis();
   private boolean txnLogBackupActive = false;
@@ -40,20 +40,24 @@ public class BackupStats {
   // Snapshot backup metrics
 
   /**
+   * Counter
    * @return Number of snapshot backup errors occur since last successful snapshot backup iteration
    */
-  public int getSnapshotErrorCount() {
+  public int getSuccessiveSnapshotIterationErrorCount() {
     return snapshotErrorCount;
   }
 
   /**
+   * Counter
    * @return Time passed (minutes) since last successful snapshot backup iteration
    */
   public long getMinutesSinceLastSuccessfulSnapshotIteration() {
-    return (System.currentTimeMillis() - lastSuccessfulSnapshotBackupIterationFinishTime) / (60 * 1000);
+    return (System.currentTimeMillis() - lastSuccessfulSnapshotBackupIterationFinishTime) / (60
+        * 1000);
   }
 
   /**
+   * Gauge
    * @return If snapshot backup is currently actively ongoing
    */
   public boolean getSnapshotBackupActiveStatus() {
@@ -61,36 +65,42 @@ public class BackupStats {
   }
 
   /**
-   * @return How long it took to complete the last successful snapshot backup iteration
+   * Gauge
+   * @return How long it took to complete the last snapshot backup iteration
    */
   public long getSnapshotIterationDuration() {
     return snapshotIterationDuration;
   }
 
   /**
-   * @return Number of backup files created in last snapshot backup iteration
+   * Gauge
+   * @return Number of snapshot files that were backed up to backup storage in last snapshot backup iteration
    */
-  public long getNumberOfSnapshotBackupFilesCreatedLastIteration() {
-    return numberOfSnapshotBackupFilesCreatedLastIteration;
+  public long getNumberOfSnapshotFilesBackedUpLastIteration() {
+    return numberOfSnapshotFilesBackedUpLastIteration;
   }
 
   // Transaction log backup metrics
 
   /**
+   * Counter
    * @return Number of txn log backup errors after last successful txn log backup iteration
    */
-  public int getTxnLogErrorCount() {
+  public int getSuccessiveTxnLogIterationErrorCount() {
     return txnLogErrorCount;
   }
 
   /**
+   * Counter
    * @return Time passed (minutes) since last successful txn log backup iteration
    */
   public long getMinutesSinceLastSuccessfulTxnLogIteration() {
-    return (System.currentTimeMillis() - lastSuccessfulTxnLogBackupIterationFinishTime) / (60 * 1000);
+    return (System.currentTimeMillis() - lastSuccessfulTxnLogBackupIterationFinishTime) / (60
+        * 1000);
   }
 
   /**
+   * Gauge
    * @return If txn log backup is currently actively ongoing
    */
   public boolean getTxnLogBackupActiveStatus() {
@@ -98,7 +108,8 @@ public class BackupStats {
   }
 
   /**
-   * @return How long it took to complete the last successful txn log backup iteration
+   * Gauge
+   * @return How long it took to complete the last txn log backup iteration
    */
   public long getTxnLogIterationDuration() {
     return txnLogIterationDuration;

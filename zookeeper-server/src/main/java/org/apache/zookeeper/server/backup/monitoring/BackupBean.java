@@ -33,6 +33,9 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
 
   public BackupBean(BackupStats backupStats, String namespace, long serverId) {
     this.backupStats = backupStats;
+    if (namespace == null || namespace.isEmpty()) {
+      namespace = "UNKNOWN";
+    }
     name = "Backup_" + namespace + ".server" + serverId;
   }
 
@@ -48,8 +51,8 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
 
   // Snapshot backup metrics
   @Override
-  public int getSnapshotErrorCount() {
-    return backupStats.getSnapshotErrorCount();
+  public int getSuccessiveSnapshotIterationErrorCount() {
+    return backupStats.getSuccessiveSnapshotIterationErrorCount();
   }
 
   @Override
@@ -63,19 +66,19 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
   }
 
   @Override
-  public long getSnapshotIterationDuration() {
+  public long getLastSnapshotIterationDuration() {
     return backupStats.getSnapshotIterationDuration();
   }
 
   @Override
-  public long getNumberOfSnapshotBackupFilesCreatedLastIteration() {
-    return backupStats.getNumberOfSnapshotBackupFilesCreatedLastIteration();
+  public long getNumberOfSnapshotFilesBackedUpLastIteration() {
+    return backupStats.getNumberOfSnapshotFilesBackedUpLastIteration();
   }
 
   // Transaction log backup metrics
   @Override
-  public int getTxnLogErrorCount() {
-    return backupStats.getTxnLogErrorCount();
+  public int getSuccessiveTxnLogIterationErrorCount() {
+    return backupStats.getSuccessiveTxnLogIterationErrorCount();
   }
 
   @Override
@@ -89,7 +92,7 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
   }
 
   @Override
-  public long getTxnLogIterationDuration() {
+  public long getLastTxnLogIterationDuration() {
     return backupStats.getTxnLogIterationDuration();
   }
 }
