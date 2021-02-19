@@ -32,10 +32,13 @@ public class BackupStats {
   private boolean snapshotBackupActive = false;
   private long snapshotIterationDuration = 0L;
   private int numberOfSnapshotFilesBackedUpLastIteration = 0;
+  private long lastSnapshotBackupIterationStartTime = System.currentTimeMillis();
+
   private int failedTxnLogIterationCount = 0;
   private long lastSuccessfulTxnLogBackupIterationFinishTime = System.currentTimeMillis();
   private boolean txnLogBackupActive = false;
   private long txnLogIterationDuration = 0L;
+  private long lastTxnLogBackupIterationStartTime = System.currentTimeMillis();
 
   // Snapshot backup metrics
 
@@ -82,6 +85,32 @@ public class BackupStats {
     return numberOfSnapshotFilesBackedUpLastIteration;
   }
 
+  /**
+   * Record the status and timestamp when a snapshot backup iteration starts
+   */
+  public void setSnapshotBackupIterationStart() {
+    lastSnapshotBackupIterationStartTime = System.currentTimeMillis();
+    snapshotBackupActive = true;
+  }
+
+  /**
+   *  Record the status and timestamp when a snapshot backup iteration finishes
+   * @param errorFree If this iteration finishes without error
+   * @param snapshotBackedUp How many snapshot files are backed up within the iteration
+   */
+  public void setSnapshotBackupIterationDone(boolean errorFree, int snapshotBackedUp) {
+    long finishTime = System.currentTimeMillis();
+    snapshotIterationDuration = finishTime - lastSnapshotBackupIterationStartTime;
+    snapshotBackupActive = false;
+    numberOfSnapshotFilesBackedUpLastIteration = snapshotBackedUp;
+    if (errorFree) {
+      lastSuccessfulSnapshotBackupIterationFinishTime = finishTime;
+      failedSnapshotIterationCount = 0;
+    } else {
+      failedSnapshotIterationCount++;
+    }
+  }
+
   // Transaction log backup metrics
 
   /**
@@ -117,5 +146,29 @@ public class BackupStats {
    */
   public long getTxnLogIterationDuration() {
     return txnLogIterationDuration;
+  }
+
+  /**
+   * Record the status and timestamp when a txn log backup iteration starts
+   */
+  public void setTxnLogBackupIterationStart() {
+    lastTxnLogBackupIterationStartTime = System.currentTimeMillis();
+    txnLogBackupActive = true;
+  }
+
+  /**
+   *  Record the status and timestamp when a txn log backup iteration finishes
+   * @param errorFree If this iteration finishes without error
+   */
+  public void setTxnLogBackupIterationDone(boolean errorFree) {
+    long finishTime = System.currentTimeMillis();
+    txnLogBackupActive = false;
+    txnLogIterationDuration = finishTime - lastTxnLogBackupIterationStartTime;
+    if (errorFree) {
+      lastSuccessfulTxnLogBackupIterationFinishTime = finishTime;
+      failedTxnLogIterationCount = 0;
+    } else {
+      failedTxnLogIterationCount++;
+    }
   }
 }
