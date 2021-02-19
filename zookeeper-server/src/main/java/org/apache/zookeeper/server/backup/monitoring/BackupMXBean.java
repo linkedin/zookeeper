@@ -25,15 +25,17 @@ public interface BackupMXBean {
   // Snapshot backup metrics
 
   /**
-   * Counter
+   * Counter, reset when a successful backup iteration is completed
    * For example: if backup iteration A fails, the number is 1; if next backup iteration B succeeds, the number is reset to 0.
    * If A fails, the number is 1; if then B fails too, the number is incremented to 2.
+   * This metric can be used for alerts.
    * @return Number of consecutive snapshot backup errors since last successful snapshot backup iteration
    */
   int getNumConsecutiveFailedSnapshotIterations();
 
   /**
-   * Counter
+   * Counter, reset when a successful backup iteration is completed
+   * This metric can be used for alerts.
    * @return Time passed (minutes) since last successful snapshot backup iteration
    */
   long getMinutesSinceLastSuccessfulSnapshotIteration();
