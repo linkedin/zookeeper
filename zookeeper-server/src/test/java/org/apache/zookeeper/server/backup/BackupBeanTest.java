@@ -173,8 +173,8 @@ public class BackupBeanTest extends ZKTestCase {
     createNode(connection, nodeNames[0]);
     backupManager.getSnapBackup(snapLog, true).run(1);
     backupManager.getLogBackup(snapLog, true).run(1);
-    Assert.assertTrue(backupBean.getLastSnapshotIterationDuration() > 0);
-    Assert.assertTrue(backupBean.getLastTxnLogIterationDuration() > 0);
+    Assert.assertTrue(backupBean.getLastSnapshotIterationDuration() > 0L);
+    Assert.assertTrue(backupBean.getLastTxnLogIterationDuration() > 0L);
     Assert.assertEquals(1, backupBean.getNumberOfSnapshotFilesBackedUpLastIteration());
     Assert.assertEquals(0, backupBean.getNumConsecutiveFailedSnapshotIterations());
     Assert.assertEquals(0, backupBean.getNumConsecutiveFailedTxnLogIterations());
@@ -206,8 +206,8 @@ public class BackupBeanTest extends ZKTestCase {
     Assert.assertEquals(0, backupBean.getNumConsecutiveFailedTxnLogIterations());
 
     Thread.sleep(60 * 1000);
-    Assert.assertTrue(backupBean.getMinutesSinceLastSuccessfulSnapshotIteration() > 0);
-    Assert.assertTrue(backupBean.getMinutesSinceLastSuccessfulTxnLogIteration() > 0);
+    Assert.assertTrue(backupBean.getMinutesSinceLastSuccessfulSnapshotIteration() > 0L);
+    Assert.assertTrue(backupBean.getMinutesSinceLastSuccessfulTxnLogIteration() > 0L);
   }
 
   private void createNode(ZooKeeper zk, String path) throws Exception {

@@ -81,7 +81,7 @@ public class BackupStats {
    * Gauge
    * @return Number of snapshot files that were backed up to backup storage in last snapshot backup iteration
    */
-  public long getNumberOfSnapshotFilesBackedUpLastIteration() {
+  public int getNumberOfSnapshotFilesBackedUpLastIteration() {
     return numberOfSnapshotFilesBackedUpLastIteration;
   }
 
@@ -96,13 +96,13 @@ public class BackupStats {
   /**
    *  Record the status and timestamp when a snapshot backup iteration finishes
    * @param errorFree If this iteration finishes without error
-   * @param snapshotBackedUp How many snapshot files are backed up within the iteration
+   * @param numSnapshotFilesBackedUp How many snapshot files are backed up within the iteration
    */
-  public void setSnapshotBackupIterationDone(boolean errorFree, int snapshotBackedUp) {
+  public void setSnapshotBackupIterationDone(boolean errorFree, int numSnapshotFilesBackedUp) {
     long finishTime = System.currentTimeMillis();
     snapshotIterationDuration = finishTime - lastSnapshotBackupIterationStartTime;
     snapshotBackupActive = false;
-    numberOfSnapshotFilesBackedUpLastIteration = snapshotBackedUp;
+    numberOfSnapshotFilesBackedUpLastIteration = numSnapshotFilesBackedUp;
     if (errorFree) {
       lastSuccessfulSnapshotBackupIterationFinishTime = finishTime;
       failedSnapshotIterationCount = 0;
