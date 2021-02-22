@@ -32,6 +32,7 @@ public class BackupStats {
   private boolean snapshotBackupActive = false;
   private long snapshotIterationDuration = 0L;
   private int numberOfSnapshotFilesBackedUpLastIteration = 0;
+  private int numberOfSnapshotFilesBackedUpThisIteration = 0;
   private long lastSnapshotBackupIterationStartTime = System.currentTimeMillis();
 
   private int failedTxnLogIterationCount = 0;
@@ -91,24 +92,33 @@ public class BackupStats {
   public void setSnapshotBackupIterationStart() {
     lastSnapshotBackupIterationStartTime = System.currentTimeMillis();
     snapshotBackupActive = true;
+    numberOfSnapshotFilesBackedUpThisIteration = 0;
   }
 
   /**
    *  Record the status and timestamp when a snapshot backup iteration finishes
    * @param errorFree If this iteration finishes without error
-   * @param numSnapshotFilesBackedUp How many snapshot files are backed up within the iteration
    */
-  public void setSnapshotBackupIterationDone(boolean errorFree, int numSnapshotFilesBackedUp) {
+  public void setSnapshotBackupIterationDone(boolean errorFree) {
     long finishTime = System.currentTimeMillis();
     snapshotIterationDuration = finishTime - lastSnapshotBackupIterationStartTime;
     snapshotBackupActive = false;
-    numberOfSnapshotFilesBackedUpLastIteration = numSnapshotFilesBackedUp;
+    numberOfSnapshotFilesBackedUpLastIteration = numberOfSnapshotFilesBackedUpThisIteration;
+    numberOfSnapshotFilesBackedUpThisIteration = 0;
     if (errorFree) {
       lastSuccessfulSnapshotBackupIterationFinishTime = finishTime;
       failedSnapshotIterationCount = 0;
     } else {
       failedSnapshotIterationCount++;
     }
+  }
+
+  /**
+   * To be called during snapshot backup iteration every time one more snapshot file is backed up
+   * A helper to keep track value for "numberOfSnapshotFilesBackedUpLastIteration" metric
+   */
+  public void incrementNumberOfSnapshotFilesBackedUpThisIteration() {
+    numberOfSnapshotFilesBackedUpThisIteration++;
   }
 
   // Transaction log backup metrics

@@ -68,8 +68,6 @@ public class BackupManager {
   protected BackupBean backupBean = null;
   private BackupStats backupStats = null;
 
-  private int numSnapshotFilesBackedUp;
-
   /**
    * Tracks a file that needs to be backed up, including temporary copies of the file
    */
@@ -558,7 +556,6 @@ public class BackupManager {
      */
     protected void startIteration() throws IOException {
       backupStats.setSnapshotBackupIterationStart();
-      numSnapshotFilesBackedUp = 0;
       filesToBackup.clear();
 
       // Get all available snapshots excluding the ones whose lastProcessedZxid falls into the
@@ -612,7 +609,7 @@ public class BackupManager {
     }
 
     protected void endIteration(boolean errorFree) {
-      backupStats.setSnapshotBackupIterationDone(errorFree, numSnapshotFilesBackedUp);
+      backupStats.setSnapshotBackupIterationDone(errorFree);
       filesToBackup.clear();
     }
 
@@ -629,7 +626,7 @@ public class BackupManager {
         backedupSnapZxid = file.getMinZxid();
         backupStatus.update(backedupLogZxid, backedupSnapZxid);
       }
-      numSnapshotFilesBackedUp++;
+      backupStats.incrementNumberOfSnapshotFilesBackedUpThisIteration();
 
       logger.info("Updated backedup snap zxid to {}", ZxidUtils.zxidToString(backedupSnapZxid));
     }
