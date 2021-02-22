@@ -66,7 +66,12 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
    */
   public FileSystemBackupStorage(BackupConfig backupConfig) {
     this.backupConfig = backupConfig;
-    fileRootPath = String.join(File.separator, this.backupConfig.getBackupStoragePath(),
+    String backupStoragePath = this.backupConfig.getBackupStoragePath();
+    if (!new File(backupStoragePath).exists()) {
+      throw new BackupException(
+          "The backup storage is not ready, please check the path: " + backupStoragePath);
+    }
+    fileRootPath = String.join(File.separator, backupStoragePath,
         this.backupConfig.getNamespace());
     rwLock = new ReentrantReadWriteLock();
     sharedLock = rwLock.readLock();
