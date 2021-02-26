@@ -454,6 +454,15 @@ public class FileTxnSnapLog {
     }
 
     /**
+     * the last logged zxid + timestamp pair from the transaction log
+     * @return last logged zxid and timestamp
+     */
+    public FileTxnLog.ZxidTimestampPair getLastLoggedZxidTimestampPair() {
+        FileTxnLog txnLog = new FileTxnLog(dataDir);
+        return txnLog.getLastLoggedZxidTimestampPair();
+    }
+
+    /**
      * save the datatree and the sessions into a snapshot
      * @param dataTree the datatree to be serialized onto disk
      * @param sessionsWithTimeouts the session timeouts to be
