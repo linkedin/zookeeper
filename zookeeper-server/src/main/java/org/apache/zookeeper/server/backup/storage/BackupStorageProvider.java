@@ -95,4 +95,22 @@ public interface BackupStorageProvider {
    * @throws IOException
    */
   void cleanupInvalidFiles(File path) throws IOException;
+
+  /**
+   * Copy the selected snapshot and transaction log backup files needed for restoration to a temp folder;
+   * Truncate the copied transaction log to zxid restoration point.
+   * @param tempDirDestination The path to create a temporary directory and store the copied backup files
+   * @param filesToCopy A list of selected backup files that can be used for restoration
+   * @param zxidToRestore The zxid to restore to
+   * @throws IOException
+   */
+  void processBackupFilesForRestoration(File tempDirDestination, List<BackupFileInfo> filesToCopy, long zxidToRestore)
+      throws IOException;
+
+  /**
+   * Delete the temporary directory and the copied backup files inside it after the restoration is completed
+   * @param tempDir The path to the temporary directory
+   * @throws IOException
+   */
+  void cleanupTempFilesForRestoration(File tempDir) throws IOException;
 }

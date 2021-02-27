@@ -25,7 +25,6 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
-import org.apache.zookeeper.server.backup.BackupConfig;
 import org.apache.zookeeper.server.backup.exception.BackupException;
 import org.apache.zookeeper.server.persistence.Util;
 
@@ -34,6 +33,7 @@ import org.apache.zookeeper.server.persistence.Util;
  */
 public class BackupStorageUtil {
   public static final String TMP_FILE_PREFIX = "TMP_";
+  public static final String RESTORE_FILE_PREFIX = "RESTORE_";
   private static final File[] NO_FILE = new File[0];
 
   /**
