@@ -23,7 +23,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Range;
 
 /**
- * A range of of "long"s with an optional high "long" value to represent ZXID or timestamp ranges.
+ * A range of Zxids with an optional high zxid.
  */
 public class ZxidRange {
   public static final ZxidRange INVALID = new ZxidRange(-1L, Optional.of(-1L), true);
@@ -51,7 +51,7 @@ public class ZxidRange {
     this(low, Optional.<Long>absent(), false);
   }
 
-  public ZxidRange(com.google.common.collect.Range<Long> range) {
+  public ZxidRange(Range<Long> range) {
     this(range.lowerEndpoint(), range.upperEndpoint());
   }
 
@@ -61,13 +61,11 @@ public class ZxidRange {
     if (zxidParts.length == 1 && !value.endsWith("-")) {
       try {
         return new ZxidRange(Long.parseLong(zxidParts[0], 16));
-      } catch (NumberFormatException e) {
-      }
+      } catch (NumberFormatException e) { }
     } else if (zxidParts.length == 2) {
       try {
         return new ZxidRange(Long.parseLong(zxidParts[0], 16), Long.parseLong(zxidParts[1], 16));
-      } catch (NumberFormatException e) {
-      }
+      } catch (NumberFormatException e) { }
     }
 
     return ZxidRange.INVALID;
