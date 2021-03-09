@@ -31,23 +31,31 @@ import org.apache.zookeeper.server.backup.exception.BackupException;
  */
 public class TimetableUtil {
   private static final String LATEST = "latest";
+  private static final String TIMETABLE_PREFIX = "timetable.";
 
   /**
    * Returns the last zxid corresponding to the timestamp preceding the timestamp given as argument.
+   * Note: the given timestamp must be in the comprehensive range created from the timetable
+   * backup files unless it is "latest". This is to prevent any human mistakes of accidentally
+   * entering an arbitrarily high timestamp value and the tool restoring to the latest backup point.
    * @param timetableBackupFiles
    * @param timestamp timestamp string (long), or "latest"
    * @return Hex String representation of the zxid found
    */
   public static String findLastZxidFromTimestamp(File[] timetableBackupFiles, String timestamp) {
-    // Verify arguments: backup files and timestamp
+    // Verify argument: backup files
     if (timetableBackupFiles == null || timetableBackupFiles.length == 0) {
       throw new IllegalArgumentException(
           "TimetableUtil::findLastZxidFromTimestamp(): timetableBackupFiles argument is either null"
               + " or empty!");
     }
 
+    // Verify argument: timestamp
+    boolean isLatest = timestamp.equalsIgnoreCase(LATEST);
     long timestampLong;
-    if (!timestamp.equalsIgnoreCase(LATEST)) {
+    if (isLatest) {
+      timestampLong = Long.MAX_VALUE;
+    } else {
       try {
         timestampLong = Long.decode(timestamp);
       } catch (NumberFormatException e) {
@@ -55,31 +63,56 @@ public class TimetableUtil {
             "TimetableUtil::findLastZxidFromTimestamp(): cannot convert the given timestamp to a"
                 + " valid long! timestamp: " + timestamp, e);
       }
-    } else {
-      timestampLong = Long.MAX_VALUE;
+    }
+
+    // Traverse the files and find the lower bound, upper bound, and the file that contains the
+    // timestamp
+    long lowerBound = Long.MAX_VALUE, upperBound = Long.MIN_VALUE, lowestDelta = Long.MAX_VALUE;
+    File fileToRead = null;
+    for (File file : timetableBackupFiles) {
+      String[] range = file.getName().replaceAll(TIMETABLE_PREFIX, "").split("-");
+      long low = Long.parseLong(range[0]), high = Long.parseLong(range[1]);
+      lowerBound = Math.min(low, lowerBound);
+      upperBound = Math.max(high, upperBound);
+      if (isLatest) {
+        if (upperBound == high) {
+          fileToRead = file;
+        }
+      } else {
+        // Calculate the delta to find the closest available file either containing the timestamp
+        // in its range or before the timestamp
+        long delta = timestampLong - low;
+        if (delta >= 0 && delta < lowestDelta) {
+          lowestDelta = delta;
+          fileToRead = file;
+        }
+      }
+    }
+
+    // Check if the given timestamp is in range
+    if (!isLatest && (timestampLong < lowerBound || timestampLong > upperBound)) {
+      throw new IllegalArgumentException(
+          "TimetableUtil::findLastZxidFromTimestamp(): timestamp given is not in the timestamp "
+              + "range given in the backup files!");
+    }
+
+    // Check if a file is found (this shouldn't happen if timestamp is in range)
+    if (fileToRead == null) {
+      throw new IllegalArgumentException(
+          "TimetableUtil::findLastZxidFromTimestamp(): unable to find the backup file to use!");
     }
 
     // Convert timetable backup files to an ordered Map<Long, String>, timestamp:zxid pairs
     TreeMap<Long, String> timestampZxidPairs = new TreeMap<>();
     try {
-      for (File file : timetableBackupFiles) {
-        FileInputStream fis = new FileInputStream(file);
-        ObjectInputStream ois = new ObjectInputStream(fis);
-        @SuppressWarnings("unchecked")
-        Map<Long, String> map = (TreeMap<Long, String>) ois.readObject();
-        timestampZxidPairs.putAll(map);
-      }
+      FileInputStream fis = new FileInputStream(fileToRead);
+      ObjectInputStream ois = new ObjectInputStream(fis);
+      @SuppressWarnings("unchecked")
+      Map<Long, String> map = (TreeMap<Long, String>) ois.readObject();
+      timestampZxidPairs.putAll(map);
     } catch (Exception e) {
       throw new BackupException(
           "TimetableUtil::findLastZxidFromTimestamp(): failed to read timetable backup files!", e);
-    }
-
-    // Check if the given timestamp is in range
-    if (!timestamp.equalsIgnoreCase(LATEST) && (timestampLong < timestampZxidPairs.firstKey()
-        || timestampLong > timestampZxidPairs.lastKey())) {
-      throw new IllegalArgumentException(
-          "TimetableUtil::findLastZxidFromTimestamp(): timestamp given is not in the timestamp "
-              + "range given in the backup files!");
     }
 
     // Find the last zxid corresponding to the timestamp given

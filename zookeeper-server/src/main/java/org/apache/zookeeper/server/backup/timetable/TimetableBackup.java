@@ -126,6 +126,9 @@ public class TimetableBackup extends BackupProcess {
    * @return
    */
   private String makeTimetableBackupFileName() {
+    String name = String.format("%s.%d-%d", TIMETABLE_PREFIX, timetableRecordMap.firstKey(),
+        timetableRecordMap.lastKey());
+    System.out.println(name);
     return String.format("%s.%d-%d", TIMETABLE_PREFIX, timetableRecordMap.firstKey(),
         timetableRecordMap.lastKey());
   }

@@ -99,7 +99,7 @@ public class TimetableUtilTest {
     Map<Long, String> timetableRecords = new TreeMap<>();
     timetableRecords.put(timestamp, Long.toHexString(zxid));
 
-    File file = new File("timetable." + fileNum);
+    File file = new File("timetable." + timestamp + "-" + timestamp);
     FileOutputStream f = new FileOutputStream(file);
     ObjectOutputStream s = new ObjectOutputStream(f);
     s.writeObject(timetableRecords);
