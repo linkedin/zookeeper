@@ -104,13 +104,6 @@ public interface BackupStorageProvider {
    * @param zxidToRestore The zxid to restore to
    * @throws IOException
    */
-  void processBackupFilesForRestoration(File tempDirDestination, List<BackupFileInfo> filesToCopy, long zxidToRestore)
-      throws IOException;
-
-  /**
-   * Delete the temporary directory and the copied backup files inside it after the restoration is completed
-   * @param tempDir The path to the temporary directory
-   * @throws IOException
-   */
-  void cleanupTempFilesForRestoration(File tempDir) throws IOException;
+  void processBackupFilesForRestoration(File tempDirDestination, List<BackupFileInfo> filesToCopy,
+      long zxidToRestore) throws IOException;
 }

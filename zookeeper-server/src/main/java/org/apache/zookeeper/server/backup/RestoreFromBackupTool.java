@@ -21,13 +21,11 @@ package org.apache.zookeeper.server.backup;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Range;
 import jline.internal.Log;
-import org.apache.commons.io.FileUtils;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
 import org.apache.zookeeper.server.backup.BackupUtil.ZxidPart;
 import org.apache.zookeeper.server.backup.exception.RestoreException;
@@ -100,18 +98,15 @@ public class RestoreFromBackupTool {
     // Create a temporary dir in backup storage for backup file processing
     File tempDirForRestoration =
         new File(filesToCopy.listIterator().next().getBackedUpFile().getParent(),
-            "Restore_" + zxidToRestore);
+            "Restore_" + Long.toHexString(zxidToRestore));
 
     try {
       storage.processBackupFilesForRestoration(tempDirForRestoration, filesToCopy, zxidToRestore);
-      Log.info("Copied " + filesToCopy.size() + " backup files to temp dir " + tempDirForRestoration
-          .getPath() + " in backup storage for file preparation for restoration.");
+      LOG.info("Copied " + filesToCopy.size() + " backup files to temp dir " + tempDirForRestoration
+          .getPath() + " in backup storage for file preparation for restoration to zxid " + zxidToRestore + ".");
 
-      Collection<File> processedFiles = FileUtils.listFiles(tempDirForRestoration, null, true);
+      List<File> processedFiles = BackupStorageUtil.readFilesRecursivelyInDirectory(tempDirForRestoration);
       for (File processedFile : processedFiles) {
-        if (processedFile.isDirectory()) {
-          continue;
-        }
         String fileName = processedFile.getName();
         File parentFile = processedFile.getParentFile();
         File base = Util.isSnapshotFileName(fileName) ? snapLog.getSnapDir() : snapLog.getDataDir();
@@ -135,7 +130,7 @@ public class RestoreFromBackupTool {
     } catch (IOException ioe) {
       throw new IOException("Hit exception when attempting to restore." + ioe.getMessage());
     } finally {
-      storage.cleanupTempFilesForRestoration(tempDirForRestoration);
+      BackupStorageUtil.deleteDirectoryRecursively(tempDirForRestoration);
     }
   }
 

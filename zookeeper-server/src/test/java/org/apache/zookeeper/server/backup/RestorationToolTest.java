@@ -1,6 +1,25 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.zookeeper.server.backup;
 
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -8,7 +27,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Random;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.DummyWatcher;
 import org.apache.zookeeper.PortAssignment;
@@ -103,6 +121,7 @@ public class RestorationToolTest extends ZKTestCase {
         zks.takeSnapshot();
       }
     }
+    backupManager.getLogBackup().run(1);
     backupManager.getSnapBackup().run(1);
   }
 
@@ -145,7 +164,7 @@ public class RestorationToolTest extends ZKTestCase {
           new RestoreFromBackupTool(backupStorage, restoreSnapLog, restoreZxid, false);
       restoreTool.run();
       validateRestoreCoverage(restoreZxid);
-      FileUtils.deleteDirectory(restoreDir);
+      BackupStorageUtil.deleteDirectoryRecursively(restoreDir);
     }
   }
 
@@ -155,7 +174,6 @@ public class RestorationToolTest extends ZKTestCase {
         new RestoreFromBackupTool(backupStorage, restoreSnapLog, Long.MAX_VALUE, false);
     restoreTool.run();
     validateRestoreCoverage(txnCnt);
-    FileUtils.deleteDirectory(restoreDir);
   }
 
   @Test
@@ -167,7 +185,7 @@ public class RestorationToolTest extends ZKTestCase {
       Assert.fail(
           "The restoration should fail because the zxid restoration point specified is out of range.");
     } catch (RestoreException e) {
-      // Do nothing
+      e.printStackTrace();
     } catch (Exception e1) {
       Assert.fail("RestoreException should be thrown.");
     }
@@ -175,7 +193,23 @@ public class RestorationToolTest extends ZKTestCase {
 
   @Test
   public void testFailedRestorationWithLostLog() {
-
+    FilenameFilter filter = (dir, name) -> name.startsWith(Util.TXLOG_PREFIX);
+    File[] backupLogs = backupFileRootDir.listFiles(filter);
+    Assert.assertNotNull(backupLogs);
+    for (File backupLog : backupLogs) {
+      backupLog.renameTo(
+          new File(backupLog.getPath().replaceAll(Util.TXLOG_PREFIX, BackupUtil.LOST_LOG_PREFIX)));
+    }
+    try {
+      RestoreFromBackupTool restoreTool =
+          new RestoreFromBackupTool(backupStorage, restoreSnapLog, txnCnt, false);
+      restoreTool.run();
+      Assert.fail("The restoration should fail because the transaction logs are lost logs.");
+    } catch (RestoreException e) {
+      e.printStackTrace();
+    } catch (Exception e1) {
+      Assert.fail("RestoreException should be thrown.");
+    }
   }
 
   private void validateRestoreCoverage(int restoreZxid) throws IOException {
@@ -188,7 +222,10 @@ public class RestorationToolTest extends ZKTestCase {
     Assert.assertEquals(1, matchedSnapshotInBackupStorage.length);
     ZxidRange snapZxidRange =
         Util.getZxidRangeFromName(matchedSnapshotInBackupStorage[0].getName(), Util.SNAP_PREFIX);
-    Assert.assertTrue(snapZxidRange.getHigh() <= restoreZxid);
+    System.out.println(Arrays.toString(matchedSnapshotInBackupStorage));
+    Assert.assertTrue("High zxid of restored snapshot " + Long.toHexString(snapZxidRange.getHigh())
+            + " is larger than the restoreZxid " + Long.toHexString(restoreZxid) + ".",
+        snapZxidRange.getHigh() <= restoreZxid);
 
     // Test restored txn logs
     List<File> restoredLogs =
@@ -202,9 +239,11 @@ public class RestorationToolTest extends ZKTestCase {
       }
     });
     Assert.assertTrue(
+        "The oldest restored txn log has a higher zxid than the low zxid of restored snapshot.",
         Util.getZxidFromName(restoredLogs.get(0).getName(), Util.TXLOG_PREFIX) <= snapZxidRange
             .getLow());
-    Assert.assertTrue(restoreSnapLog.getLastLoggedZxid() >= restoreZxid);
+    Assert.assertTrue("The restored files does not cover to the restoreZxid.",
+        restoreSnapLog.getLastLoggedZxid() >= restoreZxid);
 
     // Validate all the zxids are covered
     boolean[] coveredZxid = new boolean[txnCnt + 1];
@@ -225,7 +264,8 @@ public class RestorationToolTest extends ZKTestCase {
     }
 
     for (int i = (int) snapZxidRange.getLow(); i <= restoreZxid; i++) {
-      Assert.assertTrue(coveredZxid[i]);
+      Assert.assertTrue("Zxid " + Long.toHexString(i) + " is not covered in the restoration.",
+          coveredZxid[i]);
     }
   }
 

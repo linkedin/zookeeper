@@ -36,7 +36,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.zookeeper.server.backup.BackupConfig;
 import org.apache.zookeeper.server.backup.BackupFileInfo;
 import org.apache.zookeeper.server.backup.exception.BackupException;
@@ -251,10 +250,5 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
     if (zxidToRestore != Long.MAX_VALUE) {
       restoreDir.truncateLog(zxidToRestore);
     }
-  }
-
-  @Override
-  public void cleanupTempFilesForRestoration(File tempDir) throws IOException {
-    FileUtils.deleteDirectory(tempDir);
   }
 }

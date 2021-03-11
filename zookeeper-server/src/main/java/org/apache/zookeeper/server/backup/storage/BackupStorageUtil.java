@@ -23,7 +23,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.zookeeper.server.backup.exception.BackupException;
 import org.apache.zookeeper.server.persistence.Util;
@@ -158,5 +163,29 @@ public class BackupStorageUtil {
     for (File tempFile : tempFiles) {
       Files.delete(Paths.get(tempFile.getPath()));
     }
+  }
+
+  /**
+   * Delete a directory and all files inside it
+   * @param directory The path to the directory
+   * @throws IOException
+   */
+  public static void deleteDirectoryRecursively(File directory) throws IOException {
+    Stream<Path> files = Files.walk(Paths.get(directory.getPath()));
+    files.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
+    files.close();
+  }
+
+  /**
+   * Get a list of regular files (non-directory) recursively under a directory
+   * @param directory the path to the directory
+   * @return A list of regular files
+   * @throws IOException
+   */
+  public static List<File> readFilesRecursivelyInDirectory(File directory) throws IOException {
+    List<Path> filePaths = Files.walk(Paths.get(directory.getPath())).filter(Files::isRegularFile)
+        .collect(Collectors.toList());
+    return filePaths.stream().map(filePath -> new File(String.valueOf(filePath)))
+        .collect(Collectors.toList());
   }
 }
