@@ -185,13 +185,11 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
     OutputStream outputStream = null;
 
     // Create input stream from the source file in backup storage
-    String parentDirPath;
+    String parentDirPath = fileRootPath;
     String srcFileName = srcName.getName();
     if (srcFileName.startsWith(BackupStorageUtil.RESTORE_FILE_PREFIX)) {
       parentDirPath = srcName.getParent();
       srcFileName = srcFileName.substring(BackupStorageUtil.RESTORE_FILE_PREFIX.length());
-    } else {
-      parentDirPath = fileRootPath;
     }
     String backupFilePath = BackupStorageUtil.constructBackupFilePath(srcFileName, parentDirPath);
     File backupFile = new File(backupFilePath);

@@ -25,7 +25,6 @@ import java.util.List;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Range;
-import jline.internal.Log;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
 import org.apache.zookeeper.server.backup.BackupUtil.ZxidPart;
 import org.apache.zookeeper.server.backup.exception.RestoreException;
