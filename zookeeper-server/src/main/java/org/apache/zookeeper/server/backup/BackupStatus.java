@@ -24,11 +24,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.channels.FileLock;
 
-import jline.internal.Log;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.InputArchive;
 import org.apache.jute.OutputArchive;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Coordinate the backup status among processes local to a server;
@@ -36,6 +37,8 @@ import org.apache.jute.OutputArchive;
  * to the ZAB protocol or by some external mechanism.
  */
 public class BackupStatus {
+  private static final Logger LOG = LoggerFactory.getLogger(BackupStatus.class);
+
   /**
    * The name for the backup status file.
    */
@@ -134,7 +137,7 @@ public class BackupStatus {
     }
 
     if (!statusFile.exists()) {
-      Log.info("BackupStatus::update(): Creating statusFile " + statusFile.getAbsolutePath());
+      LOG.info("BackupStatus::update(): Creating statusFile " + statusFile.getAbsolutePath());
       statusFile.createNewFile();
       statusFile.setReadable(true, false);
       // TODO: potentially insecure. making this writable might make this vulnerable to tampering
