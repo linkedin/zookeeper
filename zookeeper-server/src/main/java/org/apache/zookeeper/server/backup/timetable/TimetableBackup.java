@@ -70,9 +70,9 @@ public class TimetableBackup extends BackupProcess {
     this.tmpDir = tmpDir;
     // Start creating records
     (new Thread(new TimetableRecorder(snapLog, timetableBackupIntervalInMs))).start();
-    logger.info(
-        "Starting TimetableBackup Process with backup interval: " + backupIntervalInMilliseconds
-            + " ms and timetable backup interval: " + timetableBackupIntervalInMs + " ms.");
+    logger.info("TimetableBackup::Starting TimetableBackup Process with backup interval: "
+        + backupIntervalInMilliseconds + " ms and timetable backup interval: "
+        + timetableBackupIntervalInMs + " ms.");
   }
 
   @Override

@@ -595,6 +595,7 @@ public class BackupManager {
 
     // if timetable backup is enabled, initialize it as well
     if (backupConfig.isTimetableEnabled()) {
+      LOG.info("BackupManager::initialize(): timetable is enabled!");
       // Create a separate instance of BackupStorageProvider for timetable backup
       // This is because we want the timetable backup to be stored in a different storage path
       BackupStorageProvider timetableBackupStorage;
@@ -602,6 +603,9 @@ public class BackupManager {
         timetableBackupStorage = createStorageProviderImpl(
             backupConfig.getBuilder().setBackupStoragePath(backupConfig.getTimetableStoragePath())
                 .build().get());
+        LOG.info(
+            "BackupManager::initialize(): timetable backup storage initialized! Timetable storage path: "
+                + backupConfig.getTimetableStoragePath());
       } catch (Exception e) {
         throw new BackupException(e.getMessage(), e);
       }
