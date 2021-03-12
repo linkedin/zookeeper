@@ -33,6 +33,7 @@ import org.apache.zookeeper.server.backup.storage.BackupStorageProvider;
 import org.apache.zookeeper.server.persistence.FileTxnLog;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
 import org.apache.zookeeper.server.persistence.TxnLog;
+import org.apache.zookeeper.txn.TxnHeader;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -126,9 +127,6 @@ public class TimetableBackup extends BackupProcess {
    * @return
    */
   private String makeTimetableBackupFileName() {
-    String name = String.format("%s.%d-%d", TIMETABLE_PREFIX, timetableRecordMap.firstKey(),
-        timetableRecordMap.lastKey());
-    System.out.println(name);
     return String.format("%s.%d-%d", TIMETABLE_PREFIX, timetableRecordMap.firstKey(),
         timetableRecordMap.lastKey());
   }
@@ -176,16 +174,17 @@ public class TimetableBackup extends BackupProcess {
         try {
           lock.lock();
           try {
-            FileTxnLog.ZxidTimestampPair lastLoggedZxidTimestampPair =
-                snapLog.getLastLoggedZxidTimestampPair();
-            // Ignore if the last logged zxid is not valid (-1) because -1 (int) will cause a
-            // NumberFormatException during conversion to Hex String
-            // Also do not create repeat records
-            if (lastLoggedZxidTimestampPair.getZxid() >= 0
-                && lastLoggedZxidTimestampPair.getZxid() != lastLoggedZxidFromLastRun) {
-              timetableRecordMap.put(lastLoggedZxidTimestampPair.getTimestamp(),
-                  Long.toHexString(lastLoggedZxidTimestampPair.getZxid()));
-              lastLoggedZxidFromLastRun = lastLoggedZxidTimestampPair.getZxid();
+            TxnHeader lastLoggedTxnHeader = snapLog.getLastLoggedTxnHeader();
+            if (lastLoggedTxnHeader != null) {
+              // Ignore if the last logged zxid is not valid (-1) because -1 (int) will cause a
+              // NumberFormatException during conversion to Hex String
+              // Also do not create repeat records
+              long zxid = lastLoggedTxnHeader.getZxid();
+              long timestamp = lastLoggedTxnHeader.getTime();
+              if (zxid >= 0 && zxid != lastLoggedZxidFromLastRun) {
+                timetableRecordMap.put(timestamp, Long.toHexString(zxid));
+                lastLoggedZxidFromLastRun = zxid;
+              }
             }
           } catch (Exception e) {
             // Bad state, this shouldn't happen. Throw an exception
@@ -194,8 +193,11 @@ public class TimetableBackup extends BackupProcess {
           } finally {
             lock.unlock();
           }
-          synchronized (this) { // synchronized to get notification of termination in case of shutdown
-            wait(timetableBackupIntervalInMs);
+          synchronized (TimetableBackup.this) {
+            // synchronized to get notification of termination in case of shutdown
+            // must synchronize on the outer class's reference (TimetableBackup.this) because
+            // the notifyAll() call wakes up all BackupProcess instances
+            TimetableBackup.this.wait(timetableBackupIntervalInMs);
           }
         } catch (InterruptedException e) {
           logger.warn("TimetableRecorder::run(): Interrupted exception while waiting for "

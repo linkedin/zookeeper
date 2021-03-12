@@ -454,12 +454,12 @@ public class FileTxnSnapLog {
     }
 
     /**
-     * the last logged zxid + timestamp pair from the transaction log
-     * @return last logged zxid and timestamp
+     * the last logged TxnHeader from the transaction log
+     * @return last logged TxnHeader
      */
-    public FileTxnLog.ZxidTimestampPair getLastLoggedZxidTimestampPair() {
+    public TxnHeader getLastLoggedTxnHeader() {
         FileTxnLog txnLog = new FileTxnLog(dataDir);
-        return txnLog.getLastLoggedZxidTimestampPair();
+        return txnLog.getLastLoggedTxnHeader();
     }
 
     /**

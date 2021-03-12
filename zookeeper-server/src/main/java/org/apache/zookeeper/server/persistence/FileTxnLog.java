@@ -382,52 +382,28 @@ public class FileTxnLog implements TxnLog, Closeable {
     }
 
     /**
-     * get the last zxid/timestamp pair that was logged in the transaction logs
-     * @return the last zxid logged in the transaction logs and its corresponding timestamp
+     * get the last TxnHeader that was logged in the transaction logs
+     * @return the last TxnHeader containing txn metadata
      */
-    public ZxidTimestampPair getLastLoggedZxidTimestampPair() {
+    public TxnHeader getLastLoggedTxnHeader() {
         File[] files = getLogFiles(logDir.listFiles(), 0);
         long maxLog = files.length > 0 ? Util
             .getZxidFromName(files[files.length - 1].getName(), LOG_FILE_PREFIX) : -1;
 
         TxnIterator itr = null;
-        ZxidTimestampPair zxidTimestampPair = null;
+        TxnHeader hdr = null;
         try {
             FileTxnLog txn = new FileTxnLog(logDir);
             itr = txn.read(maxLog);
-            zxidTimestampPair = new ZxidTimestampPair(maxLog, itr.getHeader().getTime());
-            while (itr.next()) {
-                TxnHeader hdr = itr.getHeader();
-                zxidTimestampPair = new ZxidTimestampPair(hdr.getZxid(), hdr.getTime());
-            }
+            do {
+                hdr = itr.getHeader();
+            } while (itr.next());
         } catch (IOException e) {
             LOG.warn("getLastLoggedZxidTimestampPair():: Unexpected exception", e);
         } finally {
             close(itr);
         }
-        if (zxidTimestampPair == null) {
-            // In case of an exception, return an invalid ZxidTimestampPair
-            zxidTimestampPair = new ZxidTimestampPair(-1, -1);
-        }
-        return zxidTimestampPair;
-    }
-
-    public class ZxidTimestampPair {
-        private final long zxid;
-        private final long timestamp;
-
-        public ZxidTimestampPair(long zxid, long timestamp) {
-            this.zxid = zxid;
-            this.timestamp = timestamp;
-        }
-
-        public long getZxid() {
-            return zxid;
-        }
-
-        public long getTimestamp() {
-            return timestamp;
-        }
+        return hdr;
     }
 
     private void close(TxnIterator itr) {
