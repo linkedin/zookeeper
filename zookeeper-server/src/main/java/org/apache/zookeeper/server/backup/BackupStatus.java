@@ -24,6 +24,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.channels.FileLock;
 
+import jline.internal.Log;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.InputArchive;
@@ -133,8 +134,12 @@ public class BackupStatus {
     }
 
     if (!statusFile.exists()) {
-      System.out.println("Creating file " + statusFile.getAbsolutePath());
+      Log.info("BackupStatus::update(): Creating statusFile " + statusFile.getAbsolutePath());
       statusFile.createNewFile();
+      statusFile.setReadable(true, false);
+      // TODO: potentially insecure. making this writable might make this vulnerable to tampering
+      // TODO: but file lock file needs to be worldwide-writable
+      statusFile.setWritable(true, false);
     }
 
     FileOutputStream os = null;
