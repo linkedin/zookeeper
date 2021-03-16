@@ -28,6 +28,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Range;
 
 import org.apache.zookeeper.server.backup.storage.BackupStorageProvider;
+import org.apache.zookeeper.server.backup.timetable.TimetableBackup;
 import org.apache.zookeeper.server.persistence.Util;
 
 /**
@@ -37,6 +38,8 @@ public class BackupUtil {
   // first valid tnxlog zxid is 1 while first valid zxid for snapshots is 0
   public static final long INVALID_LOG_ZXID = 0;
   public static final long INVALID_SNAP_ZXID = -1;
+  // invalid timestamp is -1 by convention
+  public static final long INVALID_TIMESTAMP = -1L;
   public static final String LOST_LOG_PREFIX = "lostLogs";
 
   /**
@@ -53,7 +56,8 @@ public class BackupUtil {
   public enum BackupFileType {
     SNAPSHOT(Util.SNAP_PREFIX),
     TXNLOG(Util.TXLOG_PREFIX),
-    LOSTLOG(BackupUtil.LOST_LOG_PREFIX);
+    LOSTLOG(BackupUtil.LOST_LOG_PREFIX),
+    TIMETABLE(TimetableBackup.TIMETABLE_PREFIX);
 
     private final String prefix;
 

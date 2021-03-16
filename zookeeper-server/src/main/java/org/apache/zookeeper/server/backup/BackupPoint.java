@@ -22,8 +22,8 @@ package org.apache.zookeeper.server.backup;
  * Describes the point to which backups of log and snap files have been completed.
  */
 public class BackupPoint {
-  private final long logZxid;
-  private final long snapZxid;
+  private long logZxid;
+  private long snapZxid;
   private long timestamp; // backup timetable is optional
 
   /**
@@ -31,9 +31,10 @@ public class BackupPoint {
    * @param logZxid the highest log zxid that has been backed up
    * @param snapZxid the start zxid of the latest snap that has been backedup
    */
-  public BackupPoint(long logZxid, long snapZxid) {
+  public BackupPoint(long logZxid, long snapZxid, long timestamp) {
     this.logZxid = logZxid;
     this.snapZxid = snapZxid;
+    this.timestamp = timestamp;
   }
 
   /**
@@ -42,11 +43,19 @@ public class BackupPoint {
    */
   public long getLogZxid() { return logZxid; }
 
+  public void setLogZxid(long logZxid) {
+    this.logZxid = logZxid;
+  }
+
   /**
    * Get the starting zxid of the latest backed up snap
    * @return the starting zxid of the latest backed up snap
    */
   public long getSnapZxid() { return snapZxid; }
+
+  public void setSnapZxid(long snapZxid) {
+    this.snapZxid = snapZxid;
+  }
 
   /**
    * Get the starting timestamp of the latest backed up timetable backup file
