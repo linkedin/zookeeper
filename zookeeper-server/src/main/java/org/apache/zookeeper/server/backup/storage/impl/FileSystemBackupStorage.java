@@ -41,7 +41,6 @@ import org.apache.zookeeper.server.backup.BackupFileInfo;
 import org.apache.zookeeper.server.backup.exception.BackupException;
 import org.apache.zookeeper.server.backup.storage.BackupStorageProvider;
 import org.apache.zookeeper.server.backup.storage.BackupStorageUtil;
-import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -185,13 +184,8 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
     OutputStream outputStream = null;
 
     // Create input stream from the source file in backup storage
-    String parentDirPath = fileRootPath;
-    String srcFileName = srcName.getName();
-    if (srcFileName.startsWith(BackupStorageUtil.RESTORE_FILE_PREFIX)) {
-      parentDirPath = srcName.getParent();
-      srcFileName = srcFileName.substring(BackupStorageUtil.RESTORE_FILE_PREFIX.length());
-    }
-    String backupFilePath = BackupStorageUtil.constructBackupFilePath(srcFileName, parentDirPath);
+    String backupFilePath =
+        BackupStorageUtil.constructBackupFilePath(srcName.getName(), fileRootPath);
     File backupFile = new File(backupFilePath);
 
     try {
@@ -228,25 +222,6 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
       BackupStorageUtil.cleanUpTempFiles(path);
     } finally {
       exclusiveLock.unlock();
-    }
-  }
-
-  @Override
-  public void processBackupFilesForRestoration(File tempDirDestination,
-      List<BackupFileInfo> filesToCopy, long zxidToRestore) throws IOException {
-    if (!tempDirDestination.exists()) {
-      tempDirDestination.mkdirs();
-    }
-
-    FileTxnSnapLog restoreDir = new FileTxnSnapLog(tempDirDestination, tempDirDestination);
-
-    for (BackupFileInfo fileToCopy : filesToCopy) {
-      Files.copy(fileToCopy.getBackedUpFile().toPath(),
-          new File(restoreDir.getDataDir(), fileToCopy.getStandardFile().getName()).toPath());
-    }
-
-    if (zxidToRestore != Long.MAX_VALUE) {
-      restoreDir.truncateLog(zxidToRestore);
     }
   }
 }

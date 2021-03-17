@@ -20,14 +20,18 @@ package org.apache.zookeeper.server.backup;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Range;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
 import org.apache.zookeeper.server.backup.BackupUtil.ZxidPart;
-import org.apache.zookeeper.server.backup.exception.RestoreException;
+import org.apache.zookeeper.server.backup.exception.BackupException;
 import org.apache.zookeeper.server.backup.storage.BackupStorageProvider;
 import org.apache.zookeeper.server.backup.storage.BackupStorageUtil;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
@@ -48,6 +52,7 @@ public class RestoreFromBackupTool {
   FileTxnSnapLog snapLog;
   long zxidToRestore;
   boolean dryRun;
+  File restoreTempDir;
 
   List<BackupFileInfo> logs;
   List<BackupFileInfo> snaps;
@@ -61,7 +66,7 @@ public class RestoreFromBackupTool {
    * Default constructor; requires using parseArgs to setup state.
    */
   public RestoreFromBackupTool() {
-    this(null, null, -1L, false);
+    this(null, null, -1L, false, null);
   }
 
   /**
@@ -71,11 +76,12 @@ public class RestoreFromBackupTool {
    * @param zxidToRestore the zxid upto which to restore, or Long.MAX to restore to the latest
    *                      available transactionally consistent zxid.
    * @param dryRun whether this is a dryrun in which case no files are actually copied
+   * @param restoreTempDir a local temporary directory to store the copied files from backup storage for restoration
    */
   RestoreFromBackupTool(BackupStorageProvider storageProvider, FileTxnSnapLog snapLog,
-      long zxidToRestore, boolean dryRun) {
+      long zxidToRestore, boolean dryRun, File restoreTempDir) {
 
-    filesToCopy = new ArrayList<BackupFileInfo>();
+    filesToCopy = new ArrayList<>();
     snapNeededIndex = -1;
     mostRecentLogNeededIndex = -1;
     oldestLogNeededIndex = -1;
@@ -84,52 +90,50 @@ public class RestoreFromBackupTool {
     this.zxidToRestore = zxidToRestore;
     this.snapLog = snapLog;
     this.dryRun = dryRun;
+    this.restoreTempDir = restoreTempDir;
   }
 
   /**
    * Attempts to perform a restore.
    */
   public void run() throws IOException {
-    if (!findFilesToRestore()) {
-      throw new RestoreException("Failed to find a valid snapshot and logs to restore.");
-    }
-
-    // Create a temporary dir in backup storage for backup file processing
-    File tempDirForRestoration =
-        new File(filesToCopy.listIterator().next().getBackedUpFile().getParent(),
-            "Restore_" + Long.toHexString(zxidToRestore));
-
     try {
-      storage.processBackupFilesForRestoration(tempDirForRestoration, filesToCopy, zxidToRestore);
-      LOG.info("Copied " + filesToCopy.size() + " backup files to temp dir " + tempDirForRestoration
-          .getPath() + " in backup storage for file preparation for restoration to zxid " + zxidToRestore + ".");
-
-      List<File> processedFiles = BackupStorageUtil.readFilesRecursivelyInDirectory(tempDirForRestoration);
-      for (File processedFile : processedFiles) {
-        String fileName = processedFile.getName();
-        File parentFile = processedFile.getParentFile();
-        File base = Util.isSnapshotFileName(fileName) ? snapLog.getSnapDir() : snapLog.getDataDir();
-        File destination = new File(base, fileName);
-
-        if (!destination.exists()) {
-          LOG.info("Copying " + fileName + " to " + destination.getPath() + ".");
-
-          if (!dryRun) {
-            // Adding "RESTORE_" prefix to file name to differentiate the restore files from original backup files,
-            // so in storage side it will use a different way to construct the file path from original backup files
-            storage.copyToLocalStorage(
-                new File(parentFile, BackupStorageUtil.RESTORE_FILE_PREFIX + fileName),
-                destination);
-          }
-        } else {
-          LOG.info("Skipping " + fileName + " because it already exists as " + destination.getPath()
-              + ".");
-        }
+      if (!findFilesToRestore()) {
+        throw new IllegalArgumentException("Failed to find a valid snapshot and logs to restore.");
       }
-    } catch (IOException ioe) {
-      throw new IOException("Hit exception when attempting to restore." + ioe.getMessage());
+
+      if (snapLog == null) {
+        throw new BackupException(
+            "The destination directory for restoration are not specified, please check the input.");
+      }
+
+      if (!snapLog.getDataDir().exists() || !snapLog.getSnapDir().exists()) {
+        throw new BackupException(
+            "The destination directories for restoration do not exist, please check the input. Destination path for snapshots: "
+                + snapLog.getSnapDir().getPath() + ", destination path for txn logs: " + snapLog
+                .getDataDir().getPath());
+      }
+
+      if (!dryRun) {
+        if (!restoreTempDir.exists() && !restoreTempDir.mkdirs()) {
+          throw new BackupException(
+              "Failed to create a temporary directory at path: " + restoreTempDir.getPath()
+                  + " to store restored files.");
+        }
+
+        // This step will create a "version-2" directory inside restoreTempDir,
+        // all the restored files will be copied to version-2 directory
+        FileTxnSnapLog restoreTempSnapLog =
+            new FileTxnSnapLog(this.restoreTempDir, this.restoreTempDir);
+
+        copyRestoredFilesToLocalTempDir(restoreTempSnapLog);
+        processRestoredFiles(restoreTempSnapLog, zxidToRestore);
+        copyProcessedRestoredFilesToDestination(restoreTempSnapLog);
+      }
     } finally {
-      BackupStorageUtil.deleteDirectoryRecursively(tempDirForRestoration);
+      if (restoreTempDir != null && restoreTempDir.exists()) {
+        BackupStorageUtil.deleteDirectoryRecursively(restoreTempDir);
+      }
     }
   }
 
@@ -291,5 +295,79 @@ public class RestoreFromBackupTool {
     }
 
     return true;
+  }
+
+  /**
+   * Copy selected backup files from backup storage to a local restore temporary directory for further processing later
+   * @param restoreTempSnapLog A FileTxnSnapLog instance created on the specified local temporary directory path
+   * @throws IOException
+   */
+  private void copyRestoredFilesToLocalTempDir(FileTxnSnapLog restoreTempSnapLog)
+      throws IOException {
+    // Copy backup files to local temp directory
+    for (BackupFileInfo backedupFile : filesToCopy) {
+      String standardFilename = backedupFile.getStandardFile().getName();
+      // Does not matter if it's dataDir or logDir since we use same path for these two directories
+      File localTempDest = new File(restoreTempSnapLog.getDataDir(), standardFilename);
+
+      if (!localTempDest.exists()) {
+        LOG.info("Copying " + backedupFile.getBackedUpFile() + " from backup storage to temp dir "
+            + localTempDest.getPath() + ".");
+        storage.copyToLocalStorage(backedupFile.getBackedUpFile(), localTempDest);
+      } else {
+        LOG.info(
+            "Skipping copying " + backedupFile.getBackedUpFile() + " because it already exists as "
+                + localTempDest.getPath() + ".");
+      }
+    }
+  }
+
+  /**
+   * Process the restored files stored in local restore temporary directory to get them ready to be copied to final destination
+   * The processing currently includes truncating txn logs to zxidToRestore.
+   * @param restoreTempSnapLog A FileTxnSnapLog instance created on the specified local temporary directory path
+   * @param zxidToRestore The zxid to restore to
+   * @throws IOException
+   */
+  private void processRestoredFiles(FileTxnSnapLog restoreTempSnapLog, long zxidToRestore) {
+    if (zxidToRestore != Long.MAX_VALUE) {
+      restoreTempSnapLog.truncateLog(zxidToRestore);
+      LOG.info(
+          "Successfully truncate the logs inside restoreTempDir " + restoreTempDir + " to zxid "
+              + zxidToRestore);
+    }
+  }
+
+  /**
+   * Copy the processed files from local restore temp directory to final destination:
+   * snapshot to snapDir, txn logs to logDir.
+   * @param restoreTempSnapLog A FileTxnSnapLog instance created on the specified local temporary directory path
+   * @throws IOException
+   */
+  private void copyProcessedRestoredFilesToDestination(FileTxnSnapLog restoreTempSnapLog)
+      throws IOException {
+    Stream<Path> processedFilePaths = Files.list(restoreTempSnapLog.getDataDir().toPath());
+    List<File> processedFiles =
+        processedFilePaths.map(filePath -> new File(String.valueOf(filePath)))
+            .collect(Collectors.toList());
+    for (File processedFile : processedFiles) {
+      String fileName = processedFile.getName();
+      File finalDestinationBase = null;
+      if (Util.isSnapshotFileName(fileName)) {
+        finalDestinationBase = snapLog.getSnapDir();
+      } else if (Util.isLogFileName(fileName)) {
+        finalDestinationBase = snapLog.getDataDir();
+      }
+      if (finalDestinationBase != null) {
+        if (!finalDestinationBase.exists()) {
+          throw new BackupException("The provided path for restoration destination does not exist: "
+              + finalDestinationBase.getPath());
+        }
+        LOG.info(
+            "Copying " + processedFile.getPath() + " from temp dir to final destination directory "
+                + finalDestinationBase.getPath() + ".");
+        Files.copy(processedFile.toPath(), new File(finalDestinationBase, fileName).toPath());
+      }
+    }
   }
 }

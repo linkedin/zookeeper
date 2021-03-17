@@ -26,8 +26,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Comparator;
-import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.zookeeper.server.backup.exception.BackupException;
@@ -38,7 +36,6 @@ import org.apache.zookeeper.server.persistence.Util;
  */
 public class BackupStorageUtil {
   public static final String TMP_FILE_PREFIX = "TMP_";
-  public static final String RESTORE_FILE_PREFIX = "RESTORE_";
   private static final File[] NO_FILE = new File[0];
 
   /**
@@ -174,18 +171,5 @@ public class BackupStorageUtil {
     Stream<Path> files = Files.walk(Paths.get(directory.getPath()));
     files.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
     files.close();
-  }
-
-  /**
-   * Get a list of regular files (non-directory) recursively under a directory
-   * @param directory the path to the directory
-   * @return A list of regular files
-   * @throws IOException
-   */
-  public static List<File> readFilesRecursivelyInDirectory(File directory) throws IOException {
-    List<Path> filePaths = Files.walk(Paths.get(directory.getPath())).filter(Files::isRegularFile)
-        .collect(Collectors.toList());
-    return filePaths.stream().map(filePath -> new File(String.valueOf(filePath)))
-        .collect(Collectors.toList());
   }
 }

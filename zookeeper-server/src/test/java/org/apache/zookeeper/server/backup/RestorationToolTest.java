@@ -21,11 +21,15 @@ package org.apache.zookeeper.server.backup;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.stream.Collectors;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.DummyWatcher;
@@ -37,7 +41,6 @@ import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.SyncRequestProcessor;
 import org.apache.zookeeper.server.ZooKeeperServer;
-import org.apache.zookeeper.server.backup.exception.RestoreException;
 import org.apache.zookeeper.server.backup.storage.BackupStorageProvider;
 import org.apache.zookeeper.server.backup.storage.BackupStorageUtil;
 import org.apache.zookeeper.server.backup.storage.impl.FileSystemBackupStorage;
@@ -160,18 +163,32 @@ public class RestorationToolTest extends ZKTestCase {
   public void testSuccessfulRestorationToZxid() throws IOException {
     for (int i = 0; i < 5; i++) {
       int restoreZxid = random.nextInt(txnCnt);
+      File restoreTempDir = ClientBase.createTmpDir();
       RestoreFromBackupTool restoreTool =
-          new RestoreFromBackupTool(backupStorage, restoreSnapLog, restoreZxid, false);
+          new RestoreFromBackupTool(backupStorage, restoreSnapLog, restoreZxid, false,
+              restoreTempDir);
       restoreTool.run();
       validateRestoreCoverage(restoreZxid);
-      BackupStorageUtil.deleteDirectoryRecursively(restoreDir);
+
+      // Clean up restoreDir for next test
+      List<Path> filePaths =
+          Files.walk(Paths.get(restoreDir.getPath())).filter(Files::isRegularFile)
+              .collect(Collectors.toList());
+      filePaths.forEach(filePath -> {
+        try {
+          Files.delete(filePath);
+        } catch (IOException e) {
+          e.printStackTrace();
+        }
+      });
     }
   }
 
   @Test
   public void testSuccessfulRestorationToLatest() throws IOException {
     RestoreFromBackupTool restoreTool =
-        new RestoreFromBackupTool(backupStorage, restoreSnapLog, Long.MAX_VALUE, false);
+        new RestoreFromBackupTool(backupStorage, restoreSnapLog, Long.MAX_VALUE, false,
+            backupTmpDir);
     restoreTool.run();
     validateRestoreCoverage(txnCnt);
   }
@@ -180,11 +197,11 @@ public class RestorationToolTest extends ZKTestCase {
   public void testFailedRestorationWithOutOfRangeZxid() throws IOException {
     try {
       RestoreFromBackupTool restoreTool =
-          new RestoreFromBackupTool(backupStorage, restoreSnapLog, txnCnt + 1, false);
+          new RestoreFromBackupTool(backupStorage, restoreSnapLog, txnCnt + 1, false, backupTmpDir);
       restoreTool.run();
       Assert.fail(
           "The restoration should fail because the zxid restoration point specified is out of range.");
-    } catch (RestoreException e) {
+    } catch (IllegalArgumentException e) {
       e.printStackTrace();
     } catch (Exception e1) {
       Assert.fail("RestoreException should be thrown.");
@@ -202,10 +219,10 @@ public class RestorationToolTest extends ZKTestCase {
     }
     try {
       RestoreFromBackupTool restoreTool =
-          new RestoreFromBackupTool(backupStorage, restoreSnapLog, txnCnt, false);
+          new RestoreFromBackupTool(backupStorage, restoreSnapLog, txnCnt, false, backupTmpDir);
       restoreTool.run();
       Assert.fail("The restoration should fail because the transaction logs are lost logs.");
-    } catch (RestoreException e) {
+    } catch (IllegalArgumentException e) {
       e.printStackTrace();
     } catch (Exception e1) {
       Assert.fail("RestoreException should be thrown.");
@@ -248,12 +265,14 @@ public class RestorationToolTest extends ZKTestCase {
     // Validate all the zxids are covered
     boolean[] coveredZxid = new boolean[txnCnt + 1];
     for (File restoredLog : restoredLogs) {
-      if (restoredLog.getName().startsWith(Util.SNAP_PREFIX)) {
+      if (!restoredLog.getName().startsWith(Util.TXLOG_PREFIX)) {
         continue;
       }
       File[] matchedLogInBackupStorage =
           BackupStorageUtil.getFilesWithPrefix(backupFileRootDir, restoredLog.getName() + "-");
-      Assert.assertEquals(1, matchedLogInBackupStorage.length);
+      Assert.assertEquals(
+          "Number of matched transaction log file for file " + restoredLog.getName() + " is not 1.",
+          1, matchedLogInBackupStorage.length);
       ZxidRange logZxidRange =
           Util.getZxidRangeFromName(matchedLogInBackupStorage[0].getName(), Util.TXLOG_PREFIX);
       int lowZxid = (int) logZxidRange.getLow();
