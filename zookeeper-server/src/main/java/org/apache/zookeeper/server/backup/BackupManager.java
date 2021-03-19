@@ -28,7 +28,7 @@ import org.apache.zookeeper.server.backup.storage.BackupStorageProvider;
 import org.apache.zookeeper.server.backup.timetable.TimetableBackup;
 import org.apache.zookeeper.server.persistence.*;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
-import org.apache.zookeeper.server.backup.BackupUtil.ZxidPart;
+import org.apache.zookeeper.server.backup.BackupUtil.IntervalEndpoint;
 import org.apache.zookeeper.server.util.ZxidUtils;
 import org.apache.zookeeper.txn.TxnHeader;
 import org.slf4j.Logger;
@@ -185,11 +185,11 @@ public class BackupManager {
       backupStorage.cleanupInvalidFiles(null);
 
       BackupFileInfo latest =
-          BackupUtil.getLatest(backupStorage, BackupFileType.TXNLOG, ZxidPart.MIN_ZXID);
+          BackupUtil.getLatest(backupStorage, BackupFileType.TXNLOG, IntervalEndpoint.START);
 
       long rZxid = latest == null
           ? BackupUtil.INVALID_LOG_ZXID
-          : latest.getZxid(ZxidPart.MAX_ZXID);
+          : latest.getIntervalEndpoint(IntervalEndpoint.END);
 
       logger.info("Latest Zxid from storage: {}  from status: {}",
           ZxidUtils.zxidToString(rZxid), ZxidUtils.zxidToString(backupPoint.getLogZxid()));
@@ -372,11 +372,11 @@ public class BackupManager {
       backupStorage.cleanupInvalidFiles(null);
 
       BackupFileInfo latest =
-          BackupUtil.getLatest(backupStorage, BackupFileType.SNAPSHOT, ZxidPart.MIN_ZXID);
+          BackupUtil.getLatest(backupStorage, BackupFileType.SNAPSHOT, IntervalEndpoint.START);
 
       long rZxid = latest == null
           ? BackupUtil.INVALID_SNAP_ZXID
-          : latest.getZxid(ZxidPart.MIN_ZXID);
+          : latest.getIntervalEndpoint(IntervalEndpoint.START);
 
       logger.info("Latest Zxid from storage: {}  from status: {}",
           ZxidUtils.zxidToString(rZxid), ZxidUtils.zxidToString(backupPoint.getSnapZxid()));
