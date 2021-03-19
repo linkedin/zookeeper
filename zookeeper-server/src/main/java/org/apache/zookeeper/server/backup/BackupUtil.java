@@ -206,7 +206,7 @@ public class BackupUtil {
    * Sort backup files by the starting point of the interval (min zxid part) in ascending order
    * @param bsp the backup provide from which to get the files
    * @param fileType the backup file to get
-   * @return the files listed in the specified order using the request zxid
+   * @return the files listed in the specified order using the requested interval endpoint
    */
   public static List<BackupFileInfo> getBackupFilesByMin(BackupStorageProvider bsp, BackupFileType fileType)
       throws IOException {
@@ -217,7 +217,7 @@ public class BackupUtil {
    * Sort backup files by the starting point of the interval (min zxid part) in ascending order
    * @param bsp the backup provide from which to get the files
    * @param fileType the backup file to get
-   * @return the files listed in the specified order using the requested interval part
+   * @return the files listed in the specified order using the requested interval endpoint
    */
   public static List<BackupFileInfo> getBackupFilesByMin(
       BackupStorageProvider bsp,
@@ -228,12 +228,12 @@ public class BackupUtil {
   }
 
   /**
-   * Sort backup files by the specified interval part
+   * Sort backup files by the specified interval endpoint
    * @param bsp the backup provide from which to get the files
    * @param fileType the backup file to get
    * @param whichIntervalEndpoint which interval part (min or max) to sort by
    * @param sortOrder which direction to sort the values (e.g. zxid) in
-   * @return the file info for the matching files sorted on the request zxid
+   * @return the file info for the matching files sorted by the requested interval endpoint
    */
   public static List<BackupFileInfo> getBackupFiles(
       BackupStorageProvider bsp,
@@ -250,7 +250,7 @@ public class BackupUtil {
    * @param fileType the backup file to get
    * @param whichIntervalEndpoint which interval endpoint to sort by
    * @param sortOrder which direction to sort the ranges in
-   * @return the file info for the matching files sorted on the requested interval endpoint
+   * @return the file info for the matching files sorted by the requested interval endpoint
    */
   public static List<BackupFileInfo> getBackupFiles(
       BackupStorageProvider bsp,
@@ -263,7 +263,7 @@ public class BackupUtil {
   }
 
   /**
-   * Sort the backup files of the requested types by the specified zxid part
+   * Sort the backup files of the requested types by the specified interval endpoint
    * @param bsp the backup provide from which to get the files
    * @param fileTypes the backup file types to get
    * @param whichIntervalEndpoint which interval endpoint to sort by
@@ -280,7 +280,7 @@ public class BackupUtil {
   }
 
   /**
-   * Sort the backup files of the requested types by the specified zxid part
+   * Sort the backup files of the requested types by the specified interval endpoint
    * @param bsp the backup provide from which to get the files
    * @param fileTypes the backup file types to get
    * @param whichIntervalEndpoint which interval endpoint to sort by

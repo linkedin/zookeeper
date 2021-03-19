@@ -92,12 +92,9 @@ public class TimetableBackup extends BackupProcess {
   @Override
   protected void initialize() throws IOException {
     // Get the latest timetable backup file from backup storage
-    // NOTE: it is okay to use ZxidPart here because timetable backup files also follow zxid-like
-    // naming convention, with timestamp range instead of zxid range
     BackupFileInfo latest = BackupUtil.getLatest(backupStorage, BackupUtil.BackupFileType.TIMETABLE,
-        BackupUtil.IntervalEndpoint.START);
+        BackupUtil.IntervalEndpoint.END);
 
-    // Use ZxidPart.MAX_ZXID, which will give us the ending (max) timestamp
     long latestTimestampBackedUp = latest == null ? BackupUtil.INVALID_TIMESTAMP
         : latest.getIntervalEndpoint(BackupUtil.IntervalEndpoint.END);
 
