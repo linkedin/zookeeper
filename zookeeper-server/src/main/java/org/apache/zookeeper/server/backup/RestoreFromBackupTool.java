@@ -135,6 +135,7 @@ public class RestoreFromBackupTool {
       }
     } finally {
       if (restoreTempDir != null && restoreTempDir.exists()) {
+        // Using recursive delete here because a "version-2" directory is created under restoreTempDir with FileTxnSnapLog
         BackupStorageUtil.deleteDirectoryRecursively(restoreTempDir);
       }
     }
@@ -358,18 +359,18 @@ public class RestoreFromBackupTool {
     }
     for (File processedFile : processedFiles) {
       String fileName = processedFile.getName();
-      File finalDestinationBase = null;
-      if (Util.isSnapshotFileName(fileName)) {
-        finalDestinationBase = snapLog.getSnapDir();
-      } else if (Util.isLogFileName(fileName)) {
-        finalDestinationBase = snapLog.getDataDir();
+      if (!Util.isSnapshotFileName(fileName) && !Util.isLogFileName(fileName)) {
+        // Skip files that aren't snapshot nor transaction logs. Should only happen in tests.
+        LOG.info("Skipping copying " + processedFile.getPath()
+            + " from temp dir to final destination directory.");
+        continue;
       }
-      if (finalDestinationBase != null) {
-        LOG.info(
-            "Copying " + processedFile.getPath() + " from temp dir to final destination directory "
-                + finalDestinationBase.getPath() + ".");
-        Files.copy(processedFile.toPath(), new File(finalDestinationBase, fileName).toPath());
-      }
+      File finalDestinationBase =
+          Util.isSnapshotFileName(fileName) ? snapLog.getSnapDir() : snapLog.getDataDir();
+      LOG.info(
+          "Copying " + processedFile.getPath() + " from temp dir to final destination directory "
+              + finalDestinationBase.getPath() + ".");
+      Files.copy(processedFile.toPath(), new File(finalDestinationBase, fileName).toPath());
     }
   }
 }
