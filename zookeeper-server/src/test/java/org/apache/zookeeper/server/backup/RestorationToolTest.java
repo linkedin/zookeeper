@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.stream.Collectors;
 
+import org.apache.commons.cli.CommandLine;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.DummyWatcher;
 import org.apache.zookeeper.PortAssignment;
@@ -52,8 +53,12 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.zookeeper.cli.RestoreCommand.*;
+import static org.mockito.Mockito.when;
 
 public class RestorationToolTest extends ZKTestCase {
   private static final Logger LOG = LoggerFactory.getLogger(RestorationToolTest.class);
@@ -76,6 +81,9 @@ public class RestorationToolTest extends ZKTestCase {
   private FileTxnSnapLog restoreSnapLog;
   private File backupFileRootDir;
   private File restoreTempDir;
+  private File timetableDir;
+  private BackupManager backupManager;
+  private long timestampInMiddle;
 
   @Before
   public void setup() throws Exception {
@@ -85,6 +93,7 @@ public class RestorationToolTest extends ZKTestCase {
     backupDir = ClientBase.createTmpDir();
     restoreDir = ClientBase.createTmpDir();
     restoreTempDir = ClientBase.createTmpDir();
+    timetableDir = ClientBase.createTmpDir();
 
     backupConfig = new BackupConfig.Builder().
         setEnabled(true).
@@ -93,6 +102,9 @@ public class RestorationToolTest extends ZKTestCase {
         setBackupStoragePath(backupDir.getAbsolutePath()).
         setNamespace(TEST_NAMESPACE).
         setStorageProviderClassName(FileSystemBackupStorage.class.getName()).
+        setTimetableEnabled(true).
+        setTimetableBackupIntervalInMs(100L).
+        setTimetableStoragePath(timetableDir.getPath()).
         build().get();
     backupStorage = new FileSystemBackupStorage(backupConfig);
     backupFileRootDir = new File(backupDir, TEST_NAMESPACE);
@@ -113,7 +125,7 @@ public class RestorationToolTest extends ZKTestCase {
     connection = new ZooKeeper(HOSTPORT, CONNECTION_TIMEOUT, DummyWatcher.INSTANCE);
     restoreSnapLog = new FileTxnSnapLog(restoreDir, restoreDir);
 
-    BackupManager backupManager = new BackupManager(dataDir, dataDir,-1, backupConfig);
+    backupManager = new BackupManager(dataDir, dataDir, -1, backupConfig);
     backupManager.initialize();
 
     for (int i = 1; i < txnCnt; i++) {
@@ -125,6 +137,9 @@ public class RestorationToolTest extends ZKTestCase {
       }
       if (getRandomBoolean(0.2f)) {
         zks.takeSnapshot();
+      }
+      if (i == txnCnt / 2) {
+        timestampInMiddle = System.currentTimeMillis();
       }
     }
     backupManager.getLogBackup().run(1);
@@ -200,7 +215,8 @@ public class RestorationToolTest extends ZKTestCase {
   public void testFailedRestorationWithOutOfRangeZxid() throws IOException {
     try {
       RestoreFromBackupTool restoreTool =
-          new RestoreFromBackupTool(backupStorage, restoreSnapLog, txnCnt + 1, false, restoreTempDir);
+          new RestoreFromBackupTool(backupStorage, restoreSnapLog, txnCnt + 1, false,
+              restoreTempDir);
       restoreTool.run();
       Assert.fail(
           "The restoration should fail because the zxid restoration point specified is out of range.");
@@ -293,5 +309,55 @@ public class RestorationToolTest extends ZKTestCase {
 
   private boolean getRandomBoolean(float p) {
     return random.nextFloat() < p;
+  }
+
+  @Test
+  public void testRestoreToZxidByCommandLine() throws IOException {
+    //Restore to a random zxid
+    int restoreZxid = random.nextInt(txnCnt);
+    RestoreFromBackupTool restoreTool = new RestoreFromBackupTool();
+    CommandLine cl = Mockito.mock(CommandLine.class);
+    when(cl.hasOption(RESTORE_ZXID_OPTION)).thenReturn(true);
+    when(cl.hasOption(BACKUP_STORE_OPTION)).thenReturn(true);
+    when(cl.hasOption(SNAP_DESTINATION_OPTION)).thenReturn(true);
+    when(cl.hasOption(LOG_DESTINATION_OPTION)).thenReturn(true);
+    when(cl.getOptionValue(RESTORE_ZXID_OPTION)).thenReturn(String.valueOf(restoreZxid));
+    when(cl.getOptionValue(BACKUP_STORE_OPTION))
+        .thenReturn("gpfs::" + backupDir.getPath() + ":" + TEST_NAMESPACE);
+    when(cl.getOptionValue(SNAP_DESTINATION_OPTION)).thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(LOG_DESTINATION_OPTION)).thenReturn(restoreDir.getPath());
+    Assert.assertTrue(restoreTool.runWithRetries(cl));
+    validateRestoreCoverage(restoreZxid);
+
+    //Restore to latest
+    when(cl.getOptionValue(RESTORE_ZXID_OPTION)).thenReturn(BackupUtil.LATEST);
+    Assert.assertTrue(restoreTool.runWithRetries(cl));
+    validateRestoreCoverage(txnCnt);
+  }
+
+  @Test
+  public void testRestoreToTimestampByCommandLine() throws IOException {
+    //Restore to a timestamp in the middle of backup
+    backupManager.getTimetableBackup().run(1);
+    RestoreFromBackupTool restoreTool = new RestoreFromBackupTool();
+    CommandLine cl = Mockito.mock(CommandLine.class);
+    when(cl.hasOption(RESTORE_ZXID_OPTION)).thenReturn(false);
+    when(cl.hasOption(RESTORE_TIMESTAMP_OPTION)).thenReturn(true);
+    when(cl.hasOption(BACKUP_STORE_OPTION)).thenReturn(true);
+    when(cl.hasOption(SNAP_DESTINATION_OPTION)).thenReturn(true);
+    when(cl.hasOption(LOG_DESTINATION_OPTION)).thenReturn(true);
+    when(cl.hasOption(TIMETABLE_STORAGE_PATH_OPTION)).thenReturn(true);
+    when(cl.getOptionValue(RESTORE_TIMESTAMP_OPTION)).thenReturn(String.valueOf(timestampInMiddle));
+    when(cl.getOptionValue(BACKUP_STORE_OPTION))
+        .thenReturn("gpfs::" + backupDir.getPath() + ":" + TEST_NAMESPACE);
+    when(cl.getOptionValue(SNAP_DESTINATION_OPTION)).thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(LOG_DESTINATION_OPTION)).thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(TIMETABLE_STORAGE_PATH_OPTION)).thenReturn(timetableDir.getPath() + "/" + TEST_NAMESPACE);
+    Assert.assertTrue(restoreTool.runWithRetries(cl));
+
+    //Restore to latest using timestamp
+    when(cl.getOptionValue(RESTORE_TIMESTAMP_OPTION)).thenReturn(BackupUtil.LATEST);
+    Assert.assertTrue(restoreTool.runWithRetries(cl));
+    validateRestoreCoverage(txnCnt);
   }
 }
