@@ -24,6 +24,9 @@ import org.apache.zookeeper.jmx.MBeanRegistry;
 import org.apache.zookeeper.server.backup.exception.BackupException;
 import org.apache.zookeeper.server.backup.monitoring.BackupBean;
 import org.apache.zookeeper.server.backup.monitoring.BackupStats;
+import org.apache.zookeeper.server.backup.monitoring.TimetableBackupBean;
+import org.apache.zookeeper.server.backup.monitoring.TimetableBackupMXBean;
+import org.apache.zookeeper.server.backup.monitoring.TimetableBackupStats;
 import org.apache.zookeeper.server.backup.storage.BackupStorageProvider;
 import org.apache.zookeeper.server.backup.timetable.TimetableBackup;
 import org.apache.zookeeper.server.persistence.*;
@@ -67,8 +70,11 @@ public class BackupManager {
   private final BackupStorageProvider backupStorage;
   private final long serverId;
   private final String namespace;
+
   @VisibleForTesting
   protected BackupBean backupBean = null;
+  protected TimetableBackupBean timetableBackupBean = null;
+
   private BackupStats backupStats = null;
 
   // Optional timetable backup
@@ -535,9 +541,15 @@ public class BackupManager {
       snapBackup.shutdown();
       logBackup = null;
       snapBackup = null;
+
+      // Unregister MBeans so they can get GC-ed
       if (backupBean != null) {
         MBeanRegistry.getInstance().unregister(backupBean);
         backupBean = null;
+      }
+      if (timetableBackupBean != null) {
+        MBeanRegistry.getInstance().unregister(timetableBackupBean);
+        timetableBackupBean = null;
       }
     }
   }
@@ -606,9 +618,25 @@ public class BackupManager {
       } catch (Exception e) {
         throw new BackupException(e.getMessage(), e);
       }
+
+      // create metric-related classes for timetable backup
+      TimetableBackupStats timetableBackupStats = new TimetableBackupStats();
+      timetableBackupBean = new TimetableBackupBean(timetableBackupStats, serverId);
+      try {
+        MBeanRegistry.getInstance().register(timetableBackupBean, null);
+        LOG.info("BackupManager::initialize(): registered timetable backup bean {} with JMX.",
+            backupBean.getName());
+      } catch (JMException e) {
+        LOG.warn(
+            "BackupManager::initialize(): Failed to register timetable backup bean with JMX for "
+                + "namespace {} on server {}.", namespace, serverId, e);
+      }
+
+      // create an instance of TimetableBackup and initialize
       timetableBackup = new TimetableBackup(new FileTxnSnapLog(dataLogDir, snapDir), tmpDir,
           timetableBackupStorage, backupIntervalInMilliseconds,
-          backupConfig.getTimetableBackupIntervalInMs(), backupStatus, backupPoint);
+          backupConfig.getTimetableBackupIntervalInMs(), backupStatus, backupPoint,
+          timetableBackupStats);
       timetableBackup.initialize();
     }
   }
