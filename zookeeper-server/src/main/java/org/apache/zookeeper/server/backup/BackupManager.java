@@ -577,7 +577,7 @@ public class BackupManager {
       MBeanRegistry.getInstance().register(backupBean, null);
       LOG.info("Registered Backup bean {} with JMX.", backupBean.getName());
     } catch (JMException e) {
-      LOG.warn("Failed to register Backup bean with JMX for namespace {} on server {}.", namespace,
+      LOG.error("Failed to register Backup bean with JMX for namespace {} on server {}.", namespace,
           serverId, e);
       backupBean = null;
     }
@@ -623,11 +623,14 @@ public class BackupManager {
       TimetableBackupStats timetableBackupStats = new TimetableBackupStats();
       timetableBackupBean = new TimetableBackupBean(timetableBackupStats, serverId);
       try {
-        MBeanRegistry.getInstance().register(timetableBackupBean, null);
+        // Put timetable backup bean under backup bean, so that they are coupled. this is
+        // consistent with the backup-timetable design where backup must be enabled in order for
+        // timetable to work
+        MBeanRegistry.getInstance().register(timetableBackupBean, backupBean);
         LOG.info("BackupManager::initialize(): registered timetable backup bean {} with JMX.",
             backupBean.getName());
       } catch (JMException e) {
-        LOG.warn(
+        LOG.error(
             "BackupManager::initialize(): Failed to register timetable backup bean with JMX for "
                 + "namespace {} on server {}.", namespace, serverId, e);
       }

@@ -21,7 +21,7 @@ package org.apache.zookeeper.server.backup.monitoring;
 import org.apache.zookeeper.jmx.ZKMBeanInfo;
 
 public class TimetableBackupBean implements ZKMBeanInfo, TimetableBackupMXBean {
-  public static final String TIMETABLE_BACKUP_MBEAN_PREFIX = "Timetable_Backup_server";
+  public static final String TIMETABLE_BACKUP_MBEAN_PREFIX = "TimetableBackup";
   private final TimetableBackupStats backupStats;
   private final String name;
 
