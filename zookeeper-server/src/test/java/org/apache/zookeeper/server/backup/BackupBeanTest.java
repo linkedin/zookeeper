@@ -154,7 +154,7 @@ public class BackupBeanTest extends ZKTestCase {
     BackupManager bm = new BackupManager(dataDir, dataDir, serverId, backupConfig);
     String expectedMBeanName = "Backup_" + TEST_NAMESPACE + ".server" + serverId;
     String expectedTimetableMBeanName =
-        TimetableBackupBean.TIMETABLE_BACKUP_MBEAN_PREFIX + serverId;
+        TimetableBackupBean.TIMETABLE_BACKUP_MBEAN_NAME;
     Set<ZKMBeanInfo> mbeans = MBeanRegistry.getInstance().getRegisteredBeans();
     Assert.assertTrue(containsMBean(mbeans, expectedMBeanName, false));
     Assert.assertTrue(containsMBean(mbeans, expectedTimetableMBeanName, false));

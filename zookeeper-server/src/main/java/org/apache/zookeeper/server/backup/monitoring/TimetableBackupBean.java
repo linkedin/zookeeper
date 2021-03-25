@@ -21,18 +21,16 @@ package org.apache.zookeeper.server.backup.monitoring;
 import org.apache.zookeeper.jmx.ZKMBeanInfo;
 
 public class TimetableBackupBean implements ZKMBeanInfo, TimetableBackupMXBean {
-  public static final String TIMETABLE_BACKUP_MBEAN_PREFIX = "TimetableBackup";
+  public static final String TIMETABLE_BACKUP_MBEAN_NAME = "TimetableBackup";
   private final TimetableBackupStats backupStats;
-  private final String name;
 
-  public TimetableBackupBean(TimetableBackupStats backupStats, long serverId) {
+  public TimetableBackupBean(TimetableBackupStats backupStats) {
     this.backupStats = backupStats;
-    this.name = TIMETABLE_BACKUP_MBEAN_PREFIX + serverId;
   }
 
   @Override
   public String getName() {
-    return name;
+    return TIMETABLE_BACKUP_MBEAN_NAME;
   }
 
   @Override

@@ -88,6 +88,7 @@ public class BackupManagerTest extends ZKTestCase implements Watcher {
    */
   private static final long TIMETABLE_BACKUP_INTERVAL_IN_MS = 100L;
   private File timetableBackupDir;
+  private BackupConfig.Builder backupConfigBuilder;
 
   @Before
   public void setup() throws Exception {
@@ -100,7 +101,7 @@ public class BackupManagerTest extends ZKTestCase implements Watcher {
     timetableBackupDir = ClientBase.createTmpDir();
 
     // Create a dummy config
-    BackupConfig.Builder backupConfigBuilder = new BackupConfig.Builder();
+    backupConfigBuilder = new BackupConfig.Builder();
     backupConfig = backupConfigBuilder.
         setEnabled(true).
         setStatusDir(backupStatusDir).

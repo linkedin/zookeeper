@@ -621,14 +621,19 @@ public class BackupManager {
 
       // create metric-related classes for timetable backup
       TimetableBackupStats timetableBackupStats = new TimetableBackupStats();
-      timetableBackupBean = new TimetableBackupBean(timetableBackupStats, serverId);
+      timetableBackupBean = new TimetableBackupBean(timetableBackupStats);
       try {
         // Put timetable backup bean under backup bean, so that they are coupled. this is
         // consistent with the backup-timetable design where backup must be enabled in order for
         // timetable to work
-        MBeanRegistry.getInstance().register(timetableBackupBean, backupBean);
-        LOG.info("BackupManager::initialize(): registered timetable backup bean {} with JMX.",
-            backupBean.getName());
+        if (backupBean != null) {
+          MBeanRegistry.getInstance().register(timetableBackupBean, backupBean);
+          LOG.info("BackupManager::initialize(): registered timetable backup bean {} with JMX.",
+              backupBean.getName());
+        } else {
+          LOG.error("BackupManager::initialize(): Failed to register timetable backup bean with "
+              + "JMX because parent BackupBean is null!");
+        }
       } catch (JMException e) {
         LOG.error(
             "BackupManager::initialize(): Failed to register timetable backup bean with JMX for "
