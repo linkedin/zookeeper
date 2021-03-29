@@ -72,6 +72,7 @@ public class BackupConfig {
    *       <backupStoragePath>/<namespace>/translog-123456
    */
   private final String namespace;
+  private static final String UNKNOWN = "UNKNOWN";
 
   /*
    * Optional timetable configs
@@ -93,7 +94,7 @@ public class BackupConfig {
     this.storageProviderClassName = builder.storageProviderClassName.get();
     this.storageConfig = builder.storageConfig.orElse(null);
     this.backupStoragePath = builder.backupStoragePath.orElse("");
-    this.namespace = builder.namespace.orElse("UNKNOWN");
+    this.namespace = builder.namespace.orElse(UNKNOWN);
     this.timetableEnabled = builder.timetableEnabled.orElse(false);
     // If timetable storage path is not given, use the backup storage path
     this.timetableStoragePath = builder.timetableStoragePath.orElse(backupStoragePath);

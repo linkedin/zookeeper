@@ -28,7 +28,7 @@ import java.util.List;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Range;
 import org.apache.commons.cli.CommandLine;
-import org.apache.zookeeper.cli.RestoreCommand;
+import org.apache.zookeeper.cli.RestoreCommand.*;
 import org.apache.zookeeper.common.ConfigException;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
 import org.apache.zookeeper.server.backup.BackupUtil.IntervalEndpoint;
@@ -123,8 +123,28 @@ public class RestoreFromBackupTool {
    * @throws IOException if the backup provider cannot be instantiated correctly.
    */
   public void parseArgs(CommandLine cl) {
-    // Read the backup storage path
-    String backupStoragePath = cl.getOptionValue(RestoreCommand.BACKUP_STORE_OPTION);
+    String backupStoragePath = cl.getOptionValue(OptionShortForm.BACKUP_STORE);
+    createBackupStorageProvider(backupStoragePath);
+
+    // Read the restore point
+    if (cl.hasOption(OptionShortForm.RESTORE_ZXID)) {
+      parseRestoreZxid(cl);
+    } else if (cl.hasOption(OptionShortForm.RESTORE_TIMESTAMP)) {
+      parseRestoreTimestamp(cl, backupStoragePath);
+    }
+
+    parseRestoreDestination(cl);
+    parseRestoreTempDir(cl);
+
+    // Check if this is a dry-run
+    if (cl.hasOption(OptionShortForm.DRY_RUN)) {
+      dryRun = true;
+    }
+
+    System.out.println("parseArgs successful.");
+  }
+
+  private void createBackupStorageProvider(String backupStoragePath) {
     String[] backupStorageParams = backupStoragePath.split(":");
     if (backupStorageParams.length != 4) {
       System.err.println(
@@ -162,67 +182,70 @@ public class RestoreFromBackupTool {
               .getMessage());
       System.exit(1);
     }
+  }
 
-    // Read the restore point
-    if (cl.hasOption(RestoreCommand.RESTORE_ZXID_OPTION)) {
-      String zxidToRestoreStr = cl.getOptionValue(RestoreCommand.RESTORE_ZXID_OPTION);
-      if (zxidToRestoreStr.equalsIgnoreCase(BackupUtil.LATEST)) {
-        zxidToRestore = Long.MAX_VALUE;
-      } else {
-        int base = 10;
-        String numStr = zxidToRestoreStr;
+  private void parseRestoreZxid(CommandLine cl) {
+    String zxidToRestoreStr = cl.getOptionValue(OptionShortForm.RESTORE_ZXID);
+    if (zxidToRestoreStr.equalsIgnoreCase(BackupUtil.LATEST)) {
+      zxidToRestore = Long.MAX_VALUE;
+    } else {
+      int base = 10;
+      String numStr = zxidToRestoreStr;
 
-        if (zxidToRestoreStr.startsWith(HEX_PREFIX)) {
-          numStr = zxidToRestoreStr.substring(2);
-          base = 16;
-        }
-        try {
-          zxidToRestore = Long.parseLong(numStr, base);
-        } catch (NumberFormatException nfe) {
-          System.err
-              .println("Invalid number specified for restore zxid point, the input is: " + numStr);
-          System.exit(2);
-        }
+      if (zxidToRestoreStr.startsWith(HEX_PREFIX)) {
+        numStr = zxidToRestoreStr.substring(2);
+        base = 16;
       }
-    } else if (cl.hasOption(RestoreCommand.RESTORE_TIMESTAMP_OPTION)) {
-      String timestampStr = cl.getOptionValue(RestoreCommand.RESTORE_TIMESTAMP_OPTION);
-      String timetableStoragePath = backupStoragePath;
-      if (cl.hasOption(RestoreCommand.TIMETABLE_STORAGE_PATH_OPTION)) {
-        timetableStoragePath = cl.getOptionValue(RestoreCommand.TIMETABLE_STORAGE_PATH_OPTION);
-      }
-      File[] timetableFiles = new File(timetableStoragePath)
-          .listFiles(file -> file.getName().startsWith(TimetableBackup.TIMETABLE_PREFIX));
-      if (timetableFiles == null || timetableFiles.length == 0) {
-        System.err.println("Could not find timetable files at the path: " + timetableStoragePath);
-        System.exit(2);
-      }
-      String zxidRestorePointInHex;
       try {
-        zxidRestorePointInHex =
-            TimetableUtil.findLastZxidFromTimestamp(timetableFiles, timestampStr);
-        zxidToRestore = Long.parseLong(zxidRestorePointInHex, 16);
-      } catch (IllegalArgumentException | BackupException e) {
-        System.err.println(
-            "Could not find a valid zxid from timetable using the timestamp provided: "
-                + timestampStr + ". The error message is: " + e.getMessage());
+        zxidToRestore = Long.parseLong(numStr, base);
+      } catch (NumberFormatException nfe) {
+        System.err
+            .println("Invalid number specified for restore zxid point, the input is: " + numStr);
         System.exit(2);
       }
     }
+  }
 
+  private void parseRestoreTimestamp(CommandLine cl, String backupStoragePath) {
+    String timestampStr = cl.getOptionValue(OptionShortForm.RESTORE_TIMESTAMP);
+    String timetableStoragePath = backupStoragePath;
+    if (cl.hasOption(OptionShortForm.TIMETABLE_STORAGE_PATH)) {
+      timetableStoragePath = cl.getOptionValue(OptionShortForm.TIMETABLE_STORAGE_PATH);
+    }
+    File[] timetableFiles = new File(timetableStoragePath)
+        .listFiles(file -> file.getName().startsWith(TimetableBackup.TIMETABLE_PREFIX));
+    if (timetableFiles == null || timetableFiles.length == 0) {
+      System.err.println("Could not find timetable files at the path: " + timetableStoragePath);
+      System.exit(2);
+    }
+    String zxidRestorePointInHex;
+    try {
+      zxidRestorePointInHex = TimetableUtil.findLastZxidFromTimestamp(timetableFiles, timestampStr);
+      zxidToRestore = Long.parseLong(zxidRestorePointInHex, 16);
+    } catch (IllegalArgumentException | BackupException e) {
+      System.err.println(
+          "Could not find a valid zxid from timetable using the timestamp provided: " + timestampStr
+              + ". The error message is: " + e.getMessage());
+      System.exit(2);
+    }
+  }
+
+  private void parseRestoreDestination(CommandLine cl) {
     // Read restore destination: dataDir and logDir
     try {
-      File snapDir = new File(cl.getOptionValue(RestoreCommand.SNAP_DESTINATION_OPTION));
-      File logDir = new File(cl.getOptionValue(RestoreCommand.LOG_DESTINATION_OPTION));
+      File snapDir = new File(cl.getOptionValue(OptionShortForm.SNAP_DESTINATION));
+      File logDir = new File(cl.getOptionValue(OptionShortForm.LOG_DESTINATION));
       snapLog = new FileTxnSnapLog(logDir, snapDir);
     } catch (IOException ioe) {
       System.err.println("Could not setup transaction log utility." + ioe);
       System.exit(3);
     }
+  }
 
-    // Get the local restore temp dir path if it is provided
-    if (cl.hasOption(RestoreCommand.LOCAL_RESTORE_TEMP_DIR_PATH_OPTION)) {
+  private void parseRestoreTempDir(CommandLine cl) {
+    if (cl.hasOption(OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH)) {
       String localRestoreTempDirPath =
-          cl.getOptionValue(RestoreCommand.LOCAL_RESTORE_TEMP_DIR_PATH_OPTION);
+          cl.getOptionValue(OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH);
       restoreTempDir = new File(localRestoreTempDirPath);
     }
 
@@ -230,13 +253,6 @@ public class RestoreFromBackupTool {
       // Default address for restore temp dir if not set. It will be deleted after the restoration is done.
       this.restoreTempDir = new File(snapLog.getDataDir(), "RestoreTempDir_" + zxidToRestore);
     }
-
-    // Check if this is a dry-run
-    if (cl.hasOption(RestoreCommand.DRY_RUN_OPTION)) {
-      dryRun = true;
-    }
-
-    System.out.println("parseArgs successful.");
   }
 
   /**

@@ -138,6 +138,7 @@ public class RestorationToolTest extends ZKTestCase {
       if (getRandomBoolean(0.2f)) {
         zks.takeSnapshot();
       }
+      // Record a timestamp that's in the valid backup timestamp range, used to test restoration to timestamp
       if (i == txnCnt / 2) {
         timestampInMiddle = System.currentTimeMillis();
       }
@@ -317,46 +318,46 @@ public class RestorationToolTest extends ZKTestCase {
     int restoreZxid = random.nextInt(txnCnt);
     RestoreFromBackupTool restoreTool = new RestoreFromBackupTool();
     CommandLine cl = Mockito.mock(CommandLine.class);
-    when(cl.hasOption(RESTORE_ZXID_OPTION)).thenReturn(true);
-    when(cl.hasOption(BACKUP_STORE_OPTION)).thenReturn(true);
-    when(cl.hasOption(SNAP_DESTINATION_OPTION)).thenReturn(true);
-    when(cl.hasOption(LOG_DESTINATION_OPTION)).thenReturn(true);
-    when(cl.getOptionValue(RESTORE_ZXID_OPTION)).thenReturn(String.valueOf(restoreZxid));
-    when(cl.getOptionValue(BACKUP_STORE_OPTION))
+    when(cl.hasOption(OptionShortForm.RESTORE_ZXID)).thenReturn(true);
+    when(cl.hasOption(OptionShortForm.BACKUP_STORE)).thenReturn(true);
+    when(cl.hasOption(OptionShortForm.SNAP_DESTINATION)).thenReturn(true);
+    when(cl.hasOption(OptionShortForm.LOG_DESTINATION)).thenReturn(true);
+    when(cl.getOptionValue(OptionShortForm.RESTORE_ZXID)).thenReturn(String.valueOf(restoreZxid));
+    when(cl.getOptionValue(OptionShortForm.BACKUP_STORE))
         .thenReturn("gpfs::" + backupDir.getPath() + ":" + TEST_NAMESPACE);
-    when(cl.getOptionValue(SNAP_DESTINATION_OPTION)).thenReturn(restoreDir.getPath());
-    when(cl.getOptionValue(LOG_DESTINATION_OPTION)).thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(OptionShortForm.SNAP_DESTINATION)).thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(OptionShortForm.LOG_DESTINATION)).thenReturn(restoreDir.getPath());
     Assert.assertTrue(restoreTool.runWithRetries(cl));
     validateRestoreCoverage(restoreZxid);
 
     //Restore to latest
-    when(cl.getOptionValue(RESTORE_ZXID_OPTION)).thenReturn(BackupUtil.LATEST);
+    when(cl.getOptionValue(OptionShortForm.RESTORE_ZXID)).thenReturn(BackupUtil.LATEST);
     Assert.assertTrue(restoreTool.runWithRetries(cl));
     validateRestoreCoverage(txnCnt);
   }
 
   @Test
   public void testRestoreToTimestampByCommandLine() throws IOException {
-    //Restore to a timestamp in the middle of backup
+    //Test restoration CLI using a timestamp recorded in the midpoint of the test ZNode creation
     backupManager.getTimetableBackup().run(1);
     RestoreFromBackupTool restoreTool = new RestoreFromBackupTool();
     CommandLine cl = Mockito.mock(CommandLine.class);
-    when(cl.hasOption(RESTORE_ZXID_OPTION)).thenReturn(false);
-    when(cl.hasOption(RESTORE_TIMESTAMP_OPTION)).thenReturn(true);
-    when(cl.hasOption(BACKUP_STORE_OPTION)).thenReturn(true);
-    when(cl.hasOption(SNAP_DESTINATION_OPTION)).thenReturn(true);
-    when(cl.hasOption(LOG_DESTINATION_OPTION)).thenReturn(true);
-    when(cl.hasOption(TIMETABLE_STORAGE_PATH_OPTION)).thenReturn(true);
-    when(cl.getOptionValue(RESTORE_TIMESTAMP_OPTION)).thenReturn(String.valueOf(timestampInMiddle));
-    when(cl.getOptionValue(BACKUP_STORE_OPTION))
+    when(cl.hasOption(OptionShortForm.RESTORE_ZXID)).thenReturn(false);
+    when(cl.hasOption(OptionShortForm.RESTORE_TIMESTAMP)).thenReturn(true);
+    when(cl.hasOption(OptionShortForm.BACKUP_STORE)).thenReturn(true);
+    when(cl.hasOption(OptionShortForm.SNAP_DESTINATION)).thenReturn(true);
+    when(cl.hasOption(OptionShortForm.LOG_DESTINATION)).thenReturn(true);
+    when(cl.hasOption(OptionShortForm.TIMETABLE_STORAGE_PATH)).thenReturn(true);
+    when(cl.getOptionValue(OptionShortForm.RESTORE_TIMESTAMP)).thenReturn(String.valueOf(timestampInMiddle));
+    when(cl.getOptionValue(OptionShortForm.BACKUP_STORE))
         .thenReturn("gpfs::" + backupDir.getPath() + ":" + TEST_NAMESPACE);
-    when(cl.getOptionValue(SNAP_DESTINATION_OPTION)).thenReturn(restoreDir.getPath());
-    when(cl.getOptionValue(LOG_DESTINATION_OPTION)).thenReturn(restoreDir.getPath());
-    when(cl.getOptionValue(TIMETABLE_STORAGE_PATH_OPTION)).thenReturn(timetableDir.getPath() + "/" + TEST_NAMESPACE);
+    when(cl.getOptionValue(OptionShortForm.SNAP_DESTINATION)).thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(OptionShortForm.LOG_DESTINATION)).thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(OptionShortForm.TIMETABLE_STORAGE_PATH)).thenReturn(timetableDir.getPath() + "/" + TEST_NAMESPACE);
     Assert.assertTrue(restoreTool.runWithRetries(cl));
 
     //Restore to latest using timestamp
-    when(cl.getOptionValue(RESTORE_TIMESTAMP_OPTION)).thenReturn(BackupUtil.LATEST);
+    when(cl.getOptionValue(OptionShortForm.RESTORE_TIMESTAMP)).thenReturn(BackupUtil.LATEST);
     Assert.assertTrue(restoreTool.runWithRetries(cl));
     validateRestoreCoverage(txnCnt);
   }
