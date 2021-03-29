@@ -28,7 +28,7 @@ import java.util.List;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Range;
 import org.apache.commons.cli.CommandLine;
-import org.apache.zookeeper.cli.RestoreCommand.*;
+import org.apache.zookeeper.cli.RestoreCommand;
 import org.apache.zookeeper.common.ConfigException;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
 import org.apache.zookeeper.server.backup.BackupUtil.IntervalEndpoint;
@@ -123,13 +123,13 @@ public class RestoreFromBackupTool {
    * @throws IOException if the backup provider cannot be instantiated correctly.
    */
   public void parseArgs(CommandLine cl) {
-    String backupStoragePath = cl.getOptionValue(OptionShortForm.BACKUP_STORE);
+    String backupStoragePath = cl.getOptionValue(RestoreCommand.OptionShortForm.BACKUP_STORE);
     createBackupStorageProvider(backupStoragePath);
 
     // Read the restore point
-    if (cl.hasOption(OptionShortForm.RESTORE_ZXID)) {
+    if (cl.hasOption(RestoreCommand.OptionShortForm.RESTORE_ZXID)) {
       parseRestoreZxid(cl);
-    } else if (cl.hasOption(OptionShortForm.RESTORE_TIMESTAMP)) {
+    } else if (cl.hasOption(RestoreCommand.OptionShortForm.RESTORE_TIMESTAMP)) {
       parseRestoreTimestamp(cl, backupStoragePath);
     }
 
@@ -137,7 +137,7 @@ public class RestoreFromBackupTool {
     parseRestoreTempDir(cl);
 
     // Check if this is a dry-run
-    if (cl.hasOption(OptionShortForm.DRY_RUN)) {
+    if (cl.hasOption(RestoreCommand.OptionShortForm.DRY_RUN)) {
       dryRun = true;
     }
 
@@ -185,7 +185,7 @@ public class RestoreFromBackupTool {
   }
 
   private void parseRestoreZxid(CommandLine cl) {
-    String zxidToRestoreStr = cl.getOptionValue(OptionShortForm.RESTORE_ZXID);
+    String zxidToRestoreStr = cl.getOptionValue(RestoreCommand.OptionShortForm.RESTORE_ZXID);
     if (zxidToRestoreStr.equalsIgnoreCase(BackupUtil.LATEST)) {
       zxidToRestore = Long.MAX_VALUE;
     } else {
@@ -207,10 +207,11 @@ public class RestoreFromBackupTool {
   }
 
   private void parseRestoreTimestamp(CommandLine cl, String backupStoragePath) {
-    String timestampStr = cl.getOptionValue(OptionShortForm.RESTORE_TIMESTAMP);
+    String timestampStr = cl.getOptionValue(RestoreCommand.OptionShortForm.RESTORE_TIMESTAMP);
     String timetableStoragePath = backupStoragePath;
-    if (cl.hasOption(OptionShortForm.TIMETABLE_STORAGE_PATH)) {
-      timetableStoragePath = cl.getOptionValue(OptionShortForm.TIMETABLE_STORAGE_PATH);
+    if (cl.hasOption(RestoreCommand.OptionShortForm.TIMETABLE_STORAGE_PATH)) {
+      timetableStoragePath =
+          cl.getOptionValue(RestoreCommand.OptionShortForm.TIMETABLE_STORAGE_PATH);
     }
     File[] timetableFiles = new File(timetableStoragePath)
         .listFiles(file -> file.getName().startsWith(TimetableBackup.TIMETABLE_PREFIX));
@@ -233,8 +234,8 @@ public class RestoreFromBackupTool {
   private void parseRestoreDestination(CommandLine cl) {
     // Read restore destination: dataDir and logDir
     try {
-      File snapDir = new File(cl.getOptionValue(OptionShortForm.SNAP_DESTINATION));
-      File logDir = new File(cl.getOptionValue(OptionShortForm.LOG_DESTINATION));
+      File snapDir = new File(cl.getOptionValue(RestoreCommand.OptionShortForm.SNAP_DESTINATION));
+      File logDir = new File(cl.getOptionValue(RestoreCommand.OptionShortForm.LOG_DESTINATION));
       snapLog = new FileTxnSnapLog(logDir, snapDir);
     } catch (IOException ioe) {
       System.err.println("Could not setup transaction log utility." + ioe);
@@ -243,9 +244,9 @@ public class RestoreFromBackupTool {
   }
 
   private void parseRestoreTempDir(CommandLine cl) {
-    if (cl.hasOption(OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH)) {
+    if (cl.hasOption(RestoreCommand.OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH)) {
       String localRestoreTempDirPath =
-          cl.getOptionValue(OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH);
+          cl.getOptionValue(RestoreCommand.OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH);
       restoreTempDir = new File(localRestoreTempDirPath);
     }
 

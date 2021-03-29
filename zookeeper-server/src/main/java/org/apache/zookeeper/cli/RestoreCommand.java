@@ -43,7 +43,7 @@ public class RestoreCommand extends CliCommand {
           + "](needed if restore to a timestamp) [" + OptionFullCommand.LOCAL_RESTORE_TEMP_DIR_PATH
           + "](optional) [" + OptionFullCommand.DRY_RUN + "](optional)";
 
-  public static final class OptionLongForm {
+  public final class OptionLongForm {
     /* Required if no restore timestamp is specified */
     public static final String RESTORE_ZXID = "restore_zxid";
     /* Required if no restore zxid is specified */
@@ -60,9 +60,13 @@ public class RestoreCommand extends CliCommand {
     public static final String LOCAL_RESTORE_TEMP_DIR_PATH = "local_restore_temp_dir_path";
     /* Optional. Default value false */
     public static final String DRY_RUN = "dry_run";
+
+    // Create a private constructor so it can't be instantiated
+    private OptionLongForm() {
+    }
   }
 
-  public static final class OptionShortForm {
+  public final class OptionShortForm {
     public static final String RESTORE_ZXID = "z";
     public static final String RESTORE_TIMESTAMP = "t";
     public static final String BACKUP_STORE = "b";
@@ -71,9 +75,13 @@ public class RestoreCommand extends CliCommand {
     public static final String TIMETABLE_STORAGE_PATH = "m";
     public static final String LOCAL_RESTORE_TEMP_DIR_PATH = "r";
     public static final String DRY_RUN = "n";
+
+    // Create a private constructor so it can't be instantiated
+    private OptionShortForm() {
+    }
   }
 
-  public static final class OptionFullCommand {
+  public final class OptionFullCommand {
     public static final String RESTORE_ZXID =
         "-" + OptionShortForm.RESTORE_ZXID + " " + OptionLongForm.RESTORE_ZXID;
     public static final String RESTORE_TIMESTAMP =
@@ -90,6 +98,10 @@ public class RestoreCommand extends CliCommand {
         "-" + OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH + " "
             + OptionLongForm.LOCAL_RESTORE_TEMP_DIR_PATH;
     public static final String DRY_RUN = "-" + OptionShortForm.DRY_RUN;
+
+    // Create a private constructor so it can't be instantiated
+    private OptionFullCommand() {
+    }
   }
 
   static {
