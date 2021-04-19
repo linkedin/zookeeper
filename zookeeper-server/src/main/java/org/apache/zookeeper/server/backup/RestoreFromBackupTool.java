@@ -22,7 +22,6 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -299,13 +298,14 @@ public class RestoreFromBackupTool {
         return true;
       } catch (IllegalArgumentException re) {
         System.err.println(
-            "Restore attempt failed due to insufficient backup files. Error message: "
-                + re.getMessage());
+            "Restore attempt failed, could not find all the required backup files to restore. "
+                + "Error message: " + re.getMessage());
         return false;
       } catch (BackupException be) {
         System.err.println(
-            "Restoration attempt failed due to a backup exception, please check the environment and try again. Error message: "
-                + be.getMessage());
+            "Restoration attempt failed due to a backup exception, it's usually caused by required"
+                + "directories not exist or failure of creating directories, etc. Please check the message. "
+                + "Error message: " + be.getMessage());
         return false;
       } catch (Exception e) {
         tries++;
@@ -352,10 +352,13 @@ public class RestoreFromBackupTool {
                   + dataDir.getPath() + " are: " + Arrays.toString(dataDirFiles)
                   + "; and files under snapDir: " + snapDir.getPath() + " are: " + Arrays
                   .toString(snapDirFiles) + ".");
+          Arrays.stream(Objects.requireNonNull(dataDir.listFiles())).forEach(File::delete);
+          Arrays.stream(Objects.requireNonNull(snapDir.listFiles())).forEach(File::delete);
         } else {
           throw new BackupException(
-              "The destination directories are not empty, user chose not to overwrite existing files, exiting restoration. Please check the destination directory dataDir path: "
-                  + dataDir.getPath() + ", and snapDir path" + snapDir.getPath());
+              "The destination directories are not empty, user chose not to overwrite existing files, exiting restoration. "
+                  + "Please check the destination directory dataDir path: " + dataDir.getPath()
+                  + ", and snapDir path" + snapDir.getPath());
         }
       }
 
@@ -612,8 +615,7 @@ public class RestoreFromBackupTool {
       LOG.info(
           "Copying " + processedFile.getPath() + " from temp dir to final destination directory "
               + finalDestinationBase.getPath() + ".");
-      Files.copy(processedFile.toPath(), new File(finalDestinationBase, fileName).toPath(),
-          StandardCopyOption.REPLACE_EXISTING);
+      Files.copy(processedFile.toPath(), new File(finalDestinationBase, fileName).toPath());
     }
   }
 }

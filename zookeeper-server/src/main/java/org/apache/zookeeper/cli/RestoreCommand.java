@@ -81,7 +81,7 @@ public class RestoreCommand extends CliCommand {
     public static final String LOCAL_RESTORE_TEMP_DIR_PATH = "r";
     public static final String DRY_RUN = "n";
     public static final String HELP = "h";
-    public static final String OVERWRITE = "overwrite";
+    public static final String OVERWRITE = "f";
 
     // Create a private constructor so it can't be instantiated
     private OptionShortForm() {
@@ -153,9 +153,9 @@ public class RestoreCommand extends CliCommand {
         + OptionFullCommand.LOCAL_RESTORE_TEMP_DIR_PATH
         + ": Optional, local path for creating a temporary intermediate directory for restoration, the directory will be deleted after restoration is done\n    "
         + OptionFullCommand.DRY_RUN + " " + OptionLongForm.DRY_RUN
-        + ": Optional, no files will be actually copied in a dry run\n    " + OptionFullCommand.OVERWRITE
-        + " " + OptionLongForm.OVERWRITE
-        + ": Optional, default false. If set to true, the destination directories will be overwritten if exist";
+        + ": Optional, no files will be actually copied in a dry run\n    "
+        + OptionFullCommand.OVERWRITE + " " + OptionLongForm.OVERWRITE
+        + ": Optional, default false. If true, the destination directories will be overwritten\n";
   }
 
   @Override
@@ -178,14 +178,14 @@ public class RestoreCommand extends CliCommand {
   @Override
   public boolean exec() throws CliException {
     if (cl.hasOption(OptionShortForm.HELP)) {
-      System.out.println(getUsageStr());
+      out.println(getUsageStr());
       return true;
     }
     if (cl.hasOption(OptionShortForm.OVERWRITE)) {
       Scanner scanner = new Scanner(System.in);
       boolean repeat = true;
       while (repeat) {
-        System.out.println(
+        out.println(
             "Are you sure you want to overwrite the destination directories? Please enter \"yes/no\".");
         String input = scanner.nextLine().toLowerCase();
         switch (input) {
@@ -193,10 +193,11 @@ public class RestoreCommand extends CliCommand {
             repeat = false;
             break;
           case "no":
-            System.out.println(
+            out.println(
                 "Exiting restoration. Please remove the \"overwrite\" option from the command, and try again.");
             return true;
           default:
+            out.println("Could not recognize the input: " + input + ". Please try again.");
             break;
         }
       }
