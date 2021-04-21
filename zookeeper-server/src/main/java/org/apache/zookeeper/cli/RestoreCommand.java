@@ -194,8 +194,8 @@ public class RestoreCommand extends CliCommand {
             break;
           case "no":
             out.println(
-                "Exiting restoration. Please remove the \"overwrite\" option from the command, and try again.");
-            return true;
+                "Exiting restoration. Please remove the \"-f\" (overwrite) option from the command, and try again.");
+            return false;
           default:
             out.println("Could not recognize the input: " + input + ". Please try again.");
             break;
