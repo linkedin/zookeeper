@@ -924,9 +924,14 @@
 
   <distributionManagement>
     <repository>
-      <id>bintray-linkedin-maven</id>
-      <name>linkedin-maven</name>
-      <url>https://api.bintray.com/maven/linkedin/maven/zookeeper/;publish=1;override=1</url>
+      <id>central</id>
+      <name>linkedin-releases</name>
+      <url>https://linkedin.jfrog.io/artifactory/zookeeper</url>
     </repository>
+    <snapshotRepository>
+      <id>snapshots</id>
+      <name>linkedin-snapshots</name>
+      <url>https://linkedin.jfrog.io/artifactory/zookeeper</url>
+    </snapshotRepository>
   </distributionManagement>
 </project>
