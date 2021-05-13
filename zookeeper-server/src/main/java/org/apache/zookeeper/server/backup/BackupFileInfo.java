@@ -24,7 +24,9 @@ import com.google.common.collect.Range;
 
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
 import org.apache.zookeeper.server.backup.BackupUtil.IntervalEndpoint;
+import org.apache.zookeeper.server.backup.exception.BackupException;
 import org.apache.zookeeper.server.backup.timetable.TimetableBackup;
+import org.apache.zookeeper.server.persistence.SnapStream;
 import org.apache.zookeeper.server.persistence.Util;
 
 /**
@@ -63,12 +65,29 @@ public class BackupFileInfo {
       this.standardFile = this.backupFile;
     } else if (backedupFilename.startsWith(Util.SNAP_PREFIX)) {
       this.fileType = BackupFileType.SNAPSHOT;
-      this.standardFile =
-          new File(this.backupFile.getParentFile(), backedupFilename.split("-")[0]);
+      // For snapshot backup files, we need to consider the case of snapshot compression
+      String streamMode = SnapStream.getStreamMode(backedupFilename).getName();
+      String standardFileName;
+      if (streamMode.isEmpty()) {
+        // No compression was used, so simply drop the end part
+        standardFileName = backedupFilename.split("-")[0];
+      } else {
+        // Snapshot compression is enabled; standardName looks like "snapshot.<zxid>.<streamMode>"
+        // Need to remove the ending zxid
+        String[] nameParts = backedupFilename.split("\\.");
+        if (nameParts.length != 3) {
+          throw new BackupException(
+              "BackupFileInfo: unable to create standardFile reference! backedupFilename: "
+                  + backedupFilename + " StreamMode: " + streamMode);
+        }
+        String zxidPartWithoutEnd = nameParts[1].split("-")[0];
+        // Combine all parts to generate a backup name
+        standardFileName = nameParts[0] + zxidPartWithoutEnd + nameParts[2];
+      }
+      this.standardFile = new File(this.backupFile.getParentFile(), standardFileName);
     } else if (backedupFilename.startsWith(Util.TXLOG_PREFIX)) {
       this.fileType = BackupFileType.TXNLOG;
-      this.standardFile =
-          new File(this.backupFile.getParentFile(), backedupFilename.split("-")[0]);
+      this.standardFile = new File(this.backupFile.getParentFile(), backedupFilename.split("-")[0]);
     } else if (backedupFilename.startsWith(TimetableBackup.TIMETABLE_PREFIX)) {
       this.fileType = BackupFileType.TIMETABLE;
       this.standardFile = this.backupFile;
