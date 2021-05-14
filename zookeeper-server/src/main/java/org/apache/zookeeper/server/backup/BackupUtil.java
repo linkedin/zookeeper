@@ -181,7 +181,7 @@ public class BackupUtil {
         }
         String zxidPart = String.format("%s-%x", nameParts[1], highZxid);
         // Combine all parts to generate a backup name
-        return nameParts[0] + zxidPart + nameParts[2];
+        return nameParts[0] + "." + zxidPart + "." + nameParts[2];
       }
     }
   }

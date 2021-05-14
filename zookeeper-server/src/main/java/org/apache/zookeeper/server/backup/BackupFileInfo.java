@@ -82,7 +82,7 @@ public class BackupFileInfo {
         }
         String zxidPartWithoutEnd = nameParts[1].split("-")[0];
         // Combine all parts to generate a backup name
-        standardFileName = nameParts[0] + zxidPartWithoutEnd + nameParts[2];
+        standardFileName = nameParts[0] + "." + zxidPartWithoutEnd + "." + nameParts[2];
       }
       this.standardFile = new File(this.backupFile.getParentFile(), standardFileName);
     } else if (backedupFilename.startsWith(Util.TXLOG_PREFIX)) {
