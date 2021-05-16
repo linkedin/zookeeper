@@ -153,8 +153,8 @@ public class BackupUtil {
   /**
    * Creates a file name string for a backup file by appending a high zxid/long in Hex if it
    * doesn't already contain an ending zxid.
-   * It also adds the snapshot extension in case snapshot compression is enabled.
-   * E.g.) snapshot.123.snappy -> snapshot.123-456.snappy
+   * It also adds the snapshot filename StreamMode extension in case snapshot compression is
+   * enabled. E.g.) snapshot.123.snappy -> snapshot.123-456.snappy
    * @param standardName
    * @param highZxid
    * @return
