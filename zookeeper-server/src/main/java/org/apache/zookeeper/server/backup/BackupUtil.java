@@ -164,25 +164,24 @@ public class BackupUtil {
       // standard name already contains the zxid interval endpoint and if snapshot compression
       // is enabled, the standardName should already contain StreamMode extension, so just return
       return standardName;
+    }
+    if (SnapStream.getStreamMode(standardName).getName().isEmpty()) {
+      // No snapshot compression is used for this snapshot, so just append the zxid interval
+      // endpoint
+      return String.format("%s-%x", standardName, highZxid);
     } else {
-      if (SnapStream.getStreamMode(standardName).getName().isEmpty()) {
-        // No snapshot compression is used for this snapshot, so just append the zxid interval
-        // endpoint
-        return String.format("%s-%x", standardName, highZxid);
-      } else {
-        // Snapshot compression is enabled; standardName looks like "snapshot.<zxid>.<streamMode>"
-        // Need to append the ending zxid
-        String[] nameParts = standardName.split("\\.");
-        if (nameParts.length != 3) {
-          throw new BackupException(
-              "BackupUtil::makeBackupName(): unable to make backup name! standardName: "
-                  + standardName + " StreamMode: " + SnapStream.getStreamMode(standardName)
-                  .getName());
-        }
-        String zxidPart = String.format("%s-%x", nameParts[1], highZxid);
-        // Combine all parts to generate a backup name
-        return nameParts[0] + "." + zxidPart + "." + nameParts[2];
+      // Snapshot compression is enabled; standardName looks like "snapshot.<zxid>.<streamMode>"
+      // Need to append the ending zxid
+      String[] nameParts = standardName.split("\\.");
+      if (nameParts.length != 3) {
+        throw new BackupException(
+            "BackupUtil::makeBackupName(): unable to make backup name! standardName: "
+                + standardName + " StreamMode: " + SnapStream.getStreamMode(standardName)
+                .getName());
       }
+      String zxidPart = String.format("%s-%x", nameParts[1], highZxid);
+      // Combine all parts to generate a backup name
+      return nameParts[0] + "." + zxidPart + "." + nameParts[2];
     }
   }
 

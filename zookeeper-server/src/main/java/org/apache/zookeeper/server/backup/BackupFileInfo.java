@@ -37,13 +37,15 @@ import org.apache.zookeeper.server.persistence.Util;
  * In the case of timetable backup file, it takes a format of timetable.lowTimestamp-highTimestamp.
  */
 public class BackupFileInfo {
+  public static final long NOT_SET = -1L;
+  private static final String DASH_DELIMITER = "-";
+
   private final File backupFile;
   private final File standardFile;
   private final Range<Long> range;
   private final BackupFileType fileType;
   private final long modificationTime;
   private final long size;
-  public static final long NOT_SET = -1;
 
   /**
    * Constructor that pulls backup metadata based on the backed-up filename
@@ -70,7 +72,7 @@ public class BackupFileInfo {
       String standardFileName;
       if (streamMode.isEmpty()) {
         // No compression was used, so simply drop the end part
-        standardFileName = backedupFilename.split("-")[0];
+        standardFileName = backedupFilename.split(DASH_DELIMITER)[0];
       } else {
         // Snapshot compression is enabled; standardName looks like "snapshot.<zxid>.<streamMode>"
         // Need to remove the ending zxid
@@ -80,14 +82,15 @@ public class BackupFileInfo {
               "BackupFileInfo: unable to create standardFile reference! backedupFilename: "
                   + backedupFilename + " StreamMode: " + streamMode);
         }
-        String zxidPartWithoutEnd = nameParts[1].split("-")[0];
+        String zxidPartWithoutEnd = nameParts[1].split(DASH_DELIMITER)[0];
         // Combine all parts to generate a backup name
         standardFileName = nameParts[0] + "." + zxidPartWithoutEnd + "." + nameParts[2];
       }
       this.standardFile = new File(this.backupFile.getParentFile(), standardFileName);
     } else if (backedupFilename.startsWith(Util.TXLOG_PREFIX)) {
       this.fileType = BackupFileType.TXNLOG;
-      this.standardFile = new File(this.backupFile.getParentFile(), backedupFilename.split("-")[0]);
+      this.standardFile =
+          new File(this.backupFile.getParentFile(), backedupFilename.split(DASH_DELIMITER)[0]);
     } else if (backedupFilename.startsWith(TimetableBackup.TIMETABLE_PREFIX)) {
       this.fileType = BackupFileType.TIMETABLE;
       this.standardFile = this.backupFile;
