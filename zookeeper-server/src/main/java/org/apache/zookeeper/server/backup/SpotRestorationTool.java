@@ -6,11 +6,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
-import org.apache.jute.Record;
+import com.google.common.collect.Maps;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs;
@@ -20,8 +19,6 @@ import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.server.DataNode;
 import org.apache.zookeeper.server.DataTree;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
-import org.apache.zookeeper.txn.TxnDigest;
-import org.apache.zookeeper.txn.TxnHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,18 +29,18 @@ import org.slf4j.LoggerFactory;
 public class SpotRestorationTool {
   private static final Logger LOG = LoggerFactory.getLogger(SpotRestorationTool.class);
 
-  File dataDir;
-  ZooKeeper zk;
-  FileTxnSnapLog snapLog;
-  boolean restoreRecursively;
-  String targetZNodePath;
-  List<String> messages;
+  private ZooKeeper zk;
+  private FileTxnSnapLog snapLog;
+  private boolean restoreRecursively;
+  private String targetZNodePath;
+  // A list storing messages about skipped nodes, which will be shown to the user at the end of spot restoration
+  private List<String> messages;
 
   /**
    * Constructor
-   * @param dataDir The directory contains snapshot and transaction log files to be used for restoration
+   * @param dataDir The directory contains fully-restored snapshot and transaction log files to be used for spot restoration
    * @param zk A client connection to the zk server to be restored
-   * @param targetZNodePath The znode path to start the restoration
+   * @param targetZNodePath The znode path to restore
    * @param restoreRecursively If true then restore the whole sub-data tree of the target znode;
    *                           if false then restore the target znode only
    * @throws IOException
@@ -54,7 +51,6 @@ public class SpotRestorationTool {
       throw new IllegalArgumentException(
           "The provided dataDir is null or does not exist, please check the input.");
     }
-    this.dataDir = dataDir;
     this.zk = zk;
     this.snapLog = new FileTxnSnapLog(dataDir, dataDir);
     this.targetZNodePath = targetZNodePath;
@@ -65,19 +61,20 @@ public class SpotRestorationTool {
   /**
    * Run the spot restoration.
    * 1. If a node exists in restored data tree but not in the zk server, create the node in the server
-   * 2. If a node exists in zk server but not the restored data tree, show messages ask user to manually delete the node
-   * 3. If a node exists in both zk server and restored data tree, show message ask user to take care of the node
+   * 2. If a node exists in zk server but not the restored data tree, show messages that inform user
+   *  to manually delete the node after this spot restoration run
+   * 3. If a node exists in both zk server and restored data tree, show message that inform user to
+   *  manually delete the node after this spot restoration run and run spot restoration on the node path again
    * @throws IOException
    */
   public void run() throws IOException {
+    LOG.info(
+        "Starting spot restoration for znode path " + targetZNodePath + ", using data provided in "
+            + snapLog.getDataDir().getPath());
     DataTree dataTree = new DataTree();
-    long zxidRestored =
-        snapLog.restore(dataTree, new ConcurrentHashMap<>(), new FileTxnSnapLog.PlayBackListener() {
-          @Override
-          public void onTxnLoaded(TxnHeader hdr, Record rec, TxnDigest digest) {
-            // Do nothing since we are trying to build a data tree in memory, not in actual zk server
-          }
-        });
+    long zxidRestored = snapLog.restore(dataTree, Maps.newHashMap(), (hdr, rec, digest) -> {
+      // Do nothing since we are trying to build a data tree in memory, not in actual zk server
+    });
 
     DataNode originalNode = dataTree.getNode(targetZNodePath);
     if (originalNode == null) {
@@ -93,27 +90,33 @@ public class SpotRestorationTool {
         "Requested path node children: " + Arrays.toString(originalNode.getChildren().toArray()));
     LOG.info("Requested path node stat: " + originalNodeStat.toString());
     String requestMsg = "Do you want to restore to this point? Enter \"yes\" or \"no\".";
-    String yesMsg = "Restoring ZooKeeper server...";
-    String noMsg = "Restoration aborted. Nothing has been changed.";
+    String yesMsg = "Performing spot restoration of the ZNode path: " + targetZNodePath;
+    String noMsg =
+        "Spot restoration aborted. No change was made to the ZNode path: ." + targetZNodePath;
     if (getUserConfirmation(requestMsg, yesMsg, noMsg)) {
-      traverseNode(zk, dataTree, targetZNodePath, true);
+      recursiveRestore(zk, dataTree, targetZNodePath, true);
       printExitMessages();
     }
   }
 
   /**
    * 1. Restore the node value in zk server;
-   * 2. check if there are deprecated nodes (exist in zk server but not in restored data tree) in its child nodes;
+   * 2. check if there are nodes that exist in zk server but not in restored data tree in its child nodes;
    * 3. Do the above operations for all of its child nodes in the restored data tree
    * @param zk A client connection to zk server
    * @param dataTree The restored zk data tree
    * @param path The znode path to restore
-   * @param targetNode True if the node being restored is the target znode that user specified;
-   *                   false if it's a child node of the target node
+   * @param shouldOverwrite If the node exist: true if the node will be overwritten;
+   *                       false if the node will be skipped
    */
-  private void traverseNode(ZooKeeper zk, DataTree dataTree, String path, boolean targetNode) {
-    if (!restoreNode(zk, dataTree, path, targetNode) || !restoreRecursively) {
+  private void recursiveRestore(ZooKeeper zk, DataTree dataTree, String path,
+      boolean shouldOverwrite) {
+    if (!singleNodeRestore(zk, dataTree, path, shouldOverwrite)) {
       // This node is skipped, there's no need to traverse its child nodes
+      return;
+    }
+    if (!restoreRecursively) {
+      // Non-recursive spot restoration, so no need to proceed further
       return;
     }
 
@@ -137,21 +140,22 @@ public class SpotRestorationTool {
 
     // Traverse the child nodes of this node
     for (String child : children) {
-      traverseNode(zk, dataTree, path + "/" + child, false);
+      recursiveRestore(zk, dataTree, path + "/" + child, false);
     }
   }
 
   /**
-   * Restore the znode in the zk server, currently only doing creation of non-existing nodes,
+   * Restore the znode in the zk server, currently only doing creation of a single previously non-existent node,
    * and only supports persistent nodes
    * @param zk A client connection to zk server
    * @param dataTree The restored zk data tree
    * @param path The znode path to restore
-   * @param targetNode True if the node being restored is the target znode that user specified;
-   *                   false if it's a child node of the target node
+   * @param shouldOverwrite If the node exist: true if the node will be overwritten;
+   *                        false if the node will be skipped
    * @return True if the node is successfully restored, false if the node is skipped
    */
-  private boolean restoreNode(ZooKeeper zk, DataTree dataTree, String path, boolean targetNode) {
+  private boolean singleNodeRestore(ZooKeeper zk, DataTree dataTree, String path,
+      boolean shouldOverwrite) {
     DataNode node = dataTree.getNode(path);
     try {
       if (zk.exists(path, false) == null) {
@@ -163,8 +167,8 @@ public class SpotRestorationTool {
         } else {
           return createNode(path, dataTree);
         }
-      } else if (targetNode) {
-        // If it is the target node that the user wants to restore,
+      } else if (shouldOverwrite) {
+        // If it is the originally target node path that the user wants to restore,
         //we don't skip it just because it already exists in the server,
         //because we already get user's confirmation to restore this node
         //and we need to get to its child nodes
@@ -179,28 +183,31 @@ public class SpotRestorationTool {
     return false;
   }
 
-  private void print(String message) {
-    System.out.println(message);
-  }
-
   @VisibleForTesting
   protected boolean getUserConfirmation(String requestMsg, String yesMsg, String noMsg) {
     Scanner scanner = new Scanner(System.in);
-    while (true) {
-      print(requestMsg);
+    int cnt = 3;
+    while (cnt > 0) {
+      System.out.println(requestMsg);
       String input = scanner.nextLine().toLowerCase();
       switch (input) {
         case "yes":
-          print(yesMsg);
+          System.out.println(yesMsg);
           return true;
         case "no":
-          print(noMsg);
+          System.out.println(noMsg);
           return false;
         default:
-          print("Could not recognize the input: " + input + ". Please try again.");
+          System.err.println("Could not recognize the input: " + input + ". Please try again.");
+          cnt--;
           break;
       }
     }
+    System.err.println("Could not recognize user's input for the request: " + requestMsg
+        + ". Exiting spot restoration...");
+    printExitMessages();
+    System.exit(1);
+    return false;
   }
 
   private void skipNodeOrStopRestoration(String errorNodePath, Exception exception) {
@@ -223,10 +230,10 @@ public class SpotRestorationTool {
    * Print out all the messages about skipped nodes during restoration
    */
   private void printExitMessages() {
-    LOG.info("Spot restoration for " + targetZNodePath + " is successfully done.");
+    LOG.info("Spot restoration for " + targetZNodePath + " was successfully done.");
     if (!messages.isEmpty()) {
-      LOG.warn("During the restoration, the following nodes are skipped.");
-      messages.forEach(this::print);
+      LOG.warn("During the spot restoration, the following nodes were skipped.");
+      messages.forEach(System.err::println);
       LOG.warn("Please examine the above nodes and take appropriate actions.");
     }
   }
@@ -254,10 +261,11 @@ public class SpotRestorationTool {
       } catch (KeeperException e) {
         if (e.code().equals(KeeperException.Code.NONODE)) { // Parent node does not exist
           String requestMsg = "The parent node for node " + path
-              + " does not exist, do you want to create its parent node(s)? Enter \"yes\" to create, enter \"no\" to skip this node or exit the restoration.";
+              + " does not exist, do you want to create its parent node(s)? Enter \"yes\" to create,"
+              + " enter \"no\" to skip this node or exit the spot restoration.";
           String yesMsg = "Creating parent node(s) for " + path;
-          String noMsg =
-              "Skip node " + path + " or exit the restoration due to non-existing parent node.";
+          String noMsg = "Skip node " + path
+              + " or exit the spot restoration due to non-existent parent node.";
           if (getUserConfirmation(requestMsg, yesMsg, noMsg)) {
             String parentPath = path.substring(0, path.lastIndexOf('/'));
             retry = createNode(parentPath, dataTree);
