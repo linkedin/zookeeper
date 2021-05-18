@@ -6,10 +6,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs;
@@ -72,7 +72,7 @@ public class SpotRestorationTool {
         "Starting spot restoration for znode path " + targetZNodePath + ", using data provided in "
             + snapLog.getDataDir().getPath());
     DataTree dataTree = new DataTree();
-    long zxidRestored = snapLog.restore(dataTree, Maps.newHashMap(), (hdr, rec, digest) -> {
+    long zxidRestored = snapLog.restore(dataTree, new ConcurrentHashMap<>(), (hdr, rec, digest) -> {
       // Do nothing since we are trying to build a data tree in memory, not in actual zk server
     });
 
