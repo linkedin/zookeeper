@@ -23,7 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This is a tool for automatic restoration of ZK data based on a zk node path using a collection of
+ * This is a tool for automatic zk path-based restoration of ZK data based on a zk node path using a collection of
  * snapshot and transaction logs.
  */
 public class SpotRestorationTool {
@@ -76,19 +76,21 @@ public class SpotRestorationTool {
       // Do nothing since we are trying to build a data tree in memory, not in actual zk server
     });
 
-    DataNode originalNode = dataTree.getNode(targetZNodePath);
-    if (originalNode == null) {
+    DataNode restoredTargetNode = dataTree.getNode(targetZNodePath);
+    if (restoredTargetNode == null) {
+      LOG.info(
+          "The target znode path does not exist in the restored zk data tree. Exit spot restoration.");
       return;
     }
-    Stat originalNodeStat = new Stat();
-    originalNode.copyStat(originalNodeStat);
+    Stat restoredTargetNodeStat = new Stat();
+    restoredTargetNode.copyStat(restoredTargetNodeStat);
 
     LOG.info(
         "The restored zk data tree is constructed. The highest zxid restored is: " + zxidRestored);
-    LOG.info("Requested path node data: " + Arrays.toString(originalNode.getData()));
-    LOG.info(
-        "Requested path node children: " + Arrays.toString(originalNode.getChildren().toArray()));
-    LOG.info("Requested path node stat: " + originalNodeStat.toString());
+    LOG.info("Restored target node data: " + Arrays.toString(restoredTargetNode.getData()));
+    LOG.info("Restored target node children: " + Arrays
+        .toString(restoredTargetNode.getChildren().toArray()));
+    LOG.info("Restored target node stat: " + restoredTargetNodeStat.toString());
     String requestMsg = "Do you want to restore to this point? Enter \"yes\" or \"no\".";
     String yesMsg = "Performing spot restoration of the ZNode path: " + targetZNodePath;
     String noMsg =
@@ -213,11 +215,12 @@ public class SpotRestorationTool {
   private void skipNodeOrStopRestoration(String errorNodePath, Exception exception) {
     String errorMsg = exception.toString() + "\n";
     String requestMsg =
-        errorMsg + "Do you want to continue the restoration? Enter \"yes\" to skip this node "
+        errorMsg + "Do you want to continue the spot restoration? Enter \"yes\" to skip this node "
             + errorNodePath
-            + ", and continue the restoration for the other nodes; enter \"no\" to stop the restoration.";
-    String yesMsg = "Skipping node " + errorNodePath + ". Continuing restoration for other nodes.";
-    String noMsg = "Restoration is stopped. Reason: " + errorMsg;
+            + ", and continue the spot restoration for the other nodes; enter \"no\" to stop the spot restoration.";
+    String yesMsg =
+        "Skipping node " + errorNodePath + ". Continuing spot restoration for other nodes.";
+    String noMsg = "Spot restoration is stopped. Reason: " + errorMsg;
     if (!getUserConfirmation(requestMsg, yesMsg, noMsg)) {
       printExitMessages();
       System.exit(1);

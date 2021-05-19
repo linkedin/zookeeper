@@ -400,8 +400,8 @@ public class RestorationToolTest extends ZKTestCase {
     //        Expected: nodes are created in the running zk server
     //    2. Nodes not exist in backup files but in the running zk server
     //        Path => value:
-    //          /testsr/deprecated => deprecated
-    //          /testsr/deprecated/node0 => deprecated0
+    //          /testsr/new => new
+    //          /testsr/new/node0 => new0
     //        Expected: messages printed at the end indicate the node is skipped
     //    3. Nodes exist in both backup files and in the running zk server, but with different values
     //        Path => value in backup files; value in running server
@@ -440,10 +440,10 @@ public class RestorationToolTest extends ZKTestCase {
     // Create several znodes in the running zk server
     connection.create("/testsr", "target".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
         CreateMode.PERSISTENT);
-    connection.create("/testsr/deprecated", "deprecated".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
+    connection.create("/testsr/new", "new".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
         CreateMode.PERSISTENT);
     connection
-        .create("/testsr/deprecated/node0", "deprecated0".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
+        .create("/testsr/new/node0", "new0".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
             CreateMode.PERSISTENT);
     connection.create("/testsr/existing", "existingVal".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
         CreateMode.PERSISTENT);
@@ -481,16 +481,16 @@ public class RestorationToolTest extends ZKTestCase {
     Assert.assertArrayEquals("restore0".getBytes(),
         connection.getData("/testsr/restore/node0", false, new Stat()));
 
-    // We do not delete deprecated nodes, only log them in the messages
-    Assert.assertNotNull(connection.exists("/testsr/deprecated", false));
-    Assert.assertNotNull(connection.exists("/testsr/deprecated/node0", false));
+    // We do not delete new nodes, only log them in the messages
+    Assert.assertNotNull(connection.exists("/testsr/new", false));
+    Assert.assertNotNull(connection.exists("/testsr/new/node0", false));
 
     // We do not update existing nodes' values, only log them in the messages
     Assert.assertArrayEquals("existingVal".getBytes(),
         connection.getData("/testsr/existing", false, new Stat()));
 
     LOG.info("Please examine the messages printed out. "
-        + "There should be messages for skipping nodes: \"/testsr/deprecated\" and \"/testsr/existing\".");
+        + "There should be messages for skipping nodes: \"/testsr/new\" and \"/testsr/existing\".");
 
 
     //TEST 2.
