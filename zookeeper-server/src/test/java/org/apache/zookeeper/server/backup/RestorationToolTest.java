@@ -523,6 +523,60 @@ public class RestorationToolTest extends ZKTestCase {
         connection.getData("/testsr/restore/node0", false, new Stat()));
   }
 
+  @Test
+  public void testSpotRestorationByCommandLine() throws IOException, InterruptedException {
+    //Test restoration CLI using a timestamp recorded in the midpoint of the test ZNode creation
+    backupManager.getTimetableBackup().run(1);
+
+    // Close the original zk server and zk client;
+    //start a new server as the server to be restored
+    connection.close();
+    zks.shutdown();
+    LOG.info("ZK server is shut down.");
+
+    dataDir = ClientBase.createTmpDir();
+    LOG.info("Starting a new zk server.");
+    zks = new ZooKeeperServer(dataDir, dataDir, 3000);
+    SyncRequestProcessor.setSnapCount(100);
+    serverCnxnFactory.startup(zks);
+
+    LOG.info("Waiting for server startup");
+    Assert.assertTrue("waiting for server being up",
+        ClientBase.waitForServerUp(HOSTPORT, CONNECTION_TIMEOUT));
+
+    // Mock CLI command
+    CommandLine cl = Mockito.mock(CommandLine.class);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.RESTORE_ZXID)).thenReturn(false);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.RESTORE_TIMESTAMP)).thenReturn(true);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.BACKUP_STORE)).thenReturn(true);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.SNAP_DESTINATION)).thenReturn(true);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.LOG_DESTINATION)).thenReturn(true);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.TIMETABLE_STORAGE_PATH)).thenReturn(true);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.ZNODE_PATH_TO_RESTORE)).thenReturn(true);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.ZK_SERVER_CONNECTION_STRING)).thenReturn(true);
+    when(cl.getOptionValue(RestoreCommand.OptionShortForm.RESTORE_TIMESTAMP))
+        .thenReturn(String.valueOf(timestampInMiddle));
+    when(cl.getOptionValue(RestoreCommand.OptionShortForm.BACKUP_STORE))
+        .thenReturn("gpfs::" + backupDir.getPath() + ":" + TEST_NAMESPACE);
+    when(cl.getOptionValue(RestoreCommand.OptionShortForm.SNAP_DESTINATION))
+        .thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(RestoreCommand.OptionShortForm.LOG_DESTINATION))
+        .thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(RestoreCommand.OptionShortForm.TIMETABLE_STORAGE_PATH))
+        .thenReturn(timetableDir.getPath() + "/" + TEST_NAMESPACE);
+    // Restore the first node created, so we are sure this node exists at the moment of timestamp provided
+    String nodePath = "/node1";
+    when(cl.getOptionValue(RestoreCommand.OptionShortForm.ZNODE_PATH_TO_RESTORE))
+        .thenReturn(nodePath);
+    when(cl.getOptionValue(RestoreCommand.OptionShortForm.ZK_SERVER_CONNECTION_STRING))
+        .thenReturn(HOSTPORT);
+
+    // Run restoration
+    RestoreFromBackupTool restoreTool = new MockRestoreFromBackupTool();
+    Assert.assertTrue(restoreTool.runWithRetries(cl));
+    Assert.assertNotNull(zks.getZKDatabase().getNode(nodePath));
+  }
+
   class MockSpotRestorationTool extends SpotRestorationTool {
     public MockSpotRestorationTool(File dataDir, ZooKeeper zk, String targetZNodePath,
         boolean restoreRecursively) throws IOException {
@@ -532,6 +586,25 @@ public class RestorationToolTest extends ZKTestCase {
     @Override
     protected boolean getUserConfirmation(String requestMsg, String yesMsg, String noMsg) {
       return true;
+    }
+  }
+
+  class MockRestoreFromBackupTool extends RestoreFromBackupTool {
+    @Override
+    protected void performSpotRestorationIfConfigured() throws IOException {
+      if (znodePathToRestore != null) {
+        if (zkServerConnectionStr == null) {
+          throw new IllegalArgumentException(
+              "ZK server connection info is not provided. Could not perform spot restoration.");
+        }
+        zk = new ZooKeeper(zkServerConnectionStr, CONNECTION_TIMEOUT, (event) -> {
+          System.out.println("WATCHER::" + event.toString());
+        });
+        spotRestorationTool =
+            new MockSpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk, znodePathToRestore,
+                restoreRecursively);
+        spotRestorationTool.run();
+      }
     }
   }
 }

@@ -29,9 +29,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Range;
 import org.apache.commons.cli.CommandLine;
+import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.cli.RestoreCommand;
 import org.apache.zookeeper.common.ConfigException;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
@@ -57,6 +59,7 @@ public class RestoreFromBackupTool {
 
   private static final int MAX_RETRIES = 10;
   private static final String HEX_PREFIX = "0x";
+  private static final int CONNECTION_TIMEOUT = 300000;
 
   BackupStorageProvider storage;
   FileTxnSnapLog snapLog;
@@ -64,6 +67,13 @@ public class RestoreFromBackupTool {
   boolean dryRun;
   File restoreTempDir;
   boolean overwrite = false;
+
+  // Spot restoration
+  String znodePathToRestore;
+  String zkServerConnectionStr;
+  boolean restoreRecursively = false;
+  ZooKeeper zk;
+  SpotRestorationTool spotRestorationTool;
 
   List<BackupFileInfo> logs;
   List<BackupFileInfo> snaps;
@@ -128,6 +138,8 @@ public class RestoreFromBackupTool {
    * @throws IOException if the backup provider cannot be instantiated correctly.
    */
   public void parseArgs(CommandLine cl) {
+    parseSpotRestorationArgs(cl);
+
     String backupStoragePath = cl.getOptionValue(RestoreCommand.OptionShortForm.BACKUP_STORE);
     createBackupStorageProvider(backupStoragePath);
 
@@ -180,16 +192,19 @@ public class RestoreFromBackupTool {
     } catch (IllegalArgumentException e) {
       System.err.println("Could not find a valid backup storage option based on the input: "
           + userProvidedStorageName + ". Error message: " + e.getMessage());
+      e.printStackTrace();
       System.exit(1);
     } catch (ConfigException e) {
       System.err.println(
           "Could not generate a backup config based on the input, error message: " + e
               .getMessage());
+      e.getStackTrace();
       System.exit(1);
     } catch (InstantiationException | InvocationTargetException | NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
       System.err.println(
           "Could not generate a backup storage provider based on the input, error message: " + e
               .getMessage());
+      e.printStackTrace();
       System.exit(1);
     }
   }
@@ -250,6 +265,7 @@ public class RestoreFromBackupTool {
       System.err.println(
           "Could not find a valid zxid from timetable using the timestamp provided: " + timestampStr
               + ". The error message is: " + e.getMessage());
+      e.printStackTrace();
       System.exit(2);
     }
   }
@@ -257,8 +273,15 @@ public class RestoreFromBackupTool {
   private void parseRestoreDestination(CommandLine cl) {
     // Read restore destination: dataDir and logDir
     try {
-      File snapDir = new File(cl.getOptionValue(RestoreCommand.OptionShortForm.SNAP_DESTINATION));
-      File logDir = new File(cl.getOptionValue(RestoreCommand.OptionShortForm.LOG_DESTINATION));
+      String snapDirPath = cl.getOptionValue(RestoreCommand.OptionShortForm.SNAP_DESTINATION);
+      String logDirPath = cl.getOptionValue(RestoreCommand.OptionShortForm.LOG_DESTINATION);
+      if (znodePathToRestore != null && !snapDirPath
+          .equals(logDirPath)) { // This is a spot restoration
+        throw new IllegalArgumentException(
+            "Snap destination path and log destination path should be same for spot restoration.");
+      }
+      File snapDir = new File(snapDirPath);
+      File logDir = new File(logDirPath);
       snapLog = new FileTxnSnapLog(logDir, snapDir);
     } catch (IOException ioe) {
       System.err.println("Could not setup transaction log utility." + ioe);
@@ -276,6 +299,19 @@ public class RestoreFromBackupTool {
     if (restoreTempDir == null) {
       // Default address for restore temp dir if not set. It will be deleted after the restoration is done.
       this.restoreTempDir = new File(snapLog.getDataDir(), "RestoreTempDir_" + zxidToRestore);
+    }
+  }
+
+  private void parseSpotRestorationArgs(CommandLine cl) {
+    if (cl.hasOption(RestoreCommand.OptionShortForm.ZNODE_PATH_TO_RESTORE)) {
+      znodePathToRestore = cl.getOptionValue(RestoreCommand.OptionShortForm.ZNODE_PATH_TO_RESTORE);
+    }
+    if (cl.hasOption(RestoreCommand.OptionShortForm.ZK_SERVER_CONNECTION_STRING)) {
+      zkServerConnectionStr =
+          cl.getOptionValue(RestoreCommand.OptionShortForm.ZK_SERVER_CONNECTION_STRING);
+    }
+    if (cl.hasOption(RestoreCommand.OptionShortForm.RECURSIVE_SPOT_RESTORE)) {
+      restoreRecursively = true;
     }
   }
 
@@ -300,17 +336,20 @@ public class RestoreFromBackupTool {
         System.err.println(
             "Restore attempt failed, could not find all the required backup files to restore. "
                 + "Error message: " + re.getMessage());
+        re.printStackTrace();
         return false;
       } catch (BackupException be) {
         System.err.println(
             "Restoration attempt failed due to a backup exception, it's usually caused by required"
                 + "directories not exist or failure of creating directories, etc. Please check the message. "
                 + "Error message: " + be.getMessage());
+        be.printStackTrace();
         return false;
       } catch (Exception e) {
         tries++;
         System.err.println("Restore attempt failed; attempting again. " + tries + "/" + MAX_RETRIES
             + ". Error message: " + e.getMessage());
+        e.printStackTrace();
       }
     }
 
@@ -377,6 +416,7 @@ public class RestoreFromBackupTool {
         copyBackupFilesToLocalTempDir(restoreTempSnapLog);
         processCopiedBackupFiles(restoreTempSnapLog, zxidToRestore);
         copyProcessedRestoredFilesToDestination(restoreTempSnapLog);
+        performSpotRestorationIfConfigured();
       }
     } finally {
       if (restoreTempDir != null && restoreTempDir.exists()) {
@@ -616,6 +656,28 @@ public class RestoreFromBackupTool {
           "Copying " + processedFile.getPath() + " from temp dir to final destination directory "
               + finalDestinationBase.getPath() + ".");
       Files.copy(processedFile.toPath(), new File(finalDestinationBase, fileName).toPath());
+    }
+  }
+
+  /**
+   * If the CLI command has specified a znode path to perform spot restoration,
+   * run the spot restoration tool on that path
+   * @throws IOException
+   */
+  @VisibleForTesting
+  protected void performSpotRestorationIfConfigured() throws IOException {
+    if (znodePathToRestore != null) {
+      if (zkServerConnectionStr == null) {
+        throw new IllegalArgumentException(
+            "ZK server connection info is not provided. Could not perform spot restoration.");
+      }
+      zk = new ZooKeeper(zkServerConnectionStr, CONNECTION_TIMEOUT, (event) -> {
+        System.out.println("WATCHER::" + event.toString());
+      });
+      //snapLog.getDataDir() has "/version-2" at the end of the path, remove "/version-2" by using getParent()
+      spotRestorationTool = new SpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk,
+          znodePathToRestore, restoreRecursively);
+      spotRestorationTool.run();
     }
   }
 }
