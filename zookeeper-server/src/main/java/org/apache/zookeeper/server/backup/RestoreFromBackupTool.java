@@ -360,7 +360,7 @@ public class RestoreFromBackupTool {
   /**
    * Attempts to perform a restore.
    */
-  public void run() throws IOException {
+  public void run() throws IOException, InterruptedException {
     try {
       if (!findFilesToRestore()) {
         throw new IllegalArgumentException("Failed to find valid snapshot and logs to restore.");
@@ -665,7 +665,7 @@ public class RestoreFromBackupTool {
    * @throws IOException
    */
   @VisibleForTesting
-  protected void performSpotRestorationIfConfigured() throws IOException {
+  protected void performSpotRestorationIfConfigured() throws IOException, InterruptedException {
     if (znodePathToRestore != null) {
       if (zkServerConnectionStr == null) {
         throw new IllegalArgumentException(
@@ -678,6 +678,7 @@ public class RestoreFromBackupTool {
       spotRestorationTool = new SpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk,
           znodePathToRestore, restoreRecursively);
       spotRestorationTool.run();
+      BackupStorageUtil.deleteDirectoryRecursively(snapLog.getDataDir());
     }
   }
 }

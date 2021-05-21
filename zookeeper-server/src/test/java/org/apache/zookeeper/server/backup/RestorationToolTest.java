@@ -182,7 +182,7 @@ public class RestorationToolTest extends ZKTestCase {
   }
 
   @Test
-  public void testSuccessfulRestorationToZxid() throws IOException {
+  public void testSuccessfulRestorationToZxid() throws IOException, InterruptedException {
     for (int i = 0; i < 5; i++) {
       int restoreZxid = random.nextInt(txnCnt);
       File restoreTempDir = ClientBase.createTmpDir();
@@ -207,7 +207,7 @@ public class RestorationToolTest extends ZKTestCase {
   }
 
   @Test
-  public void testSuccessfulRestorationToLatest() throws IOException {
+  public void testSuccessfulRestorationToLatest() throws IOException, InterruptedException {
     RestoreFromBackupTool restoreTool =
         new RestoreFromBackupTool(backupStorage, restoreSnapLog, Long.MAX_VALUE, false,
             restoreTempDir);
@@ -409,8 +409,8 @@ public class RestorationToolTest extends ZKTestCase {
     //        Expected: messages printed at the end indicate the node is skipped
 
     // Create several znodes in original zk server whose data will be backed up for testing
-    connection
-        .create("/testsr", "restoredTarget".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+    connection.create("/testsr", "restoredTarget".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
+        CreateMode.PERSISTENT);
     connection.create("/testsr/restore", "restore".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
         CreateMode.PERSISTENT);
     connection.create("/testsr/restore/node0", "restore0".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
@@ -438,13 +438,12 @@ public class RestorationToolTest extends ZKTestCase {
     connection = new ZooKeeper(HOSTPORT, CONNECTION_TIMEOUT, DummyWatcher.INSTANCE);
 
     // Create several znodes in the running zk server
-    connection.create("/testsr", "target".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
-        CreateMode.PERSISTENT);
+    connection
+        .create("/testsr", "target".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
     connection.create("/testsr/new", "new".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
         CreateMode.PERSISTENT);
-    connection
-        .create("/testsr/new/node0", "new0".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
-            CreateMode.PERSISTENT);
+    connection.create("/testsr/new/node0", "new0".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
+        CreateMode.PERSISTENT);
     connection.create("/testsr/existing", "existingVal".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
         CreateMode.PERSISTENT);
 
@@ -471,6 +470,8 @@ public class RestorationToolTest extends ZKTestCase {
         new MockSpotRestorationTool(restoreDir, connection, targetZnodePath, true);
     tool.run();
 
+    connection = new ZooKeeper(HOSTPORT, CONNECTION_TIMEOUT, DummyWatcher.INSTANCE);
+
     // The target node's value should be updated
     Assert.assertArrayEquals("restoredTarget".getBytes(),
         connection.getData("/testsr", false, new Stat()));
@@ -492,7 +493,6 @@ public class RestorationToolTest extends ZKTestCase {
     LOG.info("Please examine the messages printed out. "
         + "There should be messages for skipping nodes: \"/testsr/new\" and \"/testsr/existing\".");
 
-
     //TEST 2.
     //  Test target node's parent nodes do not exist
     connection.close();
@@ -511,9 +511,10 @@ public class RestorationToolTest extends ZKTestCase {
     connection = new ZooKeeper(HOSTPORT, CONNECTION_TIMEOUT, DummyWatcher.INSTANCE);
 
     targetZnodePath = "/testsr/restore/node0";
-    tool =
-        new MockSpotRestorationTool(restoreDir, connection, targetZnodePath, true);
+    tool = new MockSpotRestorationTool(restoreDir, connection, targetZnodePath, true);
     tool.run();
+
+    connection = new ZooKeeper(HOSTPORT, CONNECTION_TIMEOUT, DummyWatcher.INSTANCE);
 
     Assert.assertArrayEquals("restoredTarget".getBytes(),
         connection.getData("/testsr", false, new Stat()));
@@ -591,7 +592,7 @@ public class RestorationToolTest extends ZKTestCase {
 
   class MockRestoreFromBackupTool extends RestoreFromBackupTool {
     @Override
-    protected void performSpotRestorationIfConfigured() throws IOException {
+    protected void performSpotRestorationIfConfigured() throws IOException, InterruptedException {
       if (znodePathToRestore != null) {
         if (zkServerConnectionStr == null) {
           throw new IllegalArgumentException(
@@ -601,9 +602,11 @@ public class RestorationToolTest extends ZKTestCase {
           System.out.println("WATCHER::" + event.toString());
         });
         spotRestorationTool =
-            new MockSpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk, znodePathToRestore,
-                restoreRecursively);
+            new MockSpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk,
+                znodePathToRestore, restoreRecursively);
         spotRestorationTool.run();
+        BackupStorageUtil.deleteDirectoryRecursively(snapLog.getDataDir());
+        Assert.assertFalse(snapLog.getDataDir().exists());
       }
     }
   }
