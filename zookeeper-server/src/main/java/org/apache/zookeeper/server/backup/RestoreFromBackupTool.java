@@ -657,6 +657,8 @@ public class RestoreFromBackupTool {
               + finalDestinationBase.getPath() + ".");
       Files.copy(processedFile.toPath(), new File(finalDestinationBase, fileName).toPath());
     }
+    LOG.info(
+        "All files were successfully copied to destination directory. Offline restoration was completed.");
   }
 
   /**
@@ -666,19 +668,24 @@ public class RestoreFromBackupTool {
    */
   @VisibleForTesting
   protected void performSpotRestorationIfConfigured() throws IOException, InterruptedException {
-    if (znodePathToRestore != null) {
+    if (znodePathToRestore
+        != null) { // If it's null then it means user does not intent to do spot restoration
       if (zkServerConnectionStr == null) {
         throw new IllegalArgumentException(
             "ZK server connection info is not provided. Could not perform spot restoration.");
       }
+      LOG.info("Starting spot restoration for zk path " + znodePathToRestore);
       zk = new ZooKeeper(zkServerConnectionStr, CONNECTION_TIMEOUT, (event) -> {
-        System.out.println("WATCHER::" + event.toString());
+        LOG.info("WATCHER:: client-server connection event received for spot restoration: " + event
+            .toString());
       });
       //snapLog.getDataDir() has "/version-2" at the end of the path, remove "/version-2" by using getParent()
       spotRestorationTool = new SpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk,
           znodePathToRestore, restoreRecursively);
       spotRestorationTool.run();
       BackupStorageUtil.deleteDirectoryRecursively(snapLog.getDataDir());
+    } else {
+      LOG.info("Spot restoration is not requested, will skip.");
     }
   }
 }

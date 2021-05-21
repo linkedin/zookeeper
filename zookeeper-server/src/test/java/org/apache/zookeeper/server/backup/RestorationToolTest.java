@@ -598,8 +598,11 @@ public class RestorationToolTest extends ZKTestCase {
           throw new IllegalArgumentException(
               "ZK server connection info is not provided. Could not perform spot restoration.");
         }
+        LOG.info("Starting spot restoration for zk path " + znodePathToRestore);
         zk = new ZooKeeper(zkServerConnectionStr, CONNECTION_TIMEOUT, (event) -> {
-          System.out.println("WATCHER::" + event.toString());
+          LOG.info(
+              "WATCHER:: client-server connection event received for spot restoration: " + event
+                  .toString());
         });
         spotRestorationTool =
             new MockSpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk,
