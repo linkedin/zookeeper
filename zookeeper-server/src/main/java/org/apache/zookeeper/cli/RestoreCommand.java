@@ -185,17 +185,15 @@ public class RestoreCommand extends CliCommand {
         + "For GPFS the format is: gpfs:<config_path>:<backup_path>:<namespace>\n           "
         + "Required for both offline restoration and spot restoration.\n    "
         + OptionFullCommand.SNAP_DESTINATION + ": local destination path for restored snapshots. "
-        + "Required for both offline restoration and spot restoration. "
-        + "For spot restoration, this path should be same as the log destination.\n    "
-        + OptionFullCommand.LOG_DESTINATION + ": local destination path for restored txlogs. "
-        + "Required for both offline restoration and spot restoration.  "
-        + "For spot restoration, this path should be same as the snap destination.\n    "
-        + OptionFullCommand.TIMETABLE_STORAGE_PATH
+        + "Required for offline restoration.\n    " + OptionFullCommand.LOG_DESTINATION
+        + ": local destination path for restored txlogs. "
+        + "Required for both offline restoration.\n    " + OptionFullCommand.TIMETABLE_STORAGE_PATH
         + ": Needed if restore to a timestamp. Backup storage path for timetable files. "
         + "For GPFS the format is: gpfs:<config_path>:<backup_path>:<namespace>. "
         + "If not set, default to be same as backup storage path\n    "
         + OptionFullCommand.LOCAL_RESTORE_TEMP_DIR_PATH
-        + ": Optional, local path for creating a temporary intermediate directory for restoration, "
+        + ": Required for spot restoration, and optional for offline restoration. "
+        + "A local path for creating a temporary intermediate directory for restoration, "
         + "the directory will be deleted after restoration is done\n    "
         + OptionFullCommand.DRY_RUN + " " + OptionLongForm.DRY_RUN
         + ": Optional, no files will be actually copied in a dry run\n    "
@@ -206,8 +204,7 @@ public class RestoreCommand extends CliCommand {
         + OptionFullCommand.ZK_SERVER_CONNECTION_STRING
         + ": The connection string used to establish a client to server connection "
         + "in order to do spot restoration on zk server. "
-        + "The format of this string should be host:port, "
-        + "for example: 127.0.0.1:3000\n    "
+        + "The format of this string should be host:port, " + "for example: 127.0.0.1:3000\n    "
         + OptionFullCommand.RECURSIVE_SPOT_RESTORE
         + ": Optional, default false. If false, the spot restoration will be done on one single node only; "
         + "if true, it will be done recursively on all of its descendants as well";
@@ -223,8 +220,7 @@ public class RestoreCommand extends CliCommand {
     }
     if ((!cl.hasOption(OptionShortForm.RESTORE_ZXID) && !cl
         .hasOption(OptionShortForm.RESTORE_TIMESTAMP)) || !cl
-        .hasOption(OptionShortForm.BACKUP_STORE) || !cl.hasOption(OptionShortForm.SNAP_DESTINATION)
-        || !cl.hasOption(OptionShortForm.LOG_DESTINATION)) {
+        .hasOption(OptionShortForm.BACKUP_STORE)) {
       throw new CliParseException("Missing required argument(s).\n" + getUsageStr());
     }
     return this;

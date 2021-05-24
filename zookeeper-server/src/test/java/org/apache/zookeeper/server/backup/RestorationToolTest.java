@@ -550,8 +550,9 @@ public class RestorationToolTest extends ZKTestCase {
     when(cl.hasOption(RestoreCommand.OptionShortForm.RESTORE_ZXID)).thenReturn(false);
     when(cl.hasOption(RestoreCommand.OptionShortForm.RESTORE_TIMESTAMP)).thenReturn(true);
     when(cl.hasOption(RestoreCommand.OptionShortForm.BACKUP_STORE)).thenReturn(true);
-    when(cl.hasOption(RestoreCommand.OptionShortForm.SNAP_DESTINATION)).thenReturn(true);
-    when(cl.hasOption(RestoreCommand.OptionShortForm.LOG_DESTINATION)).thenReturn(true);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.SNAP_DESTINATION)).thenReturn(false);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.LOG_DESTINATION)).thenReturn(false);
+    when(cl.hasOption(RestoreCommand.OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH)).thenReturn(true);
     when(cl.hasOption(RestoreCommand.OptionShortForm.TIMETABLE_STORAGE_PATH)).thenReturn(true);
     when(cl.hasOption(RestoreCommand.OptionShortForm.ZNODE_PATH_TO_RESTORE)).thenReturn(true);
     when(cl.hasOption(RestoreCommand.OptionShortForm.ZK_SERVER_CONNECTION_STRING)).thenReturn(true);
@@ -559,10 +560,8 @@ public class RestorationToolTest extends ZKTestCase {
         .thenReturn(String.valueOf(timestampInMiddle));
     when(cl.getOptionValue(RestoreCommand.OptionShortForm.BACKUP_STORE))
         .thenReturn("gpfs::" + backupDir.getPath() + ":" + TEST_NAMESPACE);
-    when(cl.getOptionValue(RestoreCommand.OptionShortForm.SNAP_DESTINATION))
-        .thenReturn(restoreDir.getPath());
-    when(cl.getOptionValue(RestoreCommand.OptionShortForm.LOG_DESTINATION))
-        .thenReturn(restoreDir.getPath());
+    when(cl.getOptionValue(RestoreCommand.OptionShortForm.LOCAL_RESTORE_TEMP_DIR_PATH))
+        .thenReturn(restoreTempDir.getPath());
     when(cl.getOptionValue(RestoreCommand.OptionShortForm.TIMETABLE_STORAGE_PATH))
         .thenReturn(timetableDir.getPath() + "/" + TEST_NAMESPACE);
     // Restore the first node created, so we are sure this node exists at the moment of timestamp provided
