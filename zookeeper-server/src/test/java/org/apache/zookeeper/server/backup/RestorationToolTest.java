@@ -592,25 +592,16 @@ public class RestorationToolTest extends ZKTestCase {
 
   class MockRestoreFromBackupTool extends RestoreFromBackupTool {
     @Override
-    protected void performSpotRestorationIfConfigured() throws IOException, InterruptedException {
-      if (znodePathToRestore != null) {
-        if (zkServerConnectionStr == null) {
-          throw new IllegalArgumentException(
-              "ZK server connection info is not provided. Could not perform spot restoration.");
-        }
-        LOG.info("Starting spot restoration for zk path " + znodePathToRestore);
-        zk = new ZooKeeper(zkServerConnectionStr, CONNECTION_TIMEOUT, (event) -> {
-          LOG.info(
-              "WATCHER:: client-server connection event received for spot restoration: " + event
-                  .toString());
-        });
-        spotRestorationTool =
-            new MockSpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk,
-                znodePathToRestore, restoreRecursively);
-        spotRestorationTool.run();
-        BackupStorageUtil.deleteDirectoryRecursively(snapLog.getDataDir());
-        Assert.assertFalse(snapLog.getDataDir().exists());
-      }
+    protected void performSpotRestoration(File restoreTempDir)
+        throws IOException, InterruptedException {
+      LOG.info("Starting spot restoration for zk path " + znodePathToRestore);
+      zk = new ZooKeeper(zkServerConnectionStr, CONNECTION_TIMEOUT, (event) -> {
+        LOG.info("WATCHER:: client-server connection event received for spot restoration: " + event
+            .toString());
+      });
+      spotRestorationTool =
+          new MockSpotRestorationTool(restoreTempDir, zk, znodePathToRestore, restoreRecursively);
+      spotRestorationTool.run();
     }
   }
 }

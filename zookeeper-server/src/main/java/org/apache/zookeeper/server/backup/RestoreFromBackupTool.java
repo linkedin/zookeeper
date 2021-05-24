@@ -69,6 +69,7 @@ public class RestoreFromBackupTool {
   boolean overwrite = false;
 
   // Spot restoration
+  boolean doSpotRestoration = false;
   String znodePathToRestore;
   String zkServerConnectionStr;
   boolean restoreRecursively = false;
@@ -138,8 +139,6 @@ public class RestoreFromBackupTool {
    * @throws IOException if the backup provider cannot be instantiated correctly.
    */
   public void parseArgs(CommandLine cl) {
-    parseSpotRestorationArgs(cl);
-
     String backupStoragePath = cl.getOptionValue(RestoreCommand.OptionShortForm.BACKUP_STORE);
     createBackupStorageProvider(backupStoragePath);
 
@@ -162,6 +161,8 @@ public class RestoreFromBackupTool {
     if (cl.hasOption(RestoreCommand.OptionShortForm.DRY_RUN)) {
       dryRun = true;
     }
+
+    parseAndValidateSpotRestorationArgs(cl);
 
     System.out.println("parseArgs successful.");
   }
@@ -302,7 +303,7 @@ public class RestoreFromBackupTool {
     }
   }
 
-  private void parseSpotRestorationArgs(CommandLine cl) {
+  private void parseAndValidateSpotRestorationArgs(CommandLine cl) {
     if (cl.hasOption(RestoreCommand.OptionShortForm.ZNODE_PATH_TO_RESTORE)) {
       znodePathToRestore = cl.getOptionValue(RestoreCommand.OptionShortForm.ZNODE_PATH_TO_RESTORE);
     }
@@ -312,6 +313,16 @@ public class RestoreFromBackupTool {
     }
     if (cl.hasOption(RestoreCommand.OptionShortForm.RECURSIVE_SPOT_RESTORE)) {
       restoreRecursively = true;
+    }
+    if (znodePathToRestore != null && zkServerConnectionStr != null) {
+      doSpotRestoration = true;
+    } else if (znodePathToRestore == null && zkServerConnectionStr == null) {
+      doSpotRestoration = false;
+    } else {
+      throw new IllegalArgumentException(
+          "Znode path and zk server connection string must be provided in order to do spot restoration. Provided znode path: "
+              + znodePathToRestore + ", provided zk server connection string: "
+              + zkServerConnectionStr);
     }
   }
 
@@ -415,8 +426,11 @@ public class RestoreFromBackupTool {
 
         copyBackupFilesToLocalTempDir(restoreTempSnapLog);
         processCopiedBackupFiles(restoreTempSnapLog, zxidToRestore);
-        copyProcessedRestoredFilesToDestination(restoreTempSnapLog);
-        performSpotRestorationIfConfigured();
+        if (doSpotRestoration) {
+          performSpotRestoration(restoreTempDir);
+        } else { // Do offline restoration
+          copyProcessedRestoredFilesToDestination(restoreTempSnapLog);
+        }
       }
     } finally {
       if (restoreTempDir != null && restoreTempDir.exists()) {
@@ -667,25 +681,15 @@ public class RestoreFromBackupTool {
    * @throws IOException
    */
   @VisibleForTesting
-  protected void performSpotRestorationIfConfigured() throws IOException, InterruptedException {
-    if (znodePathToRestore
-        != null) { // If it's null then it means user does not intent to do spot restoration
-      if (zkServerConnectionStr == null) {
-        throw new IllegalArgumentException(
-            "ZK server connection info is not provided. Could not perform spot restoration.");
-      }
-      LOG.info("Starting spot restoration for zk path " + znodePathToRestore);
-      zk = new ZooKeeper(zkServerConnectionStr, CONNECTION_TIMEOUT, (event) -> {
-        LOG.info("WATCHER:: client-server connection event received for spot restoration: " + event
-            .toString());
-      });
-      //snapLog.getDataDir() has "/version-2" at the end of the path, remove "/version-2" by using getParent()
-      spotRestorationTool = new SpotRestorationTool(new File(snapLog.getDataDir().getParent()), zk,
-          znodePathToRestore, restoreRecursively);
-      spotRestorationTool.run();
-      BackupStorageUtil.deleteDirectoryRecursively(snapLog.getDataDir());
-    } else {
-      LOG.info("Spot restoration is not requested, will skip.");
-    }
+  protected void performSpotRestoration(File restoreTempDir)
+      throws IOException, InterruptedException {
+    LOG.info("Starting spot restoration for zk path " + znodePathToRestore);
+    zk = new ZooKeeper(zkServerConnectionStr, CONNECTION_TIMEOUT, (event) -> {
+      LOG.info("WATCHER:: client-server connection event received for spot restoration: " + event
+          .toString());
+    });
+    spotRestorationTool =
+        new SpotRestorationTool(restoreTempDir, zk, znodePathToRestore, restoreRecursively);
+    spotRestorationTool.run();
   }
 }
