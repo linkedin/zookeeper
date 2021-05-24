@@ -69,7 +69,7 @@ public class RestoreFromBackupTool {
   boolean overwrite = false;
 
   // Spot restoration
-  boolean doSpotRestoration = false;
+  boolean isSpotRestoration = false;
   String znodePathToRestore;
   String zkServerConnectionStr;
   boolean restoreRecursively = false;
@@ -273,7 +273,7 @@ public class RestoreFromBackupTool {
   }
 
   private void parseAndValidateOfflineRestoreDestination(CommandLine cl) {
-    if (doSpotRestoration) {
+    if (isSpotRestoration) {
       return;
     }
     // Read restore destination: dataDir and logDir
@@ -305,11 +305,13 @@ public class RestoreFromBackupTool {
     }
 
     if (restoreTempDir == null) {
-      if (doSpotRestoration) {
+      if (isSpotRestoration) {
         throw new BackupException(
             "Local restore temp dir path is not defined for spot restoration.");
-      } else { // For offline restoration
-        // Default address for restore temp dir if not set. It will be deleted after the restoration is done.
+      } else {
+        // This is an offline restoration
+        // If the user hasn't provided the restore temp dir parameter,
+        //then the tool will just create a temporary folder inside snapLog and delete it afterwards.
         this.restoreTempDir = new File(snapLog.getDataDir(), "RestoreTempDir_" + zxidToRestore);
       }
     }
@@ -327,9 +329,9 @@ public class RestoreFromBackupTool {
       restoreRecursively = true;
     }
     if (znodePathToRestore != null && zkServerConnectionStr != null) {
-      doSpotRestoration = true;
+      isSpotRestoration = true;
     } else if (znodePathToRestore == null && zkServerConnectionStr == null) {
-      doSpotRestoration = false;
+      isSpotRestoration = false;
     } else {
       throw new BackupException(
           "Znode path and zk server connection string must be provided in order to do spot restoration. Provided znode path: "
@@ -364,7 +366,7 @@ public class RestoreFromBackupTool {
       } catch (BackupException be) {
         System.err.println(
             "Restoration attempt failed due to a backup exception, it's usually caused by required "
-                + "directories not exist or failure of creating directories, etc. Please check the message. "
+                + "directories not existing or failure of creating directories, etc. Please check the message. "
                 + "Error message: " + be.getMessage());
         be.printStackTrace();
         return false;
@@ -407,9 +409,10 @@ public class RestoreFromBackupTool {
 
         copyBackupFilesToLocalTempDir(restoreTempSnapLog);
         processCopiedBackupFiles(restoreTempSnapLog, zxidToRestore);
-        if (doSpotRestoration) {
+        if (isSpotRestoration) {
           performSpotRestoration(restoreTempDir);
-        } else { // Do offline restoration
+        } else {
+          // It is an offline restoration
           copyProcessedRestoredFilesToDestination(restoreTempSnapLog);
         }
       }
@@ -583,7 +586,8 @@ public class RestoreFromBackupTool {
 
   /**
    * Check if the specified snap dir and data dir already have files inside.
-   * If so, ask user to confirm if they want to overwrite these two directories with restored files.
+   * If so, ask user to confirm if they want to overwrite these two directories with restored files,
+   * which means to wipe out all existing files and the directories be populated with restored files.
    */
   private void checkSnapDataDirFileExistence() {
     File dataDir = snapLog.getDataDir();
@@ -602,17 +606,17 @@ public class RestoreFromBackupTool {
         || Objects.requireNonNull(snapDirFiles).length > 0) {
       if (overwrite) {
         LOG.warn(
-            "Overwriting the destination directories for restoration. The files under dataDir: "
-                + dataDir.getPath() + " are: " + Arrays.toString(dataDirFiles)
-                + "; and files under snapDir: " + snapDir.getPath() + " are: " + Arrays
-                .toString(snapDirFiles) + ".");
+            "Overwriting the destination directories for restoration, deleting all existing files. "
+                + "The files under dataDir: " + dataDir.getPath() + " are: " + Arrays
+                .toString(dataDirFiles) + "; and files under snapDir: " + snapDir.getPath()
+                + " are: " + Arrays.toString(snapDirFiles) + ".");
         Arrays.stream(Objects.requireNonNull(dataDir.listFiles())).forEach(File::delete);
         Arrays.stream(Objects.requireNonNull(snapDir.listFiles())).forEach(File::delete);
       } else {
         throw new BackupException(
-            "The destination directories are not empty, user chose not to overwrite existing files, exiting restoration. "
-                + "Please check the destination directory dataDir path: " + dataDir.getPath()
-                + ", and snapDir path" + snapDir.getPath());
+            "The destination directories are not empty, user chose not to overwrite the entire directory, "
+                + "exiting restoration. Please check the destination directory dataDir path: "
+                + dataDir.getPath() + ", and snapDir path" + snapDir.getPath());
       }
     }
   }

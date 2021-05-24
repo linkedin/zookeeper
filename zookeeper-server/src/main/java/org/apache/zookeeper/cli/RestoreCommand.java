@@ -187,19 +187,20 @@ public class RestoreCommand extends CliCommand {
         + OptionFullCommand.SNAP_DESTINATION + ": local destination path for restored snapshots. "
         + "Required for offline restoration.\n    " + OptionFullCommand.LOG_DESTINATION
         + ": local destination path for restored txlogs. "
-        + "Required for both offline restoration.\n    " + OptionFullCommand.TIMETABLE_STORAGE_PATH
+        + "Required for offline restoration.\n    " + OptionFullCommand.TIMETABLE_STORAGE_PATH
         + ": Needed if restore to a timestamp. Backup storage path for timetable files. "
         + "For GPFS the format is: gpfs:<config_path>:<backup_path>:<namespace>. "
         + "If not set, default to be same as backup storage path\n    "
         + OptionFullCommand.LOCAL_RESTORE_TEMP_DIR_PATH
         + ": Required for spot restoration, and optional for offline restoration. "
-        + "A local path for creating a temporary intermediate directory for restoration, "
-        + "the directory will be deleted after restoration is done\n    "
+        + "The restore tool will use this local path to stage temporary files needed for restoration work, "
+        + "this directory will be deleted after restoration is done\n    "
         + OptionFullCommand.DRY_RUN + " " + OptionLongForm.DRY_RUN
         + ": Optional, no files will be actually copied in a dry run\n    "
         + OptionFullCommand.OVERWRITE + " " + OptionLongForm.OVERWRITE
-        + ": Optional, default false. If true, the destination directories will be overwritten\n    "
-        + "Options for spot restoration only:\n    " + OptionFullCommand.ZNODE_PATH_TO_RESTORE
+        + ": Optional, default false. If true, all existing files will be wiped out and the directories "
+        + "be populated with restored files\n    " + "Options for spot restoration only:\n    "
+        + OptionFullCommand.ZNODE_PATH_TO_RESTORE
         + ": The znode path to restore in the zk server\n    "
         + OptionFullCommand.ZK_SERVER_CONNECTION_STRING
         + ": The connection string used to establish a client to server connection "
