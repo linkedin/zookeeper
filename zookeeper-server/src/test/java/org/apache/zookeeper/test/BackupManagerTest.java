@@ -153,7 +153,9 @@ public class BackupManagerTest extends ZKTestCase implements Watcher {
     Assert.assertFalse("No files should have been backed up.", backupDir.list() == null);
     Assert.assertFalse("No temporary files should have been created.",
         backupTmpDir.list() == null);
-    BackupStatus bs = new BackupStatus(dataDir);
+    BackupStatus bs = new BackupStatus(new File(String
+        .join(File.separator, backupConfig.getStatusDir().getAbsolutePath(),
+            backupConfig.getNamespace())));
     BackupPoint bp = bs.read();
     Assert.assertEquals("backupStatus should be set to min for log",
         bp.getLogZxid(), BackupUtil.INVALID_LOG_ZXID);

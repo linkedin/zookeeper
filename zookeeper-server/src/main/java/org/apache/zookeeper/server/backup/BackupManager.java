@@ -502,12 +502,18 @@ public class BackupManager {
     this.snapDir = snapDir;
     this.dataLogDir = dataLogDir;
     this.backupConfig = backupConfig;
-    this.tmpDir = backupConfig.getTmpDir();
-    this.backupStatus = new BackupStatus(backupConfig.getStatusDir());
+    // Note: tmpDir is namespaced
+    this.tmpDir = new File(String.join(File.separator, backupConfig.getTmpDir().getAbsolutePath(),
+        backupConfig.getNamespace()));
+    // Note: statusDir is namespaced
+    this.backupStatus = new BackupStatus(new File(String
+        .join(File.separator, backupConfig.getStatusDir().getAbsolutePath(),
+            backupConfig.getNamespace())));
     this.backupIntervalInMilliseconds =
         TimeUnit.MINUTES.toMillis(backupConfig.getBackupIntervalInMinutes());
     this.serverId = serverId;
-    this.namespace = backupConfig.getNamespace() == null ? "UNKNOWN" : backupConfig.getNamespace();
+    this.namespace =
+        backupConfig.getNamespace() == null ? "UNKNOWN_NAMESPACE" : backupConfig.getNamespace();
     try {
       backupStorage = BackupUtil.createStorageProviderImpl(backupConfig);
     } catch (ReflectiveOperationException e) {
