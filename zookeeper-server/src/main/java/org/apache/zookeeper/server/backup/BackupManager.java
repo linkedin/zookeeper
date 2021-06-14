@@ -512,8 +512,7 @@ public class BackupManager {
     this.backupIntervalInMilliseconds =
         TimeUnit.MINUTES.toMillis(backupConfig.getBackupIntervalInMinutes());
     this.serverId = serverId;
-    this.namespace =
-        backupConfig.getNamespace() == null ? "UNKNOWN_NAMESPACE" : backupConfig.getNamespace();
+    this.namespace = backupConfig.getNamespace();
     try {
       backupStorage = BackupUtil.createStorageProviderImpl(backupConfig);
     } catch (ReflectiveOperationException e) {

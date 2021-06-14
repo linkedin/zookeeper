@@ -72,7 +72,7 @@ public class BackupConfig {
    *       <backupStoragePath>/<namespace>/translog-123456
    */
   private final String namespace;
-  private static final String UNKNOWN_NAMESPACE = "UNKNOWN";
+  private static final String UNKNOWN_NAMESPACE = "UNKNOWN_NAMESPACE";
 
   /*
    * Optional timetable configs
