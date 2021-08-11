@@ -201,7 +201,7 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         if (clientCertIdType != null && clientCertIdType.equalsIgnoreCase("SAN")) {
             try {
                 return matchAndExtractSAN(clientCert);
-            } catch (CertificateException | IllegalArgumentException ce) {
+            } catch (Exception ce) {
                 LOG.warn("X509AuthenticationProvider::getClientId(): failed to match and extract a"
                     + " client ID from SAN! Using Subject DN instead...", ce);
             }
@@ -222,8 +222,9 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         Integer extractMatcherGroupIndex = Integer.getInteger(
             ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
         LOG.info("X509AuthenticationProvider::matchAndExtractSAN(): Using SAN in the client cert "
-                + "for client ID! matchType: {}, matchRegex: {}, extractRegex: {}", matchType,
-            matchRegex, extractRegex);
+                + "for client ID! matchType: {}, matchRegex: {}, extractRegex: {}, "
+                + "extractMatcherGroupIndex: {}", matchType, matchRegex, extractRegex,
+            extractMatcherGroupIndex);
         if (matchType == null || matchRegex == null || extractRegex == null || matchType < 0
             || matchType > 8) {
             // SAN extension must be in the range of [0, 8].
@@ -263,13 +264,10 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         Pattern extractPattern = Pattern.compile(extractRegex);
         Matcher matcher = extractPattern.matcher(matched.iterator().next().get(1).toString());
         if (matcher.find()) {
-            String result;
-            if (extractMatcherGroupIndex != null) {
-                result = matcher.group(extractMatcherGroupIndex);
-            } else {
-                // If extractMatcherGroupIndex is not given, return the 0th index by default
-                result = matcher.group();
-            }
+            // If extractMatcherGroupIndex is not given, return the 1st index by default
+            extractMatcherGroupIndex =
+                extractMatcherGroupIndex == null ? 1 : extractMatcherGroupIndex;
+            String result = matcher.group(extractMatcherGroupIndex);
             LOG.info("X509AuthenticationProvider::matchAndExtractSAN(): returning extracted "
                 + "client ID: {} using Matcher group index: {}", result, extractMatcherGroupIndex);
             return result;

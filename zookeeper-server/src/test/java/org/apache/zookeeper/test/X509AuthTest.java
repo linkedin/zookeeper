@@ -107,6 +107,10 @@ public class X509AuthTest extends ZKTestCase {
         System.setProperty(
             X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
             ".*");
+        // Get the entire thing by setting the Matcher group index to 0
+        System.setProperty(
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX,
+            "0");
 
         X509AuthenticationProvider provider = createProvider(clientCert);
         MockServerCnxn cnxn = new MockServerCnxn();
@@ -123,6 +127,8 @@ public class X509AuthTest extends ZKTestCase {
             X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_REGEX);
         System.clearProperty(
             X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
+        System.clearProperty(
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
     }
 
     private static class TestPublicKey implements PublicKey {
