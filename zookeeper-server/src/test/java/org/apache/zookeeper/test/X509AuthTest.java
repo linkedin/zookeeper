@@ -96,16 +96,16 @@ public class X509AuthTest extends ZKTestCase {
     public void testSANBasedAuth() {
         // Set JVM properties to enable SAN-based client id extraction
         System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENTCERTIDTYPE,
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_TYPE,
             "SAN");
         System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENTCERTIDSANMATCHTYPE,
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_TYPE,
             "6");
         System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENTCERTIDSANMATCHREGEX,
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_REGEX,
             TestCertificate.TEST_SAN_STR);
         System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENTCERTIDSANEXTRACTREGEX,
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
             ".*");
 
         X509AuthenticationProvider provider = createProvider(clientCert);
@@ -116,13 +116,13 @@ public class X509AuthTest extends ZKTestCase {
 
         // Remove JVM properties
         System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENTCERTIDTYPE);
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_TYPE);
         System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENTCERTIDSANMATCHTYPE);
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_TYPE);
         System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENTCERTIDSANMATCHREGEX);
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_REGEX);
         System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENTCERTIDSANEXTRACTREGEX);
+            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
     }
 
     private static class TestPublicKey implements PublicKey {
