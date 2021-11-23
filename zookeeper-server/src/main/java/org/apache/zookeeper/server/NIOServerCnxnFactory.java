@@ -820,6 +820,7 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory {
         set.add(cnxn);
 
         cnxns.add(cnxn);
+        increaseConnectionCreateCount();
         touchCnxn(cnxn);
     }
 
