@@ -18,7 +18,7 @@
 
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
-import java.util.List;
+import java.util.Set;
 
 /**
  * Helper class for looking up the domain name for the client connection. It uses the client's
@@ -40,5 +40,5 @@ public interface ClientUriDomainMappingHelper {
    * @param clientUri
    * @return set of domain names. If not found, returns an empty set.
    */
-  List<String> getDomains(String clientUri);
+  Set<String> getDomains(String clientUri);
 }

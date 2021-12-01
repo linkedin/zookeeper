@@ -20,8 +20,10 @@ package org.apache.zookeeper.server.auth.znode.groupacl;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
@@ -62,7 +64,7 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
 
   private final ZooKeeperServer zks;
   private final String rootPath;
-  private final Map<String, List<String>> clientUriToDomainNames = new HashMap<>();
+  private final Map<String, Set<String>> clientUriToDomainNames = new HashMap<>();
 
   public ZkClientUriDomainMappingHelper(ZooKeeperServer zks) {
     this.zks = zks;
@@ -70,10 +72,16 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
     this.rootPath = System.getProperty(CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
     if (rootPath == null) {
       throw new IllegalStateException(
-          "ZkClientUriDomainMappingHelper::ClientUriDomainMapping root path is not set!");
+          "ZkClientUriDomainMappingHelper::ClientUriDomainMapping root path config is not set!");
+    }
+
+    if (zks.getZKDatabase().getNode(rootPath) == null) {
+      throw new IllegalStateException(
+          "ZkClientUriDomainMappingHelper::ClientUriDomainMapping root path does not exist!");
     }
 
     addWatches();
+    parseZNodeMapping();
   }
 
   /**
@@ -99,7 +107,9 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
         try {
           List<String> clientUris =
               zks.getZKDatabase().getChildren(rootPath + "/" + domainName, null, null);
-          clientUriToDomainNames.put(domainName, clientUris);
+          clientUris.forEach(
+              clientUri -> clientUriToDomainNames.computeIfAbsent(clientUri, k -> new HashSet<>())
+                  .add(domainName));
         } catch (KeeperException.NoNodeException e) {
           LOG.warn(
               "ZkClientUriDomainMappingHelper::parseZNodeMapping(): No clientUri ZNodes found under domain: {}",
@@ -119,7 +129,7 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
   }
 
   @Override
-  public List<String> getDomains(String clientUri) {
-    return clientUriToDomainNames.getOrDefault(clientUri, Collections.emptyList());
+  public Set<String> getDomains(String clientUri) {
+    return clientUriToDomainNames.getOrDefault(clientUri, Collections.emptySet());
   }
 }
