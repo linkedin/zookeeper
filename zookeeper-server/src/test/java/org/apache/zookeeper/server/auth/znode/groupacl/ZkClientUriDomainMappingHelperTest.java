@@ -49,7 +49,7 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
 
   @Before
   public void setUp() throws IOException, InterruptedException, KeeperException {
-    System.setProperty("zookeeper.znode.groupacl.clientUriDomainMappingRootPath",
+    System.setProperty("zookeeper.ssl.znodeGroupAcl.clientUriDomainMappingRootPath",
         CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
 
     LOG.info("Starting Zk...");
@@ -73,7 +73,7 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
       }
     }
 
-    System.clearProperty("zookeeper.znode.groupacl.clientUriDomainMappingRootPath");
+    System.clearProperty("zookeeper.ssl.znodeGroupAcl.clientUriDomainMappingRootPath");
 
     if (zookeeperClientConnection != null) {
       zookeeperClientConnection.close();

@@ -42,6 +42,7 @@ import org.apache.zookeeper.MultiOperationRecord;
 import org.apache.zookeeper.Op;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
+import org.apache.zookeeper.common.ClientX509Util;
 import org.apache.zookeeper.common.PathUtils;
 import org.apache.zookeeper.common.StringUtils;
 import org.apache.zookeeper.common.Time;
@@ -1001,6 +1002,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             throw new KeeperException.InvalidACLException(path);
         }
         List<ACL> rv = new ArrayList<>();
+
         for (ACL a : uniqacls) {
             LOG.debug("Processing ACL: {}", a);
             if (a == null) {
@@ -1010,9 +1012,11 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             if (id == null || id.getScheme() == null) {
                 throw new KeeperException.InvalidACLException(path);
             }
-            if (id.getScheme().equals("world") && id.getId().equals("anyone")) {
+            if (id.getScheme().equals("world") && id.getId().equals("anyone") && !QuorumPeerConfig
+                .isSetX509ClientIdAsAclEnabled()) {
                 rv.add(a);
-            } else if (id.getScheme().equals("auth")) {
+            } else if (id.getScheme().equals("auth") || QuorumPeerConfig
+                .isSetX509ClientIdAsAclEnabled()) {
                 // This is the "auth" id, so we have to expand it to the
                 // authenticated ids of the requestor
                 boolean authIdValid = false;

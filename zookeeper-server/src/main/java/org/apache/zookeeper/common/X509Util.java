@@ -159,6 +159,16 @@ public abstract class X509Util implements Closeable, AutoCloseable {
     private String sslClientAuthProperty = getConfigPrefix() + "clientAuth";
     private String sslHandshakeDetectionTimeoutMillisProperty = getConfigPrefix() + "handshakeDetectionTimeoutMillis";
 
+    /**
+     * Config properties for ZNode group ACL features
+     */
+    private static final String ZNODE_GROUP_ACL_CONFIG_PREFIX = "zookeeper.ssl.znodeGroupAcl.";
+    // Enables/disables whether znodes created by auth'ed clients
+    // should have ACL fields populated with the client Id given by the authentication provider.
+    // Has the same effect as the ZK client using ZooDefs.Ids.CREATOR_ALL_ACL.
+    public static final String SET_X509_CLIENT_ID_AS_ACL =
+        ZNODE_GROUP_ACL_CONFIG_PREFIX + "setX509ClientIdAsAcl";
+
     private ZKConfig zkConfig;
     private AtomicReference<SSLContextAndOptions> defaultSSLContextAndOptions = new AtomicReference<>(null);
 

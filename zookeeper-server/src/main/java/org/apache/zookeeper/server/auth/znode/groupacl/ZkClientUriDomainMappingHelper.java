@@ -60,7 +60,7 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
   private static final Logger LOG = LoggerFactory.getLogger(ZkClientUriDomainMappingHelper.class);
 
   private static final String CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH =
-      "zookeeper.znode.groupacl.clientUriDomainMappingRootPath";
+      "zookeeper.ssl.znodeGroupAcl.clientUriDomainMappingRootPath";
 
   private final ZooKeeperServer zks;
   private final String rootPath;
