@@ -1002,7 +1002,6 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             throw new KeeperException.InvalidACLException(path);
         }
         List<ACL> rv = new ArrayList<>();
-
         for (ACL a : uniqacls) {
             LOG.debug("Processing ACL: {}", a);
             if (a == null) {
