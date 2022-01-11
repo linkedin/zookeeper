@@ -44,10 +44,10 @@ import org.apache.zookeeper.common.AtomicFileWritingIdiom.WriterStatement;
 import org.apache.zookeeper.common.ClientX509Util;
 import org.apache.zookeeper.common.PathUtils;
 import org.apache.zookeeper.common.StringUtils;
-import org.apache.zookeeper.common.X509Util;
 import org.apache.zookeeper.metrics.impl.DefaultMetricsProvider;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.auth.znode.groupacl.ZNodeGroupAclUtil;
 import org.apache.zookeeper.server.backup.BackupConfig;
 import org.apache.zookeeper.server.backup.BackupSystemProperty;
 import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
@@ -120,7 +120,7 @@ public class QuorumPeerConfig {
      * should have ACL fields populated with the client Id given by the authentication provider.
      * Has the same effect as the ZK client using ZooDefs.Ids.CREATOR_ALL_ACL.
      */
-    private static boolean x509ClientIdAsAclEnabled = false;
+    private static boolean setX509ClientIdAsAclEnabled = false;
 
     protected String initialConfig;
 
@@ -386,10 +386,10 @@ public class QuorumPeerConfig {
                 backupConfigBuilder.setTimetableStoragePath(value);
             } else if (key.equals(BackupSystemProperty.BACKUP_TIMETABLE_BACKUP_INTERVAL_MS)) {
                 backupConfigBuilder.setTimetableBackupIntervalInMs(Long.parseLong(value));
-            } else if (key.equals(X509Util.SET_X509_CLIENT_ID_AS_ACL)) {
+            } else if (key.equals(ZNodeGroupAclUtil.SET_X509_CLIENT_ID_AS_ACL)) {
                 // Allow both option of setting it in zoo.cfg and as a JVM argument
                 setSetX509ClientIdAsAclEnabled(Boolean.parseBoolean(value) || Boolean
-                    .getBoolean(X509Util.SET_X509_CLIENT_ID_AS_ACL));
+                    .getBoolean(ZNodeGroupAclUtil.SET_X509_CLIENT_ID_AS_ACL));
             } else if (key.equals("standaloneEnabled")) {
                 if (value.toLowerCase().equals("true")) {
                     setStandaloneEnabled(true);
@@ -1033,10 +1033,10 @@ public class QuorumPeerConfig {
     }
 
     public static boolean isSetX509ClientIdAsAclEnabled() {
-        return x509ClientIdAsAclEnabled;
+        return setX509ClientIdAsAclEnabled;
     }
 
     public static void setSetX509ClientIdAsAclEnabled(boolean enabled) {
-        x509ClientIdAsAclEnabled = enabled;
+        setX509ClientIdAsAclEnabled = enabled;
     }
 }

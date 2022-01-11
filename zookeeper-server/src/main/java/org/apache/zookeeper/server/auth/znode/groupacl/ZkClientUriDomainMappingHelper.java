@@ -61,7 +61,7 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
   private static final Logger LOG = LoggerFactory.getLogger(ZkClientUriDomainMappingHelper.class);
 
   private static final String CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH =
-      X509Util.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath";
+      ZNodeGroupAclUtil.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath";
 
   private final ZooKeeperServer zks;
   private final String rootPath;
