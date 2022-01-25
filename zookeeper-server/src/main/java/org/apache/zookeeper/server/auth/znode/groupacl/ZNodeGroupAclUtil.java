@@ -19,6 +19,10 @@
 
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 /**
  * Util class for ZNode Group ACL. Contains util methods and constants.
  */
@@ -33,4 +37,24 @@ public class ZNodeGroupAclUtil {
   // Has the same effect as the ZK client using ZooDefs.Ids.CREATOR_ALL_ACL.
   public static final String SET_X509_CLIENT_ID_AS_ACL =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "setX509ClientIdAsAcl";
+  public static final String SUPER_USER_DOMAIN_NAME =
+      ZNODE_GROUP_ACL_CONFIG_PREFIX + "superUserDomainName";
+  public static final String OPEN_READ_ACCESS_PATH_PREFIX =
+      ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
+  public static final String CONFIG_VALUE_LIST_DELIMITER =
+      ZNODE_GROUP_ACL_CONFIG_PREFIX + "configValueListDelimiter";
+
+  public static String[] getOpenReadAccessPathPrefixes() {
+    String configValListDelimiter = System.getProperty(CONFIG_VALUE_LIST_DELIMITER, ",");
+    String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX, "");
+    return openReadAccessPathPrefixesStr.split(configValListDelimiter);
+  }
+
+  public static Set<String> getSuperUserDomainNames() {
+    String configValListDelimiter = System.getProperty(CONFIG_VALUE_LIST_DELIMITER, ",");
+    String superUserDomainNameStr =
+        System.getProperty(ZNodeGroupAclUtil.SUPER_USER_DOMAIN_NAME, "");
+    return Arrays.stream(superUserDomainNameStr.split(configValListDelimiter))
+        .filter(str -> str.length() > 0).collect(Collectors.toSet());
+  }
 }

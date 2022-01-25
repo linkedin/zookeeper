@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -59,6 +60,7 @@ import org.apache.zookeeper.server.ZooKeeperServer.ChangeRecord;
 import org.apache.zookeeper.server.ZooKeeperServer.PrecalculatedDigest;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
+import org.apache.zookeeper.server.auth.znode.groupacl.ZNodeGroupAclUtil;
 import org.apache.zookeeper.server.quorum.LeaderZooKeeperServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
@@ -1027,6 +1029,10 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                         rv.add(new ACL(a.getPerms(), cid));
                     }
                 }
+                if (Arrays.stream(ZNodeGroupAclUtil.getOpenReadAccessPathPrefixes()).anyMatch(path::contains)) {
+                    rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+                };
+
                 if (!authIdValid) {
                     throw new KeeperException.InvalidACLException(path);
                 }

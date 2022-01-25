@@ -47,6 +47,7 @@ import javax.security.auth.x500.X500Principal;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZKTestCase;
+import org.apache.zookeeper.common.ClientX509Util;
 import org.apache.zookeeper.server.MockServerCnxn;
 import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
 import org.junit.Before;
@@ -108,22 +109,14 @@ public class X509AuthTest extends ZKTestCase {
         String clientCertIdSANExtractMatcherGroupIndex = "1";
         String expectedClientIdFromSANExtraction = "d";
 
-        // Set JVM properties to enable SAN-based client id extraction
-        System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_TYPE,
-            clientCertIdType);
-        System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_TYPE,
-            clientCertIdSANMatchType);
-        System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_REGEX,
-            clientCertIdSANMatchRegex);
-        System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
-            clientCertIdSANExtractRegex);
-        System.setProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX,
-            clientCertIdSANExtractMatcherGroupIndex);
+    // Set JVM properties to enable SAN-based client id extraction
+    ClientX509Util util = new ClientX509Util();
+    System.setProperty(util.sslClientCertIdType, clientCertIdType);
+    System.setProperty(util.sslClientCertIdSanMatchType, clientCertIdSANMatchType);
+    System.setProperty(util.sslClientCertIdSanMatchRegex, clientCertIdSANMatchRegex);
+    System.setProperty(util.sslClientCertIdSanExtractRegex, clientCertIdSANExtractRegex);
+    System.setProperty(util.sslClientCertIdSanExtractMatcherGroupIndex,
+        clientCertIdSANExtractMatcherGroupIndex);
 
         X509AuthenticationProvider provider = createProvider(clientCert);
         MockServerCnxn cnxn = new MockServerCnxn();
@@ -131,20 +124,15 @@ public class X509AuthTest extends ZKTestCase {
         assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
         assertEquals(expectedClientIdFromSANExtraction, cnxn.getAuthInfo().get(0).getId());
 
-        // Remove JVM properties so they don't interfere with other tests
-        System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_TYPE);
-        System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_TYPE);
-        System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_MATCH_REGEX);
-        System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
-        System.clearProperty(
-            X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
-    }
+    // Remove JVM properties so they don't interfere with other tests
+    System.clearProperty(util.sslClientCertIdType);
+    System.clearProperty(util.sslClientCertIdSanMatchType);
+    System.clearProperty(util.sslClientCertIdSanMatchRegex);
+    System.clearProperty(util.sslClientCertIdSanExtractRegex);
+    System.clearProperty(util.sslClientCertIdSanExtractMatcherGroupIndex);
+  }
 
-    private static class TestPublicKey implements PublicKey {
+  protected static class TestPublicKey implements PublicKey {
 
         private static final long serialVersionUID = 1L;
         @Override
@@ -162,129 +150,136 @@ public class X509AuthTest extends ZKTestCase {
 
     }
 
-    private static class TestCertificate extends X509Certificate {
-        @VisibleForTesting
-        static final String TEST_SAN_STR = "a:b:c(d;e;f)";
-        private byte[] encoded;
-        private X500Principal principal;
-        private PublicKey publicKey;
-        public TestCertificate(String name) {
-            encoded = name.getBytes();
-            principal = new X500Principal("CN=" + name);
-            publicKey = new TestPublicKey();
-        }
-        @Override
-        public boolean hasUnsupportedCriticalExtension() {
-            return false;
-        }
-        @Override
-        public Set<String> getCriticalExtensionOIDs() {
-            return null;
-        }
-        @Override
-        public Set<String> getNonCriticalExtensionOIDs() {
-            return null;
-        }
-        @Override
-        public byte[] getExtensionValue(String oid) {
-            return null;
-        }
-        @Override
-        public void checkValidity() throws CertificateExpiredException, CertificateNotYetValidException {
-        }
-        @Override
-        public void checkValidity(Date date) throws CertificateExpiredException, CertificateNotYetValidException {
-        }
-        @Override
-        public int getVersion() {
-            return 0;
-        }
-        @Override
-        public BigInteger getSerialNumber() {
-            return null;
-        }
-        @Override
-        public Principal getIssuerDN() {
-            return null;
-        }
-        @Override
-        public Principal getSubjectDN() {
-            return null;
-        }
-        @Override
-        public Date getNotBefore() {
-            return null;
-        }
-        @Override
-        public Date getNotAfter() {
-            return null;
-        }
-        @Override
-        public byte[] getTBSCertificate() throws CertificateEncodingException {
-            return null;
-        }
-        @Override
-        public byte[] getSignature() {
-            return null;
-        }
-        @Override
-        public String getSigAlgName() {
-            return null;
-        }
-        @Override
-        public String getSigAlgOID() {
-            return null;
-        }
-        @Override
-        public byte[] getSigAlgParams() {
-            return null;
-        }
-        @Override
-        public boolean[] getIssuerUniqueID() {
-            return null;
-        }
-        @Override
-        public boolean[] getSubjectUniqueID() {
-            return null;
-        }
-        @Override
-        public boolean[] getKeyUsage() {
-            return null;
-        }
-        @Override
-        public int getBasicConstraints() {
-            return 0;
-        }
-        @Override
-        public byte[] getEncoded() throws CertificateEncodingException {
-            return encoded;
-        }
-        @Override
-        public void verify(PublicKey key) throws CertificateException, NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException, SignatureException {
-        }
-        @Override
-        public void verify(PublicKey key, String sigProvider) throws CertificateException, NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException, SignatureException {
-        }
-        @Override
-        public String toString() {
-            return null;
-        }
-        @Override
-        public PublicKey getPublicKey() {
-            return publicKey;
-        }
-        @Override
-        public X500Principal getSubjectX500Principal() {
-            return principal;
-        }
-        @Override
-        public Collection<List<?>> getSubjectAlternativeNames() {
-            List<Object> subjectAlternativeNamePair = new ArrayList<>();
-            subjectAlternativeNamePair.add(6);
-            subjectAlternativeNamePair.add(TEST_SAN_STR);
-            return Collections.singletonList(subjectAlternativeNamePair);
-        }
+  public static class TestCertificate extends X509Certificate {
+    @VisibleForTesting
+    static final String TEST_SAN_STR = "a:b:c(d;e;f)";
+    private byte[] encoded;
+    private X500Principal principal;
+    private PublicKey publicKey;
+    private String subjectAlternativeName;
+
+    public TestCertificate(String name) {
+      this(name, TEST_SAN_STR);
     }
+
+    public TestCertificate(String name, String sanVal) {
+      encoded = name.getBytes();
+      principal = new X500Principal("CN=" + name);
+      publicKey = new TestPublicKey();
+      subjectAlternativeName = sanVal;
+    }
+    @Override
+    public boolean hasUnsupportedCriticalExtension() {
+      return false;
+    }
+    @Override
+    public Set<String> getCriticalExtensionOIDs() {
+      return null;
+    }
+    @Override
+    public Set<String> getNonCriticalExtensionOIDs() {
+      return null;
+    }
+    @Override
+    public byte[] getExtensionValue(String oid) {
+      return null;
+    }
+    @Override
+    public void checkValidity() throws CertificateExpiredException, CertificateNotYetValidException {
+    }
+    @Override
+    public void checkValidity(Date date) throws CertificateExpiredException, CertificateNotYetValidException {
+    }
+    @Override
+    public int getVersion() {
+      return 0;
+    }
+    @Override
+    public BigInteger getSerialNumber() {
+      return null;
+    }
+    @Override
+    public Principal getIssuerDN() {
+      return null;
+    }
+    @Override
+    public Principal getSubjectDN() {
+      return null;
+    }
+    @Override
+    public Date getNotBefore() {
+      return null;
+    }
+    @Override
+    public Date getNotAfter() {
+      return null;
+    }
+    @Override
+    public byte[] getTBSCertificate() throws CertificateEncodingException {
+      return null;
+    }
+    @Override
+    public byte[] getSignature() {
+      return null;
+    }
+    @Override
+    public String getSigAlgName() {
+      return null;
+    }
+    @Override
+    public String getSigAlgOID() {
+      return null;
+    }
+    @Override
+    public byte[] getSigAlgParams() {
+      return null;
+    }
+    @Override
+    public boolean[] getIssuerUniqueID() {
+      return null;
+    }
+    @Override
+    public boolean[] getSubjectUniqueID() {
+      return null;
+    }
+    @Override
+    public boolean[] getKeyUsage() {
+      return null;
+    }
+    @Override
+    public int getBasicConstraints() {
+      return 0;
+    }
+    @Override
+    public byte[] getEncoded() throws CertificateEncodingException {
+      return encoded;
+    }
+    @Override
+    public void verify(PublicKey key) throws CertificateException, NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException, SignatureException {
+    }
+    @Override
+    public void verify(PublicKey key, String sigProvider) throws CertificateException, NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException, SignatureException {
+    }
+    @Override
+    public String toString() {
+      return null;
+    }
+    @Override
+    public PublicKey getPublicKey() {
+      return publicKey;
+    }
+    @Override
+    public X500Principal getSubjectX500Principal() {
+      return principal;
+    }
+    @Override
+    public Collection<List<?>> getSubjectAlternativeNames() {
+      List<Object> subjectAlternativeNamePair = new ArrayList<>();
+      subjectAlternativeNamePair.add(6);
+      subjectAlternativeNamePair.add(subjectAlternativeName);
+      return Collections.singletonList(subjectAlternativeNamePair);
+    }
+  }
 
     public static class TestKeyManager implements X509KeyManager {
 
