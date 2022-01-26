@@ -1029,7 +1029,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                         rv.add(new ACL(a.getPerms(), cid));
                     }
                 }
-                if (Arrays.stream(ZNodeGroupAclUtil.getOpenReadAccessPathPrefixes()).anyMatch(path::contains)) {
+                // If the znode path contains open read access node path prefix, add (world:anyone, r) in addition
+                if (Arrays.stream(ZNodeGroupAclUtil.getOpenReadAccessPathPrefixes()).anyMatch(path::startsWith)) {
                     rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
                 };
 

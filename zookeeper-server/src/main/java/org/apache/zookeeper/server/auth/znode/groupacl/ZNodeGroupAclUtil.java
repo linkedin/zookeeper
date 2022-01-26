@@ -37,24 +37,25 @@ public class ZNodeGroupAclUtil {
   // Has the same effect as the ZK client using ZooDefs.Ids.CREATOR_ALL_ACL.
   public static final String SET_X509_CLIENT_ID_AS_ACL =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "setX509ClientIdAsAcl";
+  // A list of domain names that will have super user privilege, separated by ","
   public static final String SUPER_USER_DOMAIN_NAME =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "superUserDomainName";
+  // A list of znode path prefixes, separated by ","
+  // Znode whose path starts with the defined path prefix would have open read access
+  // Meaning the znode will have (world:anyone, r) ACL
   public static final String OPEN_READ_ACCESS_PATH_PREFIX =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
-  public static final String CONFIG_VALUE_LIST_DELIMITER =
-      ZNODE_GROUP_ACL_CONFIG_PREFIX + "configValueListDelimiter";
+  public static final String SUBJECT_ALTERNATIVE_NAME_SHORT = "SAN";
 
   public static String[] getOpenReadAccessPathPrefixes() {
-    String configValListDelimiter = System.getProperty(CONFIG_VALUE_LIST_DELIMITER, ",");
     String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX, "");
-    return openReadAccessPathPrefixesStr.split(configValListDelimiter);
+    return openReadAccessPathPrefixesStr == null ? new String[0] : openReadAccessPathPrefixesStr.split(",");
   }
 
   public static Set<String> getSuperUserDomainNames() {
-    String configValListDelimiter = System.getProperty(CONFIG_VALUE_LIST_DELIMITER, ",");
     String superUserDomainNameStr =
         System.getProperty(ZNodeGroupAclUtil.SUPER_USER_DOMAIN_NAME, "");
-    return Arrays.stream(superUserDomainNameStr.split(configValListDelimiter))
+    return Arrays.stream(superUserDomainNameStr.split(","))
         .filter(str -> str.length() > 0).collect(Collectors.toSet());
   }
 }

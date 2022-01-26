@@ -24,14 +24,12 @@ import java.util.Set;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
-
 import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.common.ClientX509Util;
-import org.apache.zookeeper.common.X509Exception;
+import org.apache.zookeeper.common.ZKConfig;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
-import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +38,8 @@ import org.slf4j.LoggerFactory;
  * Znodes are grouped into domains according to their ownership, and clients are granted access permission to domains.
  * Authentication mechanism is same as in X509AuthenticationProvider.
  * Authorization is done by checking with clients' URI (uniform resource identifier) in ACL metadata for matched domains.
+ * Support client types: single domain client, super user client, client w/o matched domain.
+ * Optional features include: set client Id as znode ACL when creating nodes, add additional public read ACL to znodes based on path
  */
 public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
 
@@ -47,13 +47,12 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   private final String logStrPrefix = this.getClass().getName() + ":: ";
   private final X509TrustManager trustManager;
   private final X509KeyManager keyManager;
+  static final String ZOOKEEPER_ZNODEGROUPACL_SUPERUSER = "zookeeper.znodeGroupAcl.superUser";
 
-  public X509ZNodeGroupAclProvider()
-      throws X509Exception.KeyManagerException, X509Exception.TrustManagerException {
-    // Reuse logic in X509AuthenticationProvider
-    X509AuthenticationProvider authProvider = new X509AuthenticationProvider();
-    this.keyManager = authProvider.getKeyManager();
-    this.trustManager = authProvider.getTrustManager();
+  public X509ZNodeGroupAclProvider() {
+    ZKConfig config = new ZKConfig();
+    this.keyManager = X509AuthenticationUtil.createKeyManager(config);
+    this.trustManager = X509AuthenticationUtil.createTrustManager(config);
   }
 
   public X509ZNodeGroupAclProvider(X509TrustManager trustManager, X509KeyManager keyManager) {
@@ -88,9 +87,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     }
 
     // Extract URI from certificate
-    String clientId;
-    try (ClientX509Util x509Util = new ClientX509Util()) {
-      clientId = x509Util.getClientId(clientCert);
+    String uri;
+    try {
+      uri = X509AuthenticationUtil.getClientId(clientCert);
     } catch (Exception e) {
       // Failed to extract URI from certificate
       LOG.error(logStrPrefix + "Failed to extract URI from certificate for session 0x{}",
@@ -99,32 +98,31 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     }
 
     // User belongs to super user group
-    if (clientId.equals(System
-        .getProperty(X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER))) {
-      cnxn.addAuthInfo(new Id("super", clientId));
-      LOG.info("Authenticated Id '{}' as super user", clientId);
-
+    if (uri.equals(System.getProperty(ZOOKEEPER_ZNODEGROUPACL_SUPERUSER))) {
+      cnxn.addAuthInfo(new Id("super", uri));
+      LOG.info("Authenticated Id '{}' as super user", uri);
       return KeeperException.Code.OK;
     }
 
     // Get authorized domain names for client
     ClientUriDomainMappingHelper uriDomainMappingHelper =
         new ZkClientUriDomainMappingHelper(serverObjs.getZks());
-    Set<String> domains = uriDomainMappingHelper.getDomains(clientId);
+    Set<String> domains = uriDomainMappingHelper.getDomains(uri);
     if (domains.isEmpty()) {
       // If no domain name is found, use URI as domain name
-      domains.add(clientId);
+      domains.add(uri);
     }
 
     Set<String> superUserDomainNames = ZNodeGroupAclUtil.getSuperUserDomainNames();
     for (String domain : domains) {
       // Grant cross domain components super user privilege
       if (superUserDomainNames.contains(domain)) {
-        cnxn.addAuthInfo(new Id("super", clientId));
-        LOG.info(logStrPrefix + "Authenticated Id '{}' as super user", clientId);
+        cnxn.addAuthInfo(new Id("super", uri));
+        LOG.info(logStrPrefix + "Id '{}' belongs to domain '{}', authenticated as super user", uri,
+            domain);
       } else {
         cnxn.addAuthInfo(new Id(getScheme(), domain));
-        LOG.info(logStrPrefix + "Authenticated Id '{}' for Scheme '{}', Domain '{}'.", clientId,
+        LOG.info(logStrPrefix + "Authenticated Id '{}' for Scheme '{}', Domain '{}'.", uri,
             getScheme(), domain);
       }
     }
@@ -135,8 +133,8 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   @Override
   public boolean matches(ServerObjs serverObjs, MatchValues matchValues) {
     for (Id id : serverObjs.getCnxn().getAuthInfo()) {
-      if (id.getId().equals(matchValues.getAclExpr()) || id.getId().equals(System.getProperty(
-          X509AuthenticationProvider.ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER))) {
+      if (id.getId().equals(matchValues.getAclExpr()) || id.getId()
+          .equals(System.getProperty(ZOOKEEPER_ZNODEGROUPACL_SUPERUSER))) {
         return true;
       }
     }

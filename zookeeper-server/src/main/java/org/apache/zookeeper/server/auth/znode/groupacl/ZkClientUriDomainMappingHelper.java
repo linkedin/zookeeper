@@ -18,18 +18,16 @@
 
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
+import com.google.common.collect.Sets;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.common.X509Util;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -131,6 +129,6 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
 
   @Override
   public Set<String> getDomains(String clientUri) {
-    return clientUriToDomainNames.getOrDefault(clientUri, Collections.emptySet());
+    return clientUriToDomainNames.getOrDefault(clientUri, Sets.newHashSet());
   }
 }
