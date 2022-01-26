@@ -24,14 +24,11 @@ import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
 import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.common.ClientX509Util;
 import org.apache.zookeeper.common.X509Exception.KeyManagerException;
 import org.apache.zookeeper.common.X509Exception.TrustManagerException;
-import org.apache.zookeeper.common.X509Util;
 import org.apache.zookeeper.common.ZKConfig;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.ServerCnxn;
-import org.apache.zookeeper.server.auth.znode.groupacl.ZNodeGroupAclUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

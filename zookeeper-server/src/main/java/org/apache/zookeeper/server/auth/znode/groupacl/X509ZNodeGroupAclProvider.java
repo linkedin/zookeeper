@@ -20,6 +20,7 @@ package org.apache.zookeeper.server.auth.znode.groupacl;
 
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.HashSet;
 import java.util.Set;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
@@ -110,6 +111,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     Set<String> domains = uriDomainMappingHelper.getDomains(uri);
     if (domains.isEmpty()) {
       // If no domain name is found, use URI as domain name
+      domains = new HashSet<>();
       domains.add(uri);
     }
 
@@ -118,7 +120,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
       // Grant cross domain components super user privilege
       if (superUserDomainNames.contains(domain)) {
         cnxn.addAuthInfo(new Id("super", uri));
-        LOG.info(logStrPrefix + "Id '{}' belongs to domain '{}', authenticated as super user", uri,
+        LOG.info(logStrPrefix + "Id '{}' belongs to superUser domain '{}', authenticated as super user", uri,
             domain);
       } else {
         cnxn.addAuthInfo(new Id(getScheme(), domain));

@@ -45,7 +45,6 @@ public class ZNodeGroupAclUtil {
   // Meaning the znode will have (world:anyone, r) ACL
   public static final String OPEN_READ_ACCESS_PATH_PREFIX =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
-  public static final String SUBJECT_ALTERNATIVE_NAME_SHORT = "SAN";
 
   public static String[] getOpenReadAccessPathPrefixes() {
     String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX, "");

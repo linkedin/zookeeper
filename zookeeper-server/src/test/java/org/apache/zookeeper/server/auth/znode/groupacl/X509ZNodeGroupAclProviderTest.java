@@ -1,3 +1,21 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
 import java.security.cert.X509Certificate;
@@ -30,7 +48,6 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
   private static X509AuthTest.TestCertificate domainXCert;
   private static X509AuthTest.TestCertificate superCert;
   private static X509AuthTest.TestCertificate unknownCert;
-  private static final String CLIENT_CERT_ID_TYPE = "SAN";
   private static final String CLIENT_CERT_ID_SAN_MATCH_TYPE = "6";
   private static final String SCHEME = "x509";
   private static ZooKeeperServer zks;
@@ -53,10 +70,12 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
         "org.apache.zookeeper.test.X509AuthTest.TestKeyManager");
     System.setProperty("zookeeper.ssl.trustManager",
         "org.apache.zookeeper.test.X509AuthTest.TestTrustManager");
-    System.setProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_TYPE, CLIENT_CERT_ID_TYPE);
+    System.setProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_TYPE,
+        X509AuthenticationUtil.SUBJECT_ALTERNATIVE_NAME_SHORT);
     System.setProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE,
         CLIENT_CERT_ID_SAN_MATCH_TYPE);
-    System.setProperty(AUTH_PROVIDER_PROPERTY_NAME, X509ZNodeGroupAclProvider.class.getCanonicalName());
+    System.setProperty(AUTH_PROVIDER_PROPERTY_NAME,
+        X509ZNodeGroupAclProvider.class.getCanonicalName());
     System.setProperty(
         ZNodeGroupAclUtil.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath",
         CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
