@@ -46,18 +46,24 @@ public class ZNodeGroupAclUtil {
   // Meaning the znode will have (world:anyone, r) ACL
   public static final String OPEN_READ_ACCESS_PATH_PREFIX =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
+  private static Set<String> openReadAccessPathPrefixes = null;
+  private static Set<String> superUserDomainNames = null;
 
   /**
    * Get open read access path prefixes from config
    * @return A set of path prefixes
    */
   public static Set<String> getOpenReadAccessPathPrefixes() {
-    String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX);
-    if (openReadAccessPathPrefixesStr == null || openReadAccessPathPrefixesStr.isEmpty()) {
-      return Collections.emptySet();
+    if (openReadAccessPathPrefixes == null) {
+      String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX);
+      if (openReadAccessPathPrefixesStr == null || openReadAccessPathPrefixesStr.isEmpty()) {
+        return Collections.emptySet();
+      }
+      openReadAccessPathPrefixes =
+          Arrays.stream(openReadAccessPathPrefixesStr.split(",")).filter(str -> str.length() > 0)
+              .collect(Collectors.toSet());
     }
-    return Arrays.stream(openReadAccessPathPrefixesStr.split(",")).filter(str -> str.length() > 0)
-        .collect(Collectors.toSet());
+    return openReadAccessPathPrefixes;
   }
 
   /**
@@ -65,12 +71,15 @@ public class ZNodeGroupAclUtil {
    * @return A set of domain names
    */
   public static Set<String> getSuperUserDomainNames() {
-    String superUserDomainNameStr =
-        System.getProperty(ZNodeGroupAclUtil.SUPER_USER_DOMAIN_NAME);
-    if (superUserDomainNameStr == null || superUserDomainNameStr.isEmpty()) {
-      return Collections.emptySet();
+    if (superUserDomainNames == null) {
+      String superUserDomainNameStr = System.getProperty(ZNodeGroupAclUtil.SUPER_USER_DOMAIN_NAME);
+      if (superUserDomainNameStr == null || superUserDomainNameStr.isEmpty()) {
+        return Collections.emptySet();
+      }
+      superUserDomainNames =
+          Arrays.stream(superUserDomainNameStr.split(",")).filter(str -> str.length() > 0)
+              .collect(Collectors.toSet());
     }
-    return Arrays.stream(superUserDomainNameStr.split(",")).filter(str -> str.length() > 0)
-        .collect(Collectors.toSet());
+    return superUserDomainNames;
   }
 }
