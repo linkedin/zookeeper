@@ -18,7 +18,6 @@
 
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
-import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.HashSet;
 import java.util.Set;
@@ -39,8 +38,16 @@ import org.slf4j.LoggerFactory;
  * Znodes are grouped into domains according to their ownership, and clients are granted access permission to domains.
  * Authentication mechanism is same as in X509AuthenticationProvider.
  * Authorization is done by checking with clients' URI (uniform resource identifier) in ACL metadata for matched domains.
- * Support client types: single domain client, super user client, client w/o matched domain.
- * Optional features include: set client Id as znode ACL when creating nodes, add additional public read ACL to znodes based on path
+ * This class is meant to support the following use patterns:
+ *  1.Multiple creators, one reader - ZNodes, created by multiple identities from multiple domains,
+ *    need to be read by an identity from a different domain.
+ *  2.Multiple creators, multiple readers - ZNodes, created by multiple identities from multiple domains,
+ *    need to be read by multiple identities from multiple domains.
+ *  3.Multiple creators, one all-permission accessor - ZNodes, created by multiple identities from multiple domains,
+ *    need to be read/update/deleted by an identity from a different domain.
+ * Optional features include:
+ *    set client Id as znode ACL when creating nodes,
+ *    add additional public read ACL to znodes based on path.
  */
 public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
 
@@ -63,27 +70,11 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
 
   @Override
   public KeeperException.Code handleAuthentication(ServerObjs serverObjs, byte[] authData) {
-    // Get x509 certificate
     ServerCnxn cnxn = serverObjs.getCnxn();
-    X509Certificate[] certChain = (X509Certificate[]) cnxn.getClientCertificateChain();
-    if (certChain == null || certChain.length == 0) {
-      LOG.error(logStrPrefix + "No x509 certificate is found.");
-      return KeeperException.Code.AUTHFAILED;
-    }
-    X509Certificate clientCert = certChain[0];
-
-    if (trustManager == null) {
-      LOG.error(logStrPrefix + "No trust manager available to authenticate session 0x{}",
-          Long.toHexString(cnxn.getSessionId()));
-      return KeeperException.Code.AUTHFAILED;
-    }
-
+    X509Certificate clientCert;
     try {
-      // Authenticate client certificate
-      trustManager.checkClientTrusted(certChain, clientCert.getPublicKey().getAlgorithm());
-    } catch (CertificateException ce) {
-      LOG.error(logStrPrefix + "Failed to trust certificate for session 0x{}",
-          Long.toHexString(cnxn.getSessionId()), ce);
+      clientCert = X509AuthenticationUtil.getAndAuthenticateClientCert(cnxn, trustManager);
+    } catch (KeeperException.AuthFailedException e) {
       return KeeperException.Code.AUTHFAILED;
     }
 

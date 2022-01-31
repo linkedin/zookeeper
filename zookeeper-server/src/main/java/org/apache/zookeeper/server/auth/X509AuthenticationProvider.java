@@ -18,7 +18,6 @@
 
 package org.apache.zookeeper.server.auth;
 
-import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
@@ -88,24 +87,10 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
 
     @Override
     public KeeperException.Code handleAuthentication(ServerCnxn cnxn, byte[] authData) {
-        X509Certificate[] certChain = (X509Certificate[]) cnxn.getClientCertificateChain();
-
-        if (certChain == null || certChain.length == 0) {
-            return KeeperException.Code.AUTHFAILED;
-        }
-
-        if (trustManager == null) {
-            LOG.error("No trust manager available to authenticate session 0x{}", Long.toHexString(cnxn.getSessionId()));
-            return KeeperException.Code.AUTHFAILED;
-        }
-
-        X509Certificate clientCert = certChain[0];
-
+        X509Certificate clientCert;
         try {
-            // Authenticate client certificate
-            trustManager.checkClientTrusted(certChain, clientCert.getPublicKey().getAlgorithm());
-        } catch (CertificateException ce) {
-            LOG.error("Failed to trust certificate for session 0x{}", Long.toHexString(cnxn.getSessionId()), ce);
+            clientCert = X509AuthenticationUtil.getAndAuthenticateClientCert(cnxn, trustManager);
+        } catch (KeeperException.AuthFailedException e) {
             return KeeperException.Code.AUTHFAILED;
         }
 

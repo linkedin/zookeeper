@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -1030,9 +1029,9 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                     }
                 }
                 // If the znode path contains open read access node path prefix, add (world:anyone, r) in addition
-                if (Arrays.stream(ZNodeGroupAclUtil.getOpenReadAccessPathPrefixes()).anyMatch(path::startsWith)) {
+                if (ZNodeGroupAclUtil.getOpenReadAccessPathPrefixes().stream().anyMatch(path::contains)) {
                     rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
-                };
+                }
 
                 if (!authIdValid) {
                     throw new KeeperException.InvalidACLException(path);

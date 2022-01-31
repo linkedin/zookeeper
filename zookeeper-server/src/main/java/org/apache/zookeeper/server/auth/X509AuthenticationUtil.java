@@ -18,6 +18,7 @@
 
 package org.apache.zookeeper.server.auth;
 
+import java.security.cert.CertificateException;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
@@ -27,10 +28,13 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
+
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.common.ClientX509Util;
 import org.apache.zookeeper.common.X509Exception;
 import org.apache.zookeeper.common.X509Util;
 import org.apache.zookeeper.common.ZKConfig;
+import org.apache.zookeeper.server.ServerCnxn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,6 +71,11 @@ public class X509AuthenticationUtil extends X509Util {
     return false;
   }
 
+  /**
+   * Create key manager from config for x509-based authentication provider
+   * @param config ZooKeeper config
+   * @return An X509KeyManager instance
+   */
   public static X509KeyManager createKeyManager(ZKConfig config) {
     try (X509Util x509Util = new ClientX509Util()) {
       String keyStoreLocation = config.getProperty(x509Util.getSslKeystoreLocationProperty(), "");
@@ -87,6 +96,11 @@ public class X509AuthenticationUtil extends X509Util {
     }
   }
 
+  /**
+   * Create trust manager from config for x509-based authentication provider
+   * @param config ZooKeeper config
+   * @return An X509TrustManager instance
+   */
   public static X509TrustManager createTrustManager(ZKConfig config) {
     try (X509Util x509Util = new ClientX509Util()) {
       boolean crlEnabled =
@@ -129,7 +143,8 @@ public class X509AuthenticationUtil extends X509Util {
   public static String getClientId(X509Certificate clientCert) {
     String clientCertIdType =
         System.getProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_TYPE);
-    if (clientCertIdType != null && clientCertIdType.equalsIgnoreCase(SUBJECT_ALTERNATIVE_NAME_SHORT)) {
+    if (clientCertIdType != null && clientCertIdType
+        .equalsIgnoreCase(SUBJECT_ALTERNATIVE_NAME_SHORT)) {
       try {
         return X509AuthenticationUtil.matchAndExtractSAN(clientCert);
       } catch (Exception ce) {
@@ -141,6 +156,12 @@ public class X509AuthenticationUtil extends X509Util {
     return clientCert.getSubjectX500Principal().getName();
   }
 
+  /**
+   * Extract SAN field from an X509 certificate
+   * @param clientCert Client x509 certificate
+   * @return Subject alternative name (SAN) string
+   * @throws CertificateParsingException
+   */
   private static String matchAndExtractSAN(X509Certificate clientCert)
       throws CertificateParsingException {
     Integer matchType = Integer.getInteger(SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
@@ -164,15 +185,16 @@ public class X509AuthenticationUtil extends X509Util {
       throw new IllegalArgumentException(errStr);
     }
     // filter by match type and match regex
-    LOG.info("X509AuthenticationUtil::matchAndExtractSAN(): number of SAN entries found in" + " clientCert: " + clientCert
-        .getSubjectAlternativeNames().size());
+    LOG.info("X509AuthenticationUtil::matchAndExtractSAN(): number of SAN entries found in"
+        + " clientCert: " + clientCert.getSubjectAlternativeNames().size());
     Pattern matchPattern = Pattern.compile(matchRegex);
     Collection<List<?>> matched = clientCert.getSubjectAlternativeNames().stream().filter(
         list -> list.get(0).equals(matchType) && matchPattern.matcher((CharSequence) list.get(1))
             .find()).collect(Collectors.toList());
 
-    LOG.info("X509AuthenticationUtil::matchAndExtractSAN(): number of SAN entries matched: " + matched.size()
-        + ". Printing all matches...");
+    LOG.info(
+        "X509AuthenticationUtil::matchAndExtractSAN(): number of SAN entries matched: " + matched
+            .size() + ". Printing all matches...");
     for (List<?> match : matched) {
       LOG.info("  Match: (" + match.get(0) + ", " + match.get(1) + ")");
     }
@@ -201,5 +223,45 @@ public class X509AuthenticationUtil extends X509Util {
         + "extract substring! Please review the extract regex!";
     LOG.error(errStr);
     throw new IllegalArgumentException(errStr);
+  }
+
+  /**
+   * Get a client certificate from server connection object and authenticate the certificate using X509TrustManager
+   * @param cnxn ServerCnxn object
+   * @param trustManager
+   * @return The authenticated client certificate
+   * @throws KeeperException.AuthFailedException Failed to authenticate the client certificate
+   */
+  public static X509Certificate getAndAuthenticateClientCert(ServerCnxn cnxn, X509TrustManager trustManager)
+      throws KeeperException.AuthFailedException {
+    X509Certificate[] certChain = (X509Certificate[]) cnxn.getClientCertificateChain();
+
+    if (certChain == null || certChain.length == 0) {
+      String errMsg =
+          "X509AuthenticationUtil::getAndAuthenticateClientCert(): No X509 certificate is found in cert chain.";
+      LOG.error(errMsg);
+      throw new KeeperException.AuthFailedException();
+    }
+
+    X509Certificate clientCert = certChain[0];
+
+    if (trustManager == null) {
+      String errMsg =
+          "X509AuthenticationUtil::getAndAuthenticateClientCert(): No trust manager available to authenticate session 0x"
+              + Long.toHexString(cnxn.getSessionId());
+      LOG.error(errMsg);
+      throw new KeeperException.AuthFailedException();
+    }
+
+    try {
+      // Authenticate client certificate
+      trustManager.checkClientTrusted((X509Certificate[]) cnxn.getClientCertificateChain(), clientCert.getPublicKey().getAlgorithm());
+    } catch (CertificateException ce) {
+      String errMsg =
+          "X509AuthenticationUtil::getAndAuthenticateClientCert(): Failed to trust certificate for session 0x" + Long.toHexString(cnxn.getSessionId());
+      LOG.error(errMsg, ce);
+      throw new KeeperException.AuthFailedException();
+    }
+    return certChain[0];
   }
 }

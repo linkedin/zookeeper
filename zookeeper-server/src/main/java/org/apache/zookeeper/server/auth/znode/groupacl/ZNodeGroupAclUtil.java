@@ -22,7 +22,6 @@ package org.apache.zookeeper.server.auth.znode.groupacl;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
-
 /**
  * Util class for ZNode Group ACL. Contains util methods and constants.
  */
@@ -46,11 +45,20 @@ public class ZNodeGroupAclUtil {
   public static final String OPEN_READ_ACCESS_PATH_PREFIX =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
 
-  public static String[] getOpenReadAccessPathPrefixes() {
+  /**
+   * Get open read access path prefixes from config
+   * @return A set of path prefixes
+   */
+  public static Set<String> getOpenReadAccessPathPrefixes() {
     String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX, "");
-    return openReadAccessPathPrefixesStr == null ? new String[0] : openReadAccessPathPrefixesStr.split(",");
+    return Arrays.stream(openReadAccessPathPrefixesStr.split(","))
+        .filter(str -> str.length() > 0).collect(Collectors.toSet());
   }
 
+  /**
+   * Get the domain names that are mapped to super user access privilege
+   * @return A set of domain names
+   */
   public static Set<String> getSuperUserDomainNames() {
     String superUserDomainNameStr =
         System.getProperty(ZNodeGroupAclUtil.SUPER_USER_DOMAIN_NAME, "");
