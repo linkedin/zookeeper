@@ -20,8 +20,10 @@
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
+
 /**
  * Util class for ZNode Group ACL. Contains util methods and constants.
  */
@@ -50,9 +52,12 @@ public class ZNodeGroupAclUtil {
    * @return A set of path prefixes
    */
   public static Set<String> getOpenReadAccessPathPrefixes() {
-    String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX, "");
-    return Arrays.stream(openReadAccessPathPrefixesStr.split(","))
-        .filter(str -> str.length() > 0).collect(Collectors.toSet());
+    String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX);
+    if (openReadAccessPathPrefixesStr == null || openReadAccessPathPrefixesStr.isEmpty()) {
+      return Collections.emptySet();
+    }
+    return Arrays.stream(openReadAccessPathPrefixesStr.split(",")).filter(str -> str.length() > 0)
+        .collect(Collectors.toSet());
   }
 
   /**
@@ -61,8 +66,11 @@ public class ZNodeGroupAclUtil {
    */
   public static Set<String> getSuperUserDomainNames() {
     String superUserDomainNameStr =
-        System.getProperty(ZNodeGroupAclUtil.SUPER_USER_DOMAIN_NAME, "");
-    return Arrays.stream(superUserDomainNameStr.split(","))
-        .filter(str -> str.length() > 0).collect(Collectors.toSet());
+        System.getProperty(ZNodeGroupAclUtil.SUPER_USER_DOMAIN_NAME);
+    if (superUserDomainNameStr == null || superUserDomainNameStr.isEmpty()) {
+      return Collections.emptySet();
+    }
+    return Arrays.stream(superUserDomainNameStr.split(",")).filter(str -> str.length() > 0)
+        .collect(Collectors.toSet());
   }
 }
