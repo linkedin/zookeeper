@@ -106,7 +106,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
       domains.add(uri);
     }
 
-    Set<String> superUserDomainNames = ZNodeGroupAclUtil.getSuperUserDomainNames();
+    Set<String> superUserDomainNames = ZNodeGroupAclProperties.getInstance().getSuperUserDomainNames();
     for (String domain : domains) {
       // Grant cross domain components super user privilege
       if (superUserDomainNames.contains(domain)) {

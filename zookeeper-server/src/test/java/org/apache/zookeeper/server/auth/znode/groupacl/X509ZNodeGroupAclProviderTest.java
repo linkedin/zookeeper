@@ -77,7 +77,7 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     System.setProperty(AUTH_PROVIDER_PROPERTY_NAME,
         X509ZNodeGroupAclProvider.class.getCanonicalName());
     System.setProperty(
-        ZNodeGroupAclUtil.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath",
+        ZNodeGroupAclProperties.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath",
         CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
     LOG.info("Starting Zk...");
     zks = new ZooKeeperServer(testBaseDir, testBaseDir, 3000);
@@ -115,7 +115,7 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     System.clearProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
     System.clearProperty(AUTH_PROVIDER_PROPERTY_NAME);
     System.clearProperty(
-        ZNodeGroupAclUtil.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath");
+        ZNodeGroupAclProperties.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath");
   }
 
   @Test

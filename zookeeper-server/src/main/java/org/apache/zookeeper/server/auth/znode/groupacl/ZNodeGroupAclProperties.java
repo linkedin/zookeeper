@@ -25,9 +25,22 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Util class for ZNode Group ACL. Contains util methods and constants.
+ * Configured properties for ZNode Group ACL feature
  */
-public class ZNodeGroupAclUtil {
+public class ZNodeGroupAclProperties {
+  private static ZNodeGroupAclProperties instance = null;
+
+  private ZNodeGroupAclProperties() {
+    openReadAccessPathPrefixes = loadOpenReadAccessPathPrefixes();
+    superUserDomainNames = loadSuperUserDomainNames();
+  }
+
+  public static ZNodeGroupAclProperties getInstance() {
+    if (instance == null) {
+      instance = new ZNodeGroupAclProperties();
+    }
+    return instance;
+  }
 
   /**
    * Property key values (JVM configs) for ZNode group ACL features
@@ -39,47 +52,47 @@ public class ZNodeGroupAclUtil {
   public static final String SET_X509_CLIENT_ID_AS_ACL =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "setX509ClientIdAsAcl";
   // A list of domain names that will have super user privilege, separated by ","
-  public static final String SUPER_USER_DOMAIN_NAME =
+  private static final String SUPER_USER_DOMAIN_NAME =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "superUserDomainName";
   // A list of znode path prefixes, separated by ","
   // Znode whose path starts with the defined path prefix would have open read access
   // Meaning the znode will have (world:anyone, r) ACL
-  public static final String OPEN_READ_ACCESS_PATH_PREFIX =
+  private static final String OPEN_READ_ACCESS_PATH_PREFIX =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
-  private static Set<String> openReadAccessPathPrefixes = null;
-  private static Set<String> superUserDomainNames = null;
+  private final Set<String> openReadAccessPathPrefixes;
+  private final Set<String> superUserDomainNames;
 
   /**
    * Get open read access path prefixes from config
    * @return A set of path prefixes
    */
-  public static Set<String> getOpenReadAccessPathPrefixes() {
-    if (openReadAccessPathPrefixes == null) {
-      String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX);
-      if (openReadAccessPathPrefixesStr == null || openReadAccessPathPrefixesStr.isEmpty()) {
-        return Collections.emptySet();
-      }
-      openReadAccessPathPrefixes =
-          Arrays.stream(openReadAccessPathPrefixesStr.split(",")).filter(str -> str.length() > 0)
-              .collect(Collectors.toSet());
+  public Set<String> loadOpenReadAccessPathPrefixes() {
+    String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX);
+    if (openReadAccessPathPrefixesStr == null || openReadAccessPathPrefixesStr.isEmpty()) {
+      return Collections.emptySet();
     }
-    return openReadAccessPathPrefixes;
+    return Arrays.stream(openReadAccessPathPrefixesStr.split(",")).filter(str -> str.length() > 0)
+        .collect(Collectors.toSet());
   }
 
   /**
    * Get the domain names that are mapped to super user access privilege
    * @return A set of domain names
    */
-  public static Set<String> getSuperUserDomainNames() {
-    if (superUserDomainNames == null) {
-      String superUserDomainNameStr = System.getProperty(ZNodeGroupAclUtil.SUPER_USER_DOMAIN_NAME);
-      if (superUserDomainNameStr == null || superUserDomainNameStr.isEmpty()) {
-        return Collections.emptySet();
-      }
-      superUserDomainNames =
-          Arrays.stream(superUserDomainNameStr.split(",")).filter(str -> str.length() > 0)
-              .collect(Collectors.toSet());
+  public Set<String> loadSuperUserDomainNames() {
+    String superUserDomainNameStr = System.getProperty(SUPER_USER_DOMAIN_NAME);
+    if (superUserDomainNameStr == null || superUserDomainNameStr.isEmpty()) {
+      return Collections.emptySet();
     }
+    return Arrays.stream(superUserDomainNameStr.split(",")).filter(str -> str.length() > 0)
+        .collect(Collectors.toSet());
+  }
+
+  public Set<String> getOpenReadAccessPathPrefixes() {
+    return openReadAccessPathPrefixes;
+  }
+
+  public Set<String> getSuperUserDomainNames() {
     return superUserDomainNames;
   }
 }

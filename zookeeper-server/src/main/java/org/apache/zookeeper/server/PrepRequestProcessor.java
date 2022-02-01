@@ -59,7 +59,7 @@ import org.apache.zookeeper.server.ZooKeeperServer.ChangeRecord;
 import org.apache.zookeeper.server.ZooKeeperServer.PrecalculatedDigest;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
-import org.apache.zookeeper.server.auth.znode.groupacl.ZNodeGroupAclUtil;
+import org.apache.zookeeper.server.auth.znode.groupacl.ZNodeGroupAclProperties;
 import org.apache.zookeeper.server.quorum.LeaderZooKeeperServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
@@ -1029,7 +1029,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                     }
                 }
                 // If the znode path contains open read access node path prefix, add (world:anyone, r) in addition
-                if (ZNodeGroupAclUtil.getOpenReadAccessPathPrefixes().stream().anyMatch(path::contains)) {
+                ZNodeGroupAclProperties zNodeGroupAclProperties = ZNodeGroupAclProperties.getInstance();
+                if (zNodeGroupAclProperties.getOpenReadAccessPathPrefixes().stream().anyMatch(path::contains)) {
                     rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
                 }
 
