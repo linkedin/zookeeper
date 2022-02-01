@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
+
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
 import org.apache.zookeeper.CreateMode;
@@ -1029,8 +1030,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                     }
                 }
                 // If the znode path contains open read access node path prefix, add (world:anyone, r) in addition
-                ZNodeGroupAclProperties zNodeGroupAclProperties = ZNodeGroupAclProperties.getInstance();
-                if (zNodeGroupAclProperties.getOpenReadAccessPathPrefixes().stream().anyMatch(path::contains)) {
+                if (ZNodeGroupAclProperties.getInstance().getOpenReadAccessPathPrefixes().stream()
+                    .anyMatch(path::contains)) {
                     rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
                 }
 

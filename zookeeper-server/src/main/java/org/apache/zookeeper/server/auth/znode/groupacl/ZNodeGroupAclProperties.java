@@ -30,10 +30,7 @@ import java.util.stream.Collectors;
 public class ZNodeGroupAclProperties {
   private static ZNodeGroupAclProperties instance = null;
 
-  private ZNodeGroupAclProperties() {
-    openReadAccessPathPrefixes = loadOpenReadAccessPathPrefixes();
-    superUserDomainNames = loadSuperUserDomainNames();
-  }
+  private ZNodeGroupAclProperties() { }
 
   public static ZNodeGroupAclProperties getInstance() {
     if (instance == null) {
@@ -59,14 +56,14 @@ public class ZNodeGroupAclProperties {
   // Meaning the znode will have (world:anyone, r) ACL
   private static final String OPEN_READ_ACCESS_PATH_PREFIX =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
-  private final Set<String> openReadAccessPathPrefixes;
-  private final Set<String> superUserDomainNames;
+  private Set<String> openReadAccessPathPrefixes;
+  private Set<String> superUserDomainNames;
 
   /**
    * Get open read access path prefixes from config
    * @return A set of path prefixes
    */
-  public Set<String> loadOpenReadAccessPathPrefixes() {
+  private Set<String> loadOpenReadAccessPathPrefixes() {
     String openReadAccessPathPrefixesStr = System.getProperty(OPEN_READ_ACCESS_PATH_PREFIX);
     if (openReadAccessPathPrefixesStr == null || openReadAccessPathPrefixesStr.isEmpty()) {
       return Collections.emptySet();
@@ -79,7 +76,7 @@ public class ZNodeGroupAclProperties {
    * Get the domain names that are mapped to super user access privilege
    * @return A set of domain names
    */
-  public Set<String> loadSuperUserDomainNames() {
+  private Set<String> loadSuperUserDomainNames() {
     String superUserDomainNameStr = System.getProperty(SUPER_USER_DOMAIN_NAME);
     if (superUserDomainNameStr == null || superUserDomainNameStr.isEmpty()) {
       return Collections.emptySet();
@@ -89,10 +86,16 @@ public class ZNodeGroupAclProperties {
   }
 
   public Set<String> getOpenReadAccessPathPrefixes() {
+    if (openReadAccessPathPrefixes == null) {
+      openReadAccessPathPrefixes = loadOpenReadAccessPathPrefixes();
+    }
     return openReadAccessPathPrefixes;
   }
 
   public Set<String> getSuperUserDomainNames() {
+    if (superUserDomainNames == null) {
+      superUserDomainNames = loadSuperUserDomainNames();
+    }
     return superUserDomainNames;
   }
 }
