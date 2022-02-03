@@ -30,11 +30,16 @@ import java.util.stream.Collectors;
 public class ZNodeGroupAclProperties {
   private static ZNodeGroupAclProperties instance = null;
 
-  private ZNodeGroupAclProperties() { }
+  private ZNodeGroupAclProperties() {
+  }
 
   public static ZNodeGroupAclProperties getInstance() {
     if (instance == null) {
-      instance = new ZNodeGroupAclProperties();
+      synchronized (ZNodeGroupAclProperties.class) {
+        if (instance == null) {
+          instance = new ZNodeGroupAclProperties();
+        }
+      }
     }
     return instance;
   }
@@ -87,14 +92,22 @@ public class ZNodeGroupAclProperties {
 
   public Set<String> getOpenReadAccessPathPrefixes() {
     if (openReadAccessPathPrefixes == null) {
-      openReadAccessPathPrefixes = loadOpenReadAccessPathPrefixes();
+      synchronized (ZNodeGroupAclProperties.class) {
+        if (openReadAccessPathPrefixes == null) {
+          openReadAccessPathPrefixes = loadOpenReadAccessPathPrefixes();
+        }
+      }
     }
     return openReadAccessPathPrefixes;
   }
 
   public Set<String> getSuperUserDomainNames() {
     if (superUserDomainNames == null) {
-      superUserDomainNames = loadSuperUserDomainNames();
+      synchronized (ZNodeGroupAclProperties.class) {
+        if (superUserDomainNames == null) {
+          superUserDomainNames = loadSuperUserDomainNames();
+        }
+      }
     }
     return superUserDomainNames;
   }

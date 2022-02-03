@@ -89,7 +89,7 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
     public KeeperException.Code handleAuthentication(ServerCnxn cnxn, byte[] authData) {
         X509Certificate clientCert;
         try {
-            clientCert = X509AuthenticationUtil.getAndAuthenticateClientCert(cnxn, trustManager);
+            clientCert = X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
         } catch (KeeperException.AuthFailedException e) {
             return KeeperException.Code.AUTHFAILED;
         }

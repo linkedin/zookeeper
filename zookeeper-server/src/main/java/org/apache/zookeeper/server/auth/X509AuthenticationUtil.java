@@ -28,7 +28,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
-
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.common.ClientX509Util;
 import org.apache.zookeeper.common.X509Exception;
@@ -232,7 +231,7 @@ public class X509AuthenticationUtil extends X509Util {
    * @return The authenticated client certificate
    * @throws KeeperException.AuthFailedException Failed to authenticate the client certificate
    */
-  public static X509Certificate getAndAuthenticateClientCert(ServerCnxn cnxn, X509TrustManager trustManager)
+  public static X509Certificate getAuthenticatedClientCert(ServerCnxn cnxn, X509TrustManager trustManager)
       throws KeeperException.AuthFailedException {
     X509Certificate[] certChain = (X509Certificate[]) cnxn.getClientCertificateChain();
 

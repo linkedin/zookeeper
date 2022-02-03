@@ -19,7 +19,10 @@
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
 import java.security.cert.X509Certificate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.PortAssignment;
@@ -62,23 +65,22 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
       CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/DomainX/DomainXUser",
       CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/DomainY",
       CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/DomainY/DomainYUser"};
+  private static final Map<String, String> SYSTEM_PROPERTIES = new HashMap<>();
+    static {
+      SYSTEM_PROPERTIES.put(X509ZNodeGroupAclProvider.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER, "SuperUser");
+      SYSTEM_PROPERTIES.put("zookeeper.ssl.keyManager", "org.apache.zookeeper.test.X509AuthTest.TestKeyManager");
+      SYSTEM_PROPERTIES.put("zookeeper.ssl.trustManager", "org.apache.zookeeper.test.X509AuthTest.TestTrustManager");
+      SYSTEM_PROPERTIES.put(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_TYPE, X509AuthenticationUtil.SUBJECT_ALTERNATIVE_NAME_SHORT);
+      SYSTEM_PROPERTIES.put(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, CLIENT_CERT_ID_SAN_MATCH_TYPE);
+      SYSTEM_PROPERTIES.put(AUTH_PROVIDER_PROPERTY_NAME, X509ZNodeGroupAclProvider.class.getCanonicalName());
+      SYSTEM_PROPERTIES.put(ZNodeGroupAclProperties.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath", CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
+  }
 
   @Before
   public void setUp() throws Exception {
-    System.setProperty(X509ZNodeGroupAclProvider.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER, "SuperUser");
-    System.setProperty("zookeeper.ssl.keyManager",
-        "org.apache.zookeeper.test.X509AuthTest.TestKeyManager");
-    System.setProperty("zookeeper.ssl.trustManager",
-        "org.apache.zookeeper.test.X509AuthTest.TestTrustManager");
-    System.setProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_TYPE,
-        X509AuthenticationUtil.SUBJECT_ALTERNATIVE_NAME_SHORT);
-    System.setProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE,
-        CLIENT_CERT_ID_SAN_MATCH_TYPE);
-    System.setProperty(AUTH_PROVIDER_PROPERTY_NAME,
-        X509ZNodeGroupAclProvider.class.getCanonicalName());
-    System.setProperty(
-        ZNodeGroupAclProperties.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath",
-        CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
+    for (Map.Entry<String, String> property : SYSTEM_PROPERTIES.entrySet()) {
+      System.setProperty(property.getKey(), property.getValue());
+    }
     LOG.info("Starting Zk...");
     zks = new ZooKeeperServer(testBaseDir, testBaseDir, 3000);
     final int PORT = Integer.parseInt(HOSTPORT.split(":")[1]);
@@ -110,12 +112,9 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     zks.shutdown();
     admin.close();
     serverCnxnFactory.shutdown();
-    System.clearProperty(X509ZNodeGroupAclProvider.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER);
-    System.clearProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_TYPE);
-    System.clearProperty(X509AuthenticationUtil.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
-    System.clearProperty(AUTH_PROVIDER_PROPERTY_NAME);
-    System.clearProperty(
-        ZNodeGroupAclProperties.ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath");
+    for (Map.Entry<String, String> property : SYSTEM_PROPERTIES.entrySet()) {
+      System.clearProperty(property.getKey());
+    }
   }
 
   @Test

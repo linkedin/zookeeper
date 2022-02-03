@@ -149,170 +149,136 @@ public class X509AuthTest extends ZKTestCase {
 
     }
 
-  public static class TestCertificate extends X509Certificate {
-      @VisibleForTesting
-      static final String TEST_SAN_STR = "a:b:c(d;e;f)";
-      private byte[] encoded;
-      private X500Principal principal;
-      private PublicKey publicKey;
-      private String subjectAlternativeName;
+    public static class TestCertificate extends X509Certificate {
+        @VisibleForTesting
+        static final String TEST_SAN_STR = "a:b:c(d;e;f)";
+        private byte[] encoded;
+        private X500Principal principal;
+        private PublicKey publicKey;
+        private String subjectAlternativeName;
 
-      public TestCertificate(String name) {
-        this(name, TEST_SAN_STR);
-      }
+        public TestCertificate(String name) {
+          this(name, TEST_SAN_STR);
+        }
 
-      public TestCertificate(String name, String sanVal) {
-        encoded = name.getBytes();
-        principal = new X500Principal("CN=" + name);
-        publicKey = new TestPublicKey();
-        subjectAlternativeName = sanVal;
-      }
-
-      @Override
-      public boolean hasUnsupportedCriticalExtension() {
-        return false;
-      }
-
-      @Override
-      public Set<String> getCriticalExtensionOIDs() {
-        return null;
-      }
-
-      @Override
-      public Set<String> getNonCriticalExtensionOIDs() {
-        return null;
-      }
-
-      @Override
-      public byte[] getExtensionValue(String oid) {
-        return null;
-      }
-
-      @Override
-      public void checkValidity()
-          throws CertificateExpiredException, CertificateNotYetValidException {
-      }
-
-      @Override
-      public void checkValidity(Date date)
-          throws CertificateExpiredException, CertificateNotYetValidException {
-      }
-
-      @Override
-      public int getVersion() {
-        return 0;
-      }
-
-      @Override
-      public BigInteger getSerialNumber() {
-        return null;
-      }
-
-      @Override
-      public Principal getIssuerDN() {
-        return null;
-      }
-
-      @Override
-      public Principal getSubjectDN() {
-        return null;
-      }
-
-      @Override
-      public Date getNotBefore() {
-        return null;
-      }
-
-      @Override
-      public Date getNotAfter() {
-        return null;
-      }
-
-      @Override
-      public byte[] getTBSCertificate() throws CertificateEncodingException {
-        return null;
-      }
-
-      @Override
-      public byte[] getSignature() {
-        return null;
-      }
-
-      @Override
-      public String getSigAlgName() {
-        return null;
-      }
-
-      @Override
-      public String getSigAlgOID() {
-        return null;
-      }
-
-      @Override
-      public byte[] getSigAlgParams() {
-        return null;
-      }
-
-      @Override
-      public boolean[] getIssuerUniqueID() {
-        return null;
-      }
-
-      @Override
-      public boolean[] getSubjectUniqueID() {
-        return null;
-      }
-
-      @Override
-      public boolean[] getKeyUsage() {
-        return null;
-      }
-
-      @Override
-      public int getBasicConstraints() {
-        return 0;
-      }
-
-      @Override
-      public byte[] getEncoded() throws CertificateEncodingException {
-        return encoded;
-      }
-
-      @Override
-      public void verify(PublicKey key)
-          throws CertificateException, NoSuchAlgorithmException, InvalidKeyException,
-                 NoSuchProviderException, SignatureException {
-      }
-
-      @Override
-      public void verify(PublicKey key, String sigProvider)
-          throws CertificateException, NoSuchAlgorithmException, InvalidKeyException,
-                 NoSuchProviderException, SignatureException {
-      }
-
-      @Override
-      public String toString() {
-        return null;
-      }
-
-      @Override
-      public PublicKey getPublicKey() {
-        return publicKey;
-      }
-
-      @Override
-      public X500Principal getSubjectX500Principal() {
-        return principal;
-      }
-
-      @Override
-      public Collection<List<?>> getSubjectAlternativeNames() {
-        List<Object> subjectAlternativeNamePair = new ArrayList<>();
-        subjectAlternativeNamePair.add(6);
-        subjectAlternativeNamePair.add(subjectAlternativeName);
-        return Collections.singletonList(subjectAlternativeNamePair);
-      }
-  }
+        public TestCertificate(String name, String sanVal) {
+          encoded = name.getBytes();
+          principal = new X500Principal("CN=" + name);
+          publicKey = new TestPublicKey();
+          subjectAlternativeName = sanVal;
+        }
+          @Override
+        public boolean hasUnsupportedCriticalExtension() {
+            return false;
+        }
+        @Override
+        public Set<String> getCriticalExtensionOIDs() {
+            return null;
+        }
+        @Override
+        public Set<String> getNonCriticalExtensionOIDs() {
+            return null;
+        }
+        @Override
+        public byte[] getExtensionValue(String oid) {
+            return null;
+        }
+        @Override
+        public void checkValidity() throws CertificateExpiredException, CertificateNotYetValidException {
+        }
+        @Override
+        public void checkValidity(Date date) throws CertificateExpiredException, CertificateNotYetValidException {
+        }
+        @Override
+        public int getVersion() {
+            return 0;
+        }
+        @Override
+        public BigInteger getSerialNumber() {
+            return null;
+        }
+        @Override
+        public Principal getIssuerDN() {
+            return null;
+        }
+        @Override
+        public Principal getSubjectDN() {
+            return null;
+        }
+        @Override
+        public Date getNotBefore() {
+            return null;
+        }
+        @Override
+        public Date getNotAfter() {
+            return null;
+        }
+        @Override
+        public byte[] getTBSCertificate() throws CertificateEncodingException {
+            return null;
+        }
+        @Override
+        public byte[] getSignature() {
+            return null;
+        }
+        @Override
+        public String getSigAlgName() {
+            return null;
+        }
+        @Override
+        public String getSigAlgOID() {
+            return null;
+        }
+        @Override
+        public byte[] getSigAlgParams() {
+            return null;
+        }
+        @Override
+        public boolean[] getIssuerUniqueID() {
+            return null;
+        }
+        @Override
+        public boolean[] getSubjectUniqueID() {
+            return null;
+        }
+        @Override
+        public boolean[] getKeyUsage() {
+            return null;
+        }
+        @Override
+        public int getBasicConstraints() {
+            return 0;
+        }
+        @Override
+        public byte[] getEncoded() throws CertificateEncodingException {
+            return encoded;
+        }
+        @Override
+        public void verify(PublicKey key) throws CertificateException, NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException, SignatureException {
+        }
+        @Override
+        public void verify(PublicKey key, String sigProvider) throws CertificateException, NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException, SignatureException {
+        }
+        @Override
+        public String toString() {
+            return null;
+        }
+        @Override
+        public PublicKey getPublicKey() {
+            return publicKey;
+        }
+        @Override
+        public X500Principal getSubjectX500Principal() {
+            return principal;
+        }
+        @Override
+        public Collection<List<?>> getSubjectAlternativeNames() {
+            List<Object> subjectAlternativeNamePair = new ArrayList<>();
+            subjectAlternativeNamePair.add(6);
+            subjectAlternativeNamePair.add(subjectAlternativeName);
+            return Collections.singletonList(subjectAlternativeNamePair);
+        }
+    }
 
     public static class TestKeyManager implements X509KeyManager {
 
