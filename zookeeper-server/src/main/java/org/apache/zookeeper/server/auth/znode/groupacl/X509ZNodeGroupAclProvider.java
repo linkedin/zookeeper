@@ -47,16 +47,18 @@ import org.slf4j.LoggerFactory;
  *     if no matched domain is found, add the clientId in authInfo instead; either way, establish the connection.
  * This class is meant to support the following use patterns:
  *  1. Single domain: The creator and the accessor to the znodes belong to the same domain. This is
- *     the most straightforward use case, and accessors from other domains will be declined to access the nodes.
+ *     the most straightforward use case, and accessors in other domains won't be able to access the
+ *     znodes due to their clientId not matching any in the znodes.
  *  2. Super user domain: The accessors need permission to access znodes created by creators belong
- *     to many other domains. In this case the accessors will be mapped to super user domain and be
+ *     to multiple domains. In this case the accessors will be mapped to super user domain and be
  *     given super user privilege.
  *  3. Open read access: The znodes need to be accessed by accessors from many different domains, so when
  *     the creators create these znodes, these nodes will be given "open read access" (see below).
  * Optional features include:
  *    "auto-set ACL": add ZooDefs.Ids.CREATOR_ALL_ACL to all newly-created znodes,
- *    "open read access": add (world, anyone r) to all newly-written znodes whose path prefixes are
- *          given in the znode group acl config (comma-delimited, multiple such prefixes are possible).
+ *    "open read access": this feature concerns read access only. Add (world, anyone r) to all
+ *          newly-written znodes whose path prefixes are given in the znode group acl config
+ *          (comma-delimited, multiple such prefixes are possible).
  */
 public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   private static final Logger LOG = LoggerFactory.getLogger(X509ZNodeGroupAclProvider.class);
@@ -64,7 +66,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   private final X509TrustManager trustManager;
   private final X509KeyManager keyManager;
   static final String ZOOKEEPER_ZNODEGROUPACL_SUPERUSER = "zookeeper.znodeGroupAcl.superUser";
-  private static ClientUriDomainMappingHelper uriDomainMappingHelper = null;
+  // Although using "volatile" keyword with double checked locking could prevent the undesired
+  //creation of multiple objects; not using here for the consideration of read performance
+  private ClientUriDomainMappingHelper uriDomainMappingHelper = null;
 
   public X509ZNodeGroupAclProvider() {
     ZKConfig config = new ZKConfig();
@@ -89,7 +93,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
 
     // The clientId can be any string matched and extracted using regex from Subject Distinguished
     // Name or Subject Alternative Name from x509 certificate.
-    // The clientId string should be an URI for client and map the client to certain domain.
+    // The clientId string is intended to be an URI for client and map the client to certain domain.
     //The user can use the properties defined in X509AuthenticationUtil to extract a desired string as clientId.
     String clientId;
     try {
@@ -138,8 +142,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   @Override
   public boolean matches(ServerObjs serverObjs, MatchValues matchValues) {
     for (Id id : serverObjs.getCnxn().getAuthInfo()) {
-      if (id.getId().equals(matchValues.getAclExpr()) || id.getId()
-          .equals(System.getProperty(ZOOKEEPER_ZNODEGROUPACL_SUPERUSER))) {
+      // Not checking for super user here because the check is already covered
+      // in checkAcl() in ZookeeperServer.class
+      if (id.getId().equals(matchValues.getAclExpr())) {
         return true;
       }
     }
@@ -167,9 +172,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     }
   }
 
-  private static ClientUriDomainMappingHelper getUriDomainMappingHelper(ZooKeeperServer zks) {
+  private ClientUriDomainMappingHelper getUriDomainMappingHelper(ZooKeeperServer zks) {
     if (uriDomainMappingHelper == null) {
-      synchronized (ClientUriDomainMappingHelper.class) {
+      synchronized (this) {
         if (uriDomainMappingHelper == null) {
           uriDomainMappingHelper = new ZkClientUriDomainMappingHelper(zks);
         }

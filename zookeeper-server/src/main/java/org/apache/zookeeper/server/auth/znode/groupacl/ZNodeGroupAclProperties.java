@@ -61,8 +61,12 @@ public class ZNodeGroupAclProperties {
   // Meaning the znode will have (world:anyone, r) ACL
   private static final String OPEN_READ_ACCESS_PATH_PREFIX =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
+  // Although using "volatile" keyword with double checked locking could prevent the undesired
+  //creation of multiple objects; not using here for the consideration of read performance
   private Set<String> openReadAccessPathPrefixes;
   private Set<String> superUserDomainNames;
+  private final Object openReadAccessPathPrefixesLock = new Object();
+  private final Object superUserDomainNamesLock = new Object();
 
   /**
    * Get open read access path prefixes from config
@@ -92,7 +96,7 @@ public class ZNodeGroupAclProperties {
 
   public Set<String> getOpenReadAccessPathPrefixes() {
     if (openReadAccessPathPrefixes == null) {
-      synchronized (ZNodeGroupAclProperties.class) {
+      synchronized (openReadAccessPathPrefixesLock) {
         if (openReadAccessPathPrefixes == null) {
           openReadAccessPathPrefixes = loadOpenReadAccessPathPrefixes();
         }
@@ -103,7 +107,7 @@ public class ZNodeGroupAclProperties {
 
   public Set<String> getSuperUserDomainNames() {
     if (superUserDomainNames == null) {
-      synchronized (ZNodeGroupAclProperties.class) {
+      synchronized (superUserDomainNamesLock) {
         if (superUserDomainNames == null) {
           superUserDomainNames = loadSuperUserDomainNames();
         }
