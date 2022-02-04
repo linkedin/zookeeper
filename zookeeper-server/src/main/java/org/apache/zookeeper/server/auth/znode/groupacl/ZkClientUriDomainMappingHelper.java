@@ -24,14 +24,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs;
+import org.apache.zookeeper.server.ServerCnxn;
+import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 
 /**
  * An implementation of ClientUriDomainMappingHelper that stores the mapping inside the ZK server
@@ -64,7 +66,10 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
 
   private final ZooKeeperServer zks;
   private final String rootPath;
-  private final Map<String, Set<String>> clientUriToDomainNames = new HashMap<>();
+
+  private Map<String, Set<String>> clientUriToDomainNames = Collections.emptyMap();
+
+  private ConnectionAuthInfoUpdater updater = null;
 
   public ZkClientUriDomainMappingHelper(ZooKeeperServer zks) {
     this.zks = zks;
@@ -84,6 +89,14 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
     parseZNodeMapping();
   }
 
+  synchronized void setDomainAuthUpdater(ConnectionAuthInfoUpdater updater) {
+    if (this.updater != null) {
+      LOG.error("Client connection ACL updater has been setup. Skip setting up new updater.");
+    } else {
+      this.updater = updater;
+    }
+  }
+
   /**
    * Install a persistent recursive watch on the root path.
    */
@@ -100,19 +113,16 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
    * be a big overhead considering how infrequently the mapping is supposed to be changed.
    */
   private void parseZNodeMapping() {
-    clientUriToDomainNames.clear();
+    Map<String, Set<String>> newClientUriToDomainNames = new HashMap<>();
     try {
       List<String> domainNames = zks.getZKDatabase().getChildren(rootPath, null, null);
       domainNames.forEach(domainName -> {
         try {
-          List<String> clientUris =
-              zks.getZKDatabase().getChildren(rootPath + "/" + domainName, null, null);
+          List<String> clientUris = zks.getZKDatabase().getChildren(rootPath + "/" + domainName, null, null);
           clientUris.forEach(
-              clientUri -> clientUriToDomainNames.computeIfAbsent(clientUri, k -> new HashSet<>())
-                  .add(domainName));
+              clientUri -> newClientUriToDomainNames.computeIfAbsent(clientUri, k -> new HashSet<>()).add(domainName));
         } catch (KeeperException.NoNodeException e) {
-          LOG.warn(
-              "ZkClientUriDomainMappingHelper::parseZNodeMapping(): No clientUri ZNodes found under domain: {}",
+          LOG.warn("ZkClientUriDomainMappingHelper::parseZNodeMapping(): No clientUri ZNodes found under domain: {}",
               domainName);
         }
       });
@@ -121,15 +131,45 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
           "ZkClientUriDomainMappingHelper::parseZNodeMapping(): No application domain ZNodes found in root path: {}",
           rootPath);
     }
+    clientUriToDomainNames = newClientUriToDomainNames;
   }
 
   @Override
   public void process(WatchedEvent event) {
     parseZNodeMapping();
+    // Update AuthInfo for all the known connections.
+    if (updater != null) {
+      synchronized (updater) {
+        ServerCnxnFactory factory =
+            zks.getSecureServerCnxnFactory() == null ? zks.getServerCnxnFactory() : zks.getSecureServerCnxnFactory();
+        factory.getConnections().forEach(cnxn -> updater.updateAuthInfo(cnxn, clientUriToDomainNames));
+      }
+    }
   }
 
   @Override
   public Set<String> getDomains(String clientUri) {
     return clientUriToDomainNames.getOrDefault(clientUri, Collections.emptySet());
+  }
+
+  @Override
+  public void updateAuthInfoDomains(ServerCnxn cnxn) {
+    if (updater != null) {
+      synchronized (updater) {
+        updater.updateAuthInfo(cnxn, clientUriToDomainNames);
+      }
+    }
+  }
+
+  /**
+   * Interface that declares method(s) to update connection AuthInfo when the client URI to domain mapping is updated.
+   */
+  interface ConnectionAuthInfoUpdater {
+    /**
+     * Update the AuthInfo of all the connections based on the specified client URI to domain information.
+     * @param cnxn connection to be updated.
+     * @param clientUriToDomainNames
+     */
+    void updateAuthInfo(final ServerCnxn cnxn, final Map<String, Set<String>> clientUriToDomainNames);
   }
 }

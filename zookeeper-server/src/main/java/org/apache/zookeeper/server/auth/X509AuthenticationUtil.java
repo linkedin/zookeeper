@@ -156,6 +156,19 @@ public class X509AuthenticationUtil extends X509Util {
   }
 
   /**
+   * Authenticate client certificate in the specified server connection object and extract the client Id.
+   * @param cnxn Server connection object that contains the certificate.
+   * @param trustManager X509 TrustManager for authentication.
+   * @return Client certificate URI as the client Id.
+   * @throws KeeperException.AuthFailedException
+   */
+  public static String getClientId(ServerCnxn cnxn, X509TrustManager trustManager)
+      throws KeeperException.AuthFailedException {
+    X509Certificate clientCert = X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
+    return X509AuthenticationUtil.getClientId(clientCert);
+  }
+
+  /**
    * Extract SAN field from an X509 certificate
    * @param clientCert Client x509 certificate
    * @return Subject alternative name (SAN) string
