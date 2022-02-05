@@ -34,7 +34,6 @@ import org.apache.zookeeper.server.ZooKeeperServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * An implementation of ClientUriDomainMappingHelper that stores the mapping inside the ZK server
  * as a hierarchy of ZNodes.
@@ -68,7 +67,6 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
   private final String rootPath;
 
   private Map<String, Set<String>> clientUriToDomainNames = Collections.emptyMap();
-
   private ConnectionAuthInfoUpdater updater = null;
 
   public ZkClientUriDomainMappingHelper(ZooKeeperServer zks) {
@@ -89,11 +87,17 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
     parseZNodeMapping();
   }
 
-  synchronized void setDomainAuthUpdater(ConnectionAuthInfoUpdater updater) {
+  /**
+   * @return True if the new updater is setup to the helper instance. False if the specified updater is not set since
+   * another updater has already been configured.
+   */
+  synchronized boolean setDomainAuthUpdater(ConnectionAuthInfoUpdater updater) {
     if (this.updater != null) {
       LOG.error("Client connection ACL updater has been setup. Skip setting up new updater.");
+      return false;
     } else {
       this.updater = updater;
+      return true;
     }
   }
 
@@ -118,11 +122,13 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
       List<String> domainNames = zks.getZKDatabase().getChildren(rootPath, null, null);
       domainNames.forEach(domainName -> {
         try {
-          List<String> clientUris = zks.getZKDatabase().getChildren(rootPath + "/" + domainName, null, null);
+          List<String> clientUris =
+              zks.getZKDatabase().getChildren(rootPath + "/" + domainName, null, null);
           clientUris.forEach(
               clientUri -> newClientUriToDomainNames.computeIfAbsent(clientUri, k -> new HashSet<>()).add(domainName));
         } catch (KeeperException.NoNodeException e) {
-          LOG.warn("ZkClientUriDomainMappingHelper::parseZNodeMapping(): No clientUri ZNodes found under domain: {}",
+          LOG.warn(
+              "ZkClientUriDomainMappingHelper::parseZNodeMapping(): No clientUri ZNodes found under domain: {}",
               domainName);
         }
       });
@@ -138,13 +144,9 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
   public void process(WatchedEvent event) {
     parseZNodeMapping();
     // Update AuthInfo for all the known connections.
-    if (updater != null) {
-      synchronized (updater) {
-        ServerCnxnFactory factory =
-            zks.getSecureServerCnxnFactory() == null ? zks.getServerCnxnFactory() : zks.getSecureServerCnxnFactory();
-        factory.getConnections().forEach(cnxn -> updater.updateAuthInfo(cnxn, clientUriToDomainNames));
-      }
-    }
+    ServerCnxnFactory factory =
+        zks.getSecureServerCnxnFactory() == null ? zks.getServerCnxnFactory() : zks.getSecureServerCnxnFactory();
+    factory.getConnections().forEach(cnxn -> updateDomainBasedAuthInfo(cnxn));
   }
 
   @Override
@@ -153,8 +155,10 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
   }
 
   @Override
-  public void updateAuthInfoDomains(ServerCnxn cnxn) {
-    if (updater != null) {
+  public void updateDomainBasedAuthInfo(ServerCnxn cnxn) {
+    if (updater != null && cnxn != null) {
+      // UpdateAuthInfo is triggered on new connection, as well as new domain information.
+      // To prevent inconsistent update, concurrency control is necessary.
       synchronized (updater) {
         updater.updateAuthInfo(cnxn, clientUriToDomainNames);
       }

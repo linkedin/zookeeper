@@ -21,7 +21,6 @@ package org.apache.zookeeper.server.auth.znode.groupacl;
 import java.util.Set;
 import org.apache.zookeeper.server.ServerCnxn;
 
-
 /**
  * Helper class for looking up the domain name for the client connection. It uses the client's
  * Uniform Resource Identifier (URI) to look up the application domain it belongs to.
@@ -45,8 +44,8 @@ public interface ClientUriDomainMappingHelper {
   Set<String> getDomains(String clientUri);
 
   /**
-   * Update the domains in AuthInfo of the specified connection according to the current client URI to domain mapping.
+   * Update the domain-based AuthInfo for the specified connection.
    * @param cnxn Connection to update
    */
-  void updateAuthInfoDomains(ServerCnxn cnxn);
+  void updateDomainBasedAuthInfo(ServerCnxn cnxn);
 }

@@ -138,6 +138,9 @@ public class X509AuthenticationUtil extends X509Util {
    * @param clientCert Authenticated X509Certificate associated with the
    *                   remote host.
    * @return Identifier string to be associated with the client.
+   *         The clientId can be any string matched and extracted using regex from Subject Distinguished Name or
+   *         Subject Alternative Name from x509 certificate.
+   *         The clientId string is intended to be an URI for client and map the client to certain domain.
    */
   public static String getClientId(X509Certificate clientCert) {
     String clientCertIdType =
@@ -156,10 +159,13 @@ public class X509AuthenticationUtil extends X509Util {
   }
 
   /**
-   * Authenticate client certificate in the specified server connection object and extract the client Id.
+   * Extract the authenticated client Id from the specified server connection object.
    * @param cnxn Server connection object that contains the certificate.
    * @param trustManager X509 TrustManager for authentication.
-   * @return Client certificate URI as the client Id.
+   * @return Identifier string to be associated with the client.
+   *         The clientId can be any string matched and extracted using regex from Subject Distinguished Name or
+   *         Subject Alternative Name from x509 certificate.
+   *         The clientId string is intended to be an URI for client and map the client to certain domain.
    * @throws KeeperException.AuthFailedException
    */
   public static String getClientId(ServerCnxn cnxn, X509TrustManager trustManager)
