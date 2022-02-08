@@ -157,7 +157,7 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
   @Override
   public void updateDomainBasedAuthInfo(ServerCnxn cnxn) {
     if (updater != null && cnxn != null) {
-      // UpdateAuthInfo is triggered on new connection, as well as new domain information.
+      // UpdateAuthInfo is triggered on new connection, as well as any URI-domain map ZNode changes.
       // To prevent inconsistent update, concurrency control is necessary.
       synchronized (updater) {
         updater.updateAuthInfo(cnxn, clientUriToDomainNames);

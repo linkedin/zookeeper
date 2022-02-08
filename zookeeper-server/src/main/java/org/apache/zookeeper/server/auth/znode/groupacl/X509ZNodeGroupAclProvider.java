@@ -144,7 +144,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   }
 
   /**
-   * Initialize a new ClientUriDomainMappingHelper instance if no one has been instantiated for the ACL provider.
+   * Initialize a new ClientUriDomainMappingHelper instance if it hasn't been instantiated for the ACL provider.
    * @param zks
    */
   private ClientUriDomainMappingHelper getUriDomainMappingHelper(ZooKeeperServer zks) {
@@ -157,19 +157,19 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
             try {
               String clientId = X509AuthenticationUtil.getClientId(cnxn, trustManager);
               assignAuthInfo(cnxn, clientId,
-                  // If no domain name is found, use cleint Id as default domain name
+                  // If no domain name is found, use client Id as default domain name
                   clientUriToDomainNames.getOrDefault(clientId, Collections.singleton(clientId)));
             } catch (UnsupportedOperationException unsupportedEx) {
               LOG.info(logStrPrefix + "Cannot update AuthInfo for session 0x{} since the operation is not supported.",
                   Long.toHexString(cnxn.getSessionId()));
             } catch (Exception e) {
               LOG.error(logStrPrefix
-                      + "Failed to update AuthInfo for session 0x{}. Revoking all of it's ZNodeGroupAcl AuthInfo.",
+                      + "Failed to update AuthInfo for session 0x{}. Revoking all of its ZNodeGroupAcl AuthInfo.",
                   Long.toHexString(cnxn.getSessionId()), e);
               try {
                 cnxn.getAuthInfo()
                     .stream()
-                    .filter(id -> isNodeGroupAclScheme(id.getScheme()))
+                    .filter(id -> isZnodeGroupAclScheme(id.getScheme()))
                     .forEach(id -> cnxn.removeAuthInfo(id));
               } catch (Exception ex) {
                 LOG.error(logStrPrefix + "Failed to revoke AuthInfo for session 0x{}.",
@@ -216,7 +216,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     Set<Id> currentCnxnAuthIds = new HashSet<>(cnxn.getAuthInfo());
     currentCnxnAuthIds.stream().forEach(id -> {
       // Remove all previously assigned ZNodeGroupAcls that are no longer valid.
-      if (isNodeGroupAclScheme(id.getScheme()) && !newAuthIds.contains(id)) {
+      if (isZnodeGroupAclScheme(id.getScheme()) && !newAuthIds.contains(id)) {
         cnxn.removeAuthInfo(id);
         LOG.info(logStrPrefix + "Authenticated Id '{}' has been removed from session 0x{}.", id,
             Long.toHexString(cnxn.getSessionId()));
@@ -231,7 +231,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     });
   }
 
-  private boolean isNodeGroupAclScheme(String scheme) {
+  private boolean isZnodeGroupAclScheme(String scheme) {
     return scheme.equals(ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_AUTH_SCHEME) || scheme.equals(getScheme());
   }
 }
