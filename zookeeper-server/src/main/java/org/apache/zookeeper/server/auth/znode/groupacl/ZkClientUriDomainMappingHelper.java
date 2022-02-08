@@ -95,10 +95,9 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
     if (this.updater != null) {
       LOG.error("Client connection ACL updater has been setup. Skip setting up new updater.");
       return false;
-    } else {
-      this.updater = updater;
-      return true;
     }
+    this.updater = updater;
+    return true;
   }
 
   /**
@@ -146,6 +145,7 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
     // Update AuthInfo for all the known connections.
     ServerCnxnFactory factory =
         zks.getSecureServerCnxnFactory() == null ? zks.getServerCnxnFactory() : zks.getSecureServerCnxnFactory();
+    // TODO Evaluate performance impact and potentially use thread pool to parallelize the AuthInfo update.
     factory.getConnections().forEach(cnxn -> updateDomainBasedAuthInfo(cnxn));
   }
 
