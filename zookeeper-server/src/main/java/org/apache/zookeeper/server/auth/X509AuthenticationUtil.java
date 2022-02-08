@@ -59,6 +59,8 @@ public class X509AuthenticationUtil extends X509Util {
   public static final String SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX =
       "zookeeper.ssl.x509.clientCertIdSanExtractMatcherGroupIndex";
   public static final String SUBJECT_ALTERNATIVE_NAME_SHORT = "SAN";
+  // Super user Auth Id scheme
+  public static final String SUPERUSER_AUTH_SCHEME = "super";
 
   @Override
   protected String getConfigPrefix() {

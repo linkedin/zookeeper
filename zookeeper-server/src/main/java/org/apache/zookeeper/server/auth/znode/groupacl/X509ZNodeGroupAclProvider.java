@@ -69,7 +69,6 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   // Although using "volatile" keyword with double checked locking could prevent the undesired
   //creation of multiple objects; not using here for the consideration of read performance
   private ClientUriDomainMappingHelper uriDomainMappingHelper = null;
-  private static final String ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_AUTH_SCHEME = "super";
 
   public X509ZNodeGroupAclProvider() {
     ZKConfig config = new ZKConfig();
@@ -206,7 +205,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     Set<Id> newAuthIds = new HashSet<>();
     // Check if user belongs to super user group
     if (clientId.equals(superUser) || superUserDomainNames.stream().anyMatch(d -> domains.contains(d))) {
-      newAuthIds.add(new Id(ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_AUTH_SCHEME, clientId));
+      newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));
     } else {
       // Assign Auth Id according to domains
       domains.stream().forEach(d -> newAuthIds.add(new Id(getScheme(), d)));
@@ -232,6 +231,6 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   }
 
   private boolean isZnodeGroupAclScheme(String scheme) {
-    return scheme.equals(ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_AUTH_SCHEME) || scheme.equals(getScheme());
+    return scheme.equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME) || scheme.equals(getScheme());
   }
 }
