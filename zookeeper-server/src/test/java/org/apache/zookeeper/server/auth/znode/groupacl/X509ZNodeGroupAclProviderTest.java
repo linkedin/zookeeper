@@ -172,11 +172,11 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
   public void testAuthInfoAutoUpdate() throws InterruptedException, KeeperException {
     String clientId = "DomainZUser";
     X509AuthTest.TestCertificate domainZCert = new X509AuthTest.TestCertificate("CLIENT", clientId);
-    String orgDomain = CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/DomainZ";
+    String oldDomain = CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/DomainZ";
     String newDomain = CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/DomainZN";
 
-    admin.create(orgDomain, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-    admin.create(orgDomain + "/" + clientId, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+    admin.create(oldDomain, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+    admin.create(oldDomain + "/" + clientId, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
     // Test with original domain info
     X509ZNodeGroupAclProvider provider = createProvider(domainZCert);
@@ -202,8 +202,8 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     }, 3);
 
     // Remove the original domain info
-    admin.delete(orgDomain + "/" + clientId, -1);
-    admin.delete(orgDomain, -1);
+    admin.delete(oldDomain + "/" + clientId, -1);
+    admin.delete(oldDomain, -1);
     waitFor("AuthInfo is not updated after old domain removed.", () -> {
       List<Id> newAuthInfo = cnxn.getAuthInfo();
       return 1 == newAuthInfo.size() &&

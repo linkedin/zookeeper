@@ -168,7 +168,7 @@ public class X509AuthenticationUtil extends X509Util {
    *         The clientId can be any string matched and extracted using regex from Subject Distinguished Name or
    *         Subject Alternative Name from x509 certificate.
    *         The clientId string is intended to be an URI for client and map the client to certain domain.
-   * @throws KeeperException.AuthFailedException
+   * @throws KeeperException.AuthFailedException Failed to authenticate the client certificate
    */
   public static String getClientId(ServerCnxn cnxn, X509TrustManager trustManager)
       throws KeeperException.AuthFailedException {

@@ -152,6 +152,8 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
         if (uriDomainMappingHelper == null) {
           ZkClientUriDomainMappingHelper helper = new ZkClientUriDomainMappingHelper(zks);
           // Set up AuthInfo updater to refresh connection AuthInfo on any client domain changes.
+          // TODO Making the anonymous class to a separate updater implementation class if any other Acl provider shares
+          // the same logic.
           helper.setDomainAuthUpdater((cnxn, clientUriToDomainNames) -> {
             try {
               String clientId = X509AuthenticationUtil.getClientId(cnxn, trustManager);
@@ -161,10 +163,11 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
             } catch (UnsupportedOperationException unsupportedEx) {
               LOG.info(logStrPrefix + "Cannot update AuthInfo for session 0x{} since the operation is not supported.",
                   Long.toHexString(cnxn.getSessionId()));
-            } catch (Exception e) {
+            } catch (KeeperException.AuthFailedException authEx) {
               LOG.error(logStrPrefix
-                      + "Failed to update AuthInfo for session 0x{}. Revoking all of its ZNodeGroupAcl AuthInfo.",
-                  Long.toHexString(cnxn.getSessionId()), e);
+                      + "Failed to authenticate session 0x{} for AuthInfo update. "
+                      + "Revoking all of its ZNodeGroupAcl AuthInfo.",
+                  Long.toHexString(cnxn.getSessionId()), authEx);
               try {
                 cnxn.getAuthInfo()
                     .stream()
@@ -174,6 +177,11 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
                 LOG.error(logStrPrefix + "Failed to revoke AuthInfo for session 0x{}.",
                     Long.toHexString(cnxn.getSessionId()), ex);
               }
+            } catch (Exception e) {
+              LOG.error(logStrPrefix
+                      + "Failed to update AuthInfo for session 0x{}. Keep the existing ZNodeGroupAcl AuthInfo.",
+                  Long.toHexString(cnxn.getSessionId()), e);
+              // TODO Emitting errors to ZK metrics so the out-of-date AuthInfo can trigger alerts and get fixed.
             }
           });
           uriDomainMappingHelper = helper;

@@ -91,13 +91,16 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
    * @return True if the new updater is setup to the helper instance. False if the specified updater is not set since
    * another updater has already been configured.
    */
-  synchronized boolean setDomainAuthUpdater(ConnectionAuthInfoUpdater updater) {
-    if (this.updater != null) {
-      LOG.error("Client connection ACL updater has been setup. Skip setting up new updater.");
-      return false;
+  boolean setDomainAuthUpdater(ConnectionAuthInfoUpdater updater) {
+    if (this.updater == null) {
+      synchronized (this) {
+        if (this.updater == null) {
+          this.updater = updater;
+          return true;
+        }
+      }
     }
-    this.updater = updater;
-    return true;
+    return false;
   }
 
   /**
@@ -163,17 +166,5 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
         updater.updateAuthInfo(cnxn, clientUriToDomainNames);
       }
     }
-  }
-
-  /**
-   * Interface that declares method(s) to update connection AuthInfo when the client URI to domain mapping is updated.
-   */
-  interface ConnectionAuthInfoUpdater {
-    /**
-     * Update the AuthInfo of all the connections based on the specified client URI to domain information.
-     * @param cnxn connection to be updated.
-     * @param clientUriToDomainNames
-     */
-    void updateAuthInfo(final ServerCnxn cnxn, final Map<String, Set<String>> clientUriToDomainNames);
   }
 }
