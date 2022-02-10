@@ -146,10 +146,14 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
   public void process(WatchedEvent event) {
     parseZNodeMapping();
     // Update AuthInfo for all the known connections.
+    // TODO Change to read SecureServerCnxnFactory only. The current logic is to support unit test who is not creating
+    // a secured server cnxn factory. It won't cause any problem but is not technically correct.
     ServerCnxnFactory factory =
         zks.getSecureServerCnxnFactory() == null ? zks.getServerCnxnFactory() : zks.getSecureServerCnxnFactory();
-    // TODO Evaluate performance impact and potentially use thread pool to parallelize the AuthInfo update.
-    factory.getConnections().forEach(cnxn -> updateDomainBasedAuthInfo(cnxn));
+    if (factory != null) {
+      // TODO Evaluate performance impact and potentially use thread pool to parallelize the AuthInfo update.
+      factory.getConnections().forEach(cnxn -> updateDomainBasedAuthInfo(cnxn));
+    }
   }
 
   @Override
