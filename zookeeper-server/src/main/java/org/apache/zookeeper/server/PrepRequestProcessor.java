@@ -1011,11 +1011,11 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             if (id == null || id.getScheme() == null) {
                 throw new KeeperException.InvalidACLException(path);
             }
-            if (id.getScheme().equals("world") && id.getId().equals("anyone") && !QuorumPeerConfig
-                .isSetX509ClientIdAsAclEnabled()) {
+            if (id.getScheme().equals("world") && id.getId().equals("anyone")
+                && !ZNodeGroupAclProperties.shouldSetX509ClientIdAsAcl()) {
                 rv.add(a);
-            } else if (id.getScheme().equals("auth") || QuorumPeerConfig
-                .isSetX509ClientIdAsAclEnabled()) {
+            } else if (id.getScheme().equals("auth") || ZNodeGroupAclProperties
+                .shouldSetX509ClientIdAsAcl()) {
                 // This is the "auth" id, so we have to expand it to the
                 // authenticated ids of the requestor
                 boolean authIdValid = false;

@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
 
 /**
  * Configured properties for ZNode Group ACL feature
@@ -32,6 +33,10 @@ public class ZNodeGroupAclProperties {
   private static ZNodeGroupAclProperties instance = null;
 
   private ZNodeGroupAclProperties() {
+    serverNameSpace = System.getProperty(NAMESPACE);
+    if (serverNameSpace != null && !serverNameSpace.isEmpty()) {
+      isConnectionFilteringEnabled = true;
+    }
   }
 
   public static ZNodeGroupAclProperties getInstance() {
@@ -65,12 +70,17 @@ public class ZNodeGroupAclProperties {
   // Meaning the znode will have (world:anyone, r) ACL
   private static final String OPEN_READ_ACCESS_PATH_PREFIX =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "openReadAccessPathPrefix";
+  // If the server is dedicated for one namespace, use this config property to define the namespace,
+  // and enable connection filtering feature for this namespace
+  public static final String NAMESPACE = ZNODE_GROUP_ACL_CONFIG_PREFIX + "namespace";
   // Although using "volatile" keyword with double checked locking could prevent the undesired
   //creation of multiple objects; not using here for the consideration of read performance
   private Set<String> openReadAccessPathPrefixes;
   private Set<String> superUserDomainNames;
   private final Object openReadAccessPathPrefixesLock = new Object();
   private final Object superUserDomainNamesLock = new Object();
+  private boolean isConnectionFilteringEnabled = false;
+  private final String serverNameSpace;
 
   /**
    * Get open read access path prefixes from config
@@ -118,6 +128,19 @@ public class ZNodeGroupAclProperties {
       }
     }
     return superUserDomainNames;
+  }
+
+  public static boolean shouldSetX509ClientIdAsAcl() {
+    return QuorumPeerConfig.isSetX509ClientIdAsAclEnabled() && !ZNodeGroupAclProperties
+        .getInstance().isConnectionFilteringEnabled();
+  }
+
+  public boolean isConnectionFilteringEnabled() {
+    return isConnectionFilteringEnabled;
+  }
+
+  public String getServerNameSpace() {
+    return serverNameSpace;
   }
 
   @VisibleForTesting

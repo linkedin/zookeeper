@@ -43,6 +43,7 @@ public class MockServerCnxn extends ServerCnxn {
 
     @Override
     public void close(DisconnectReason reason) {
+        setStale();
     }
 
     @Override
