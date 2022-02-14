@@ -232,7 +232,7 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
   @Test
   public void testConnectionFiltering() {
     // Single domain user
-    System.setProperty(ZNodeGroupAclProperties.NAMESPACE, "DomainX");
+    System.setProperty(ZNodeGroupAclProperties.DEDICATED_DOMAIN, "DomainX");
     X509ZNodeGroupAclProvider provider = createProvider(domainXCert);
     MockServerCnxn cnxn = new MockServerCnxn();
     cnxn.clientChain = new X509Certificate[]{domainXCert};
@@ -244,8 +244,8 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     Assert.assertEquals("DomainXUser", authInfo.get(0).getId());
 
     // Non-authorized user
-    System.clearProperty(ZNodeGroupAclProperties.NAMESPACE);
-    System.setProperty(ZNodeGroupAclProperties.NAMESPACE, "DomainY");
+    System.clearProperty(ZNodeGroupAclProperties.DEDICATED_DOMAIN);
+    System.setProperty(ZNodeGroupAclProperties.DEDICATED_DOMAIN, "DomainY");
     ZNodeGroupAclProperties.clearProperties();
     provider = createProvider(domainXCert);
     provider
@@ -262,7 +262,7 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     Assert.assertEquals(1, authInfo.size());
     Assert.assertEquals("super", authInfo.get(0).getScheme());
     Assert.assertEquals("SuperUser", authInfo.get(0).getId());
-    System.clearProperty(ZNodeGroupAclProperties.NAMESPACE);
+    System.clearProperty(ZNodeGroupAclProperties.DEDICATED_DOMAIN);
   }
 
   private X509ZNodeGroupAclProvider createProvider(X509Certificate trustedCert) {
