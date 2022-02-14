@@ -244,13 +244,15 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     Assert.assertEquals("DomainXUser", authInfo.get(0).getId());
 
     // Non-authorized user
+    ClosableMockServerCnxn closableMockServerCnxn = new ClosableMockServerCnxn();
+    closableMockServerCnxn.clientChain = new X509Certificate[]{domainXCert};
     System.clearProperty(ZNodeGroupAclProperties.DEDICATED_DOMAIN);
     System.setProperty(ZNodeGroupAclProperties.DEDICATED_DOMAIN, "DomainY");
     ZNodeGroupAclProperties.clearProperties();
     provider = createProvider(domainXCert);
     provider
-        .handleAuthentication(new ServerAuthenticationProvider.ServerObjs(zks, cnxn), new byte[0]);
-    Assert.assertTrue(cnxn.isStale());
+        .handleAuthentication(new ServerAuthenticationProvider.ServerObjs(zks, closableMockServerCnxn), new byte[0]);
+    Assert.assertTrue(closableMockServerCnxn.isClosed());
 
     // Super user
     provider = createProvider(superCert);
@@ -276,6 +278,19 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
   class TestNIOServerCnxnFactory extends NIOServerCnxnFactory {
     Set<ServerCnxn> getClients() {
       return cnxns;
+    }
+  }
+
+  private static class ClosableMockServerCnxn extends MockServerCnxn {
+    private boolean isClosed = false;
+
+    @Override
+    public void close(DisconnectReason reason) {
+      isClosed = true;
+    }
+
+    public boolean isClosed() {
+      return isClosed;
     }
   }
 }
