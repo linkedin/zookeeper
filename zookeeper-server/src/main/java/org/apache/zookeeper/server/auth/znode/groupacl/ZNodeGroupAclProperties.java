@@ -120,7 +120,8 @@ public class ZNodeGroupAclProperties {
     return superUserDomainNames;
   }
 
-  public static void reset() {
+  @VisibleForTesting
+  public static void clearProperties() {
     synchronized (ZNodeGroupAclProperties.class) {
       instance = null;
     }

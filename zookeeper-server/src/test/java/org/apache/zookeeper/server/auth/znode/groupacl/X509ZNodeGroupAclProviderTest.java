@@ -115,7 +115,7 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
 
   @After
   public void cleanUp() throws InterruptedException, KeeperException {
-    ZNodeGroupAclProperties.reset();
+    ZNodeGroupAclProperties.clearProperties();
     ZKUtil.deleteRecursive(admin, CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
     zks.shutdown();
     admin.close();
