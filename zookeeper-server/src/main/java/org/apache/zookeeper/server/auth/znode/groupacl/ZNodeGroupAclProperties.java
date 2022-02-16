@@ -24,7 +24,6 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
 import com.google.common.annotations.VisibleForTesting;
-import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
 
 /**
  * Configured properties for ZNode Group ACL feature
@@ -34,9 +33,6 @@ public class ZNodeGroupAclProperties {
 
   private ZNodeGroupAclProperties() {
     serverDedicatedDomain = System.getProperty(DEDICATED_DOMAIN);
-    if (serverDedicatedDomain != null && !serverDedicatedDomain.isEmpty()) {
-      isConnectionFilteringEnabled = true;
-    }
   }
 
   public static ZNodeGroupAclProperties getInstance() {
@@ -79,7 +75,6 @@ public class ZNodeGroupAclProperties {
   private Set<String> superUserDomainNames;
   private final Object openReadAccessPathPrefixesLock = new Object();
   private final Object superUserDomainNamesLock = new Object();
-  private boolean isConnectionFilteringEnabled = false;
   private final String serverDedicatedDomain;
 
   /**
@@ -128,15 +123,6 @@ public class ZNodeGroupAclProperties {
       }
     }
     return superUserDomainNames;
-  }
-
-  public static boolean shouldSetX509ClientIdAsAcl() {
-    return QuorumPeerConfig.isSetX509ClientIdAsAclEnabled() && !ZNodeGroupAclProperties
-        .getInstance().isConnectionFilteringEnabled();
-  }
-
-  public boolean isConnectionFilteringEnabled() {
-    return isConnectionFilteringEnabled;
   }
 
   public String getServerDedicatedDomain() {
