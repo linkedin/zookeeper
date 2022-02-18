@@ -32,7 +32,6 @@ public class ZNodeGroupAclProperties {
   private static ZNodeGroupAclProperties instance = null;
 
   private ZNodeGroupAclProperties() {
-    serverDedicatedDomain = System.getProperty(DEDICATED_DOMAIN);
   }
 
   public static ZNodeGroupAclProperties getInstance() {
@@ -75,7 +74,7 @@ public class ZNodeGroupAclProperties {
   private Set<String> superUserDomainNames;
   private final Object openReadAccessPathPrefixesLock = new Object();
   private final Object superUserDomainNamesLock = new Object();
-  private final String serverDedicatedDomain;
+  private final String serverDedicatedDomain = System.getProperty(DEDICATED_DOMAIN);
 
   /**
    * Get open read access path prefixes from config
