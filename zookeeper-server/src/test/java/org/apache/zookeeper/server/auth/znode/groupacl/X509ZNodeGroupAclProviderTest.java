@@ -114,7 +114,7 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
 
   @After
   public void cleanUp() throws InterruptedException, KeeperException {
-    LOG.info("Tearing down...");
+    LOG.info("X509ZNodeGroupAclProviderTest::cleanUp() called!");
     X509AuthenticationConfig.reset();
     ZKUtil.deleteRecursive(admin, CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
     zks.shutdown();

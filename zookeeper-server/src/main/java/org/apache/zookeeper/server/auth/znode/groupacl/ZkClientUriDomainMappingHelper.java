@@ -71,7 +71,7 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
     this.zks = zks;
 
     this.rootPath =
-        X509AuthenticationConfig.getInstance().getZnodeGRoupAclClientUriDomainMappingRootPath();
+        X509AuthenticationConfig.getInstance().getZnodeGroupAclClientUriDomainMappingRootPath();
     if (rootPath == null) {
       throw new IllegalStateException(
           "ZkClientUriDomainMappingHelper::ClientUriDomainMapping root path config is not set!");

@@ -100,12 +100,12 @@ public class X509AuthenticationConfig {
   public static final String CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath";
 
-  private static boolean x509ClientIdAsAclEnabled;
+  private static String x509ClientIdAsAclEnabled;
   private String znodeGroupAclSuperUserId;
   private String znodeGroupAclCrossDomainAccessDomainNameStr;
   private String znodeGroupAclOpenReadAccessPathPrefixStr;
   private String znodeGroupAclServerDedicatedDomain;
-  private String znodeGRoupAclClientUriDomainMappingRootPath;
+  private String znodeGroupAclClientUriDomainMappingRootPath;
   // Although using "volatile" keyword with double checked locking could prevent the undesired
   //creation of multiple objects; not using here for the consideration of read performance
   private Set<String> openReadAccessPathPrefixes;
@@ -164,7 +164,7 @@ public class X509AuthenticationConfig {
    * Setters for X509 Znode Group Acl properties
    */
   public static void setX509ClientIdAsAclEnabled(String enabled) {
-    x509ClientIdAsAclEnabled = Boolean.parseBoolean(enabled);
+    x509ClientIdAsAclEnabled = enabled;
   }
 
   public void setZnodeGroupAclSuperUserId(String znodeGroupAclSuperUserId) {
@@ -184,9 +184,9 @@ public class X509AuthenticationConfig {
     this.znodeGroupAclServerDedicatedDomain = znodeGroupAclServerDedicatedDomain;
   }
 
-  public void setZnodeGRoupAclClientUriDomainMappingRootPath(
-      String znodeGRoupAclClientUriDomainMappingRootPath) {
-    this.znodeGRoupAclClientUriDomainMappingRootPath = znodeGRoupAclClientUriDomainMappingRootPath;
+  public void setZnodeGroupAclClientUriDomainMappingRootPath(
+      String znodeGroupAclClientUriDomainMappingRootPath) {
+    this.znodeGroupAclClientUriDomainMappingRootPath = znodeGroupAclClientUriDomainMappingRootPath;
   }
 
   /**
@@ -233,7 +233,7 @@ public class X509AuthenticationConfig {
    * Getters for X509 Znode Group Acl properties
    */
   public static boolean isX509ClientIdAsAclEnabled() {
-    return x509ClientIdAsAclEnabled || Boolean
+    return Boolean.parseBoolean(x509ClientIdAsAclEnabled) || Boolean
         .parseBoolean(System.getProperty(SET_X509_CLIENT_ID_AS_ACL));
   }
 
@@ -273,12 +273,12 @@ public class X509AuthenticationConfig {
     return znodeGroupAclServerDedicatedDomain;
   }
 
-  public String getZnodeGRoupAclClientUriDomainMappingRootPath() {
-    if (znodeGRoupAclClientUriDomainMappingRootPath == null) {
-      setZnodeGRoupAclClientUriDomainMappingRootPath(
+  public String getZnodeGroupAclClientUriDomainMappingRootPath() {
+    if (znodeGroupAclClientUriDomainMappingRootPath == null) {
+      setZnodeGroupAclClientUriDomainMappingRootPath(
           System.getProperty(CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH));
     }
-    return znodeGRoupAclClientUriDomainMappingRootPath;
+    return znodeGroupAclClientUriDomainMappingRootPath;
   }
 
   /**
