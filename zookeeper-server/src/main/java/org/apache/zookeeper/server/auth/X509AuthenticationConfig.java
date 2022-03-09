@@ -84,9 +84,9 @@ public class X509AuthenticationConfig {
   public static final String SET_X509_CLIENT_ID_AS_ACL =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "setX509ClientIdAsAcl";
   // A list of domain names that will have cross-domain access privilege, separated by ","
-  public static final String SUPER_USER_DOMAIN_NAME =
-      ZNODE_GROUP_ACL_CONFIG_PREFIX + "superUserDomainName";
-  // A defined URI represents a super user
+  public static final String CROSS_DOMAIN_ACCESS_DOMAIN_NAME =
+      ZNODE_GROUP_ACL_CONFIG_PREFIX + "crossDomainAccessDomainName";
+  // A defined URI represents a super user, same concept as the original x509 superuser
   public static final String ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "superUserId";
   // A list of znode path prefixes, separated by ","
@@ -102,16 +102,16 @@ public class X509AuthenticationConfig {
 
   private static boolean x509ClientIdAsAclEnabled;
   private String znodeGroupAclSuperUserId;
-  private String znodeGroupAclSuperUserDomainNameStr;
+  private String znodeGroupAclCrossDomainAccessDomainNameStr;
   private String znodeGroupAclOpenReadAccessPathPrefixStr;
   private String znodeGroupAclServerDedicatedDomain;
   private String znodeGRoupAclClientUriDomainMappingRootPath;
   // Although using "volatile" keyword with double checked locking could prevent the undesired
   //creation of multiple objects; not using here for the consideration of read performance
   private Set<String> openReadAccessPathPrefixes;
-  private Set<String> superUserDomainNames;
+  private Set<String> crossDomainAccessDomains;
   private final Object openReadAccessPathPrefixesLock = new Object();
-  private final Object superUserDomainNamesLock = new Object();
+  private final Object crossDomainAccessDomainsLock = new Object();
 
   /**
    * Setters for X509 properties
@@ -171,8 +171,8 @@ public class X509AuthenticationConfig {
     this.znodeGroupAclSuperUserId = znodeGroupAclSuperUserId;
   }
 
-  public void setZnodeGroupAclSuperUserDomainNameStr(String znodeGroupAclSuperUserDomainNameStr) {
-    this.znodeGroupAclSuperUserDomainNameStr = znodeGroupAclSuperUserDomainNameStr;
+  public void setZnodeGroupAclCrossDomainAccessDomainNameStr(String znodeGroupAclCrossDomainAccessDomainNameStr) {
+    this.znodeGroupAclCrossDomainAccessDomainNameStr = znodeGroupAclCrossDomainAccessDomainNameStr;
   }
 
   public void setZnodeGroupAclOpenReadAccessPathPrefixStr(
@@ -244,15 +244,15 @@ public class X509AuthenticationConfig {
     return znodeGroupAclSuperUserId;
   }
 
-  public Set<String> getZnodeGroupAclSuperUserDomainNames() {
-    if (superUserDomainNames == null) {
-      synchronized (superUserDomainNamesLock) {
-        if (superUserDomainNames == null) {
-          superUserDomainNames = loadSuperUserDomainNames();
+  public Set<String> getZnodeGroupAclCrossDomainAccessDomains() {
+    if (crossDomainAccessDomains == null) {
+      synchronized (crossDomainAccessDomainsLock) {
+        if (crossDomainAccessDomains == null) {
+          crossDomainAccessDomains = loadCrossDomainAccessDomainNames();
         }
       }
     }
-    return superUserDomainNames;
+    return crossDomainAccessDomains;
   }
 
   public Set<String> getZnodeGroupAclOpenReadAccessPathPrefixes() {
@@ -303,15 +303,15 @@ public class X509AuthenticationConfig {
    * Get the domain names that are mapped to cross-domain access privilege
    * @return A set of domain names
    */
-  private Set<String> loadSuperUserDomainNames() {
-    if (znodeGroupAclSuperUserDomainNameStr == null) {
-      setZnodeGroupAclSuperUserDomainNameStr(System.getProperty(SUPER_USER_DOMAIN_NAME));
+  private Set<String> loadCrossDomainAccessDomainNames() {
+    if (znodeGroupAclCrossDomainAccessDomainNameStr == null) {
+      setZnodeGroupAclCrossDomainAccessDomainNameStr(System.getProperty(CROSS_DOMAIN_ACCESS_DOMAIN_NAME));
     }
-    if (znodeGroupAclSuperUserDomainNameStr == null || znodeGroupAclSuperUserDomainNameStr
+    if (znodeGroupAclCrossDomainAccessDomainNameStr == null || znodeGroupAclCrossDomainAccessDomainNameStr
         .isEmpty()) {
       return Collections.emptySet();
     }
-    return Arrays.stream(znodeGroupAclSuperUserDomainNameStr.split(","))
+    return Arrays.stream(znodeGroupAclCrossDomainAccessDomainNameStr.split(","))
         .filter(str -> str.length() > 0).collect(Collectors.toSet());
   }
 

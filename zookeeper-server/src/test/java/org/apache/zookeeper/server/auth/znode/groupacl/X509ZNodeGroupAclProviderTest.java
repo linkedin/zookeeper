@@ -77,7 +77,7 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
       SYSTEM_PROPERTIES.put(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, CLIENT_CERT_ID_SAN_MATCH_TYPE);
       SYSTEM_PROPERTIES.put(AUTH_PROVIDER_PROPERTY_NAME, X509ZNodeGroupAclProvider.class.getCanonicalName());
       SYSTEM_PROPERTIES.put(X509AuthenticationConfig.CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH, CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH);
-      SYSTEM_PROPERTIES.put(X509AuthenticationConfig.SUPER_USER_DOMAIN_NAME, "CrossDomain");
+      SYSTEM_PROPERTIES.put(X509AuthenticationConfig.CROSS_DOMAIN_ACCESS_DOMAIN_NAME, "CrossDomain");
     }
 
   @Before

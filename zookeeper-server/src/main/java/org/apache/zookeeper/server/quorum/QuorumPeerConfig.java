@@ -389,8 +389,8 @@ public class QuorumPeerConfig {
                 X509AuthenticationConfig.getInstance().setClientCertIdSanExtractRegex(value);
             } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX)) {
                 X509AuthenticationConfig.getInstance().setClientCertIdSanExtractMatcherGroupIndex(value);
-            } else if (key.equals(X509AuthenticationConfig.SUPER_USER_DOMAIN_NAME)) {
-                X509AuthenticationConfig.getInstance().setZnodeGroupAclSuperUserDomainNameStr(value);
+            } else if (key.equals(X509AuthenticationConfig.CROSS_DOMAIN_ACCESS_DOMAIN_NAME)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclCrossDomainAccessDomainNameStr(value);
             } else if (key.equals(X509AuthenticationConfig.DEDICATED_DOMAIN)) {
                 X509AuthenticationConfig.getInstance().setZnodeGroupAclServerDedicatedDomain(value);
             } else if (key.equals(X509AuthenticationConfig.CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH)) {
