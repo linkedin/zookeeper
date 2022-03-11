@@ -1012,10 +1012,10 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 throw new KeeperException.InvalidACLException(path);
             }
             if (id.getScheme().equals("world") && id.getId().equals("anyone") && !X509AuthenticationConfig
-                .isX509ClientIdAsAclEnabled()) {
+                .getInstance().isX509ClientIdAsAclEnabled()) {
                 rv.add(a);
             } else if (id.getScheme().equals("auth") || X509AuthenticationConfig
-                .isX509ClientIdAsAclEnabled()) {
+                .getInstance().isX509ClientIdAsAclEnabled()) {
                 // This is the "auth" id, so we have to expand it to the
                 // authenticated ids of the requestor
                 boolean authIdValid = false;

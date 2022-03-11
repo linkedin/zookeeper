@@ -100,7 +100,7 @@ public class X509AuthenticationConfig {
   public static final String CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "clientUriDomainMappingRootPath";
 
-  private static String x509ClientIdAsAclEnabled;
+  private String x509ClientIdAsAclEnabled;
   private String znodeGroupAclSuperUserId;
   private String znodeGroupAclCrossDomainAccessDomainNameStr;
   private String znodeGroupAclOpenReadAccessPathPrefixStr;
@@ -163,7 +163,7 @@ public class X509AuthenticationConfig {
   /**
    * Setters for X509 Znode Group Acl properties
    */
-  public static void setX509ClientIdAsAclEnabled(String enabled) {
+  public void setX509ClientIdAsAclEnabled(String enabled) {
     x509ClientIdAsAclEnabled = enabled;
   }
 
@@ -232,7 +232,7 @@ public class X509AuthenticationConfig {
   /**
    * Getters for X509 Znode Group Acl properties
    */
-  public static boolean isX509ClientIdAsAclEnabled() {
+  public boolean isX509ClientIdAsAclEnabled() {
     return Boolean.parseBoolean(x509ClientIdAsAclEnabled) || Boolean
         .parseBoolean(System.getProperty(SET_X509_CLIENT_ID_AS_ACL));
   }

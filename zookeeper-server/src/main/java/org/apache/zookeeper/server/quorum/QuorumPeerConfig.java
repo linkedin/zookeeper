@@ -378,7 +378,7 @@ public class QuorumPeerConfig {
             } else if (key.equals(BackupSystemProperty.BACKUP_TIMETABLE_BACKUP_INTERVAL_MS)) {
                 backupConfigBuilder.setTimetableBackupIntervalInMs(Long.parseLong(value));
             } else if (key.equals(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL)) {
-                X509AuthenticationConfig.setX509ClientIdAsAclEnabled(value);
+                X509AuthenticationConfig.getInstance().setX509ClientIdAsAclEnabled(value);
             } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE)) {
                 X509AuthenticationConfig.getInstance().setClientCertIdType(value);
             } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE)) {

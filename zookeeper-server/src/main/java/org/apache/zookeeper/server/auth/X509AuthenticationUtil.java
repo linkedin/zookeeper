@@ -168,10 +168,10 @@ public class X509AuthenticationUtil extends X509Util {
    */
   private static String matchAndExtractSAN(X509Certificate clientCert)
       throws CertificateParsingException {
-    Integer matchType = X509AuthenticationConfig.getInstance().getClientCertIdSanMatchType();
+    int matchType = X509AuthenticationConfig.getInstance().getClientCertIdSanMatchType();
     String matchRegex = X509AuthenticationConfig.getInstance().getClientCertIdSanMatchRegex();
     String extractRegex = X509AuthenticationConfig.getInstance().getClientCertIdSanExtractRegex();
-    Integer extractMatcherGroupIndex =
+    int extractMatcherGroupIndex =
         X509AuthenticationConfig.getInstance().getClientCertIdSanExtractMatcherGroupIndex();
     LOG.info("X509AuthenticationUtil::matchAndExtractSAN(): Using SAN in the client cert "
             + "for client ID! matchType: {}, matchRegex: {}, extractRegex: {}, "
