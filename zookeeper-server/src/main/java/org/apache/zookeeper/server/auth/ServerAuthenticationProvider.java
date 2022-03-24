@@ -132,8 +132,7 @@ public abstract class ServerAuthenticationProvider implements AuthenticationProv
      */
     public abstract boolean matches(ServerObjs serverObjs, MatchValues matchValues);
 
-    @Override
-    public final KeeperException.Code handleAuthentication(ServerCnxn cnxn, byte[] authData) {
+    public KeeperException.Code handleAuthentication(ServerCnxn cnxn, byte[] authData) {
         throw new UnsupportedOperationException();
     }
 
