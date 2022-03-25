@@ -425,9 +425,9 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
 
                     String authProviderProp = System.getProperty(x509Util.getSslAuthProviderProperty(), "x509");
 
-                    // All customer variatoins of AuthenticationProvider should be supported here. Currently
-                    // any variation of X509AuthenticationProvider or ServerAuthenticationProvider is supported with
-                    // backward compatability.
+                    // All implementations of the AuthenticationProvider interface should be supported here. Currently
+                    // any custom implementation of X509AuthenticationProvider or ServerAuthenticationProvider is
+                    // supported with backward compatability.
                     X509AuthenticationProvider authProvider = null;
                     ServerAuthenticationProvider serverAuthProvider = null;
                     try {
