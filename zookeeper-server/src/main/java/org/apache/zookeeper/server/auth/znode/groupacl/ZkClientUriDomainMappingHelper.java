@@ -72,7 +72,7 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
 
     this.rootPath =
         X509AuthenticationConfig.getInstance().getZnodeGroupAclClientUriDomainMappingRootPath();
-    LOG.debug("Client URI domain mapping root path: {}", this.rootPath);
+    LOG.debug("ZkClientUriDomainMappingHelper::ClientUriDomainMapping Client URI domain mapping root path: {}", this.rootPath);
     if (rootPath == null) {
       throw new IllegalStateException(
           "ZkClientUriDomainMappingHelper::ClientUriDomainMapping root path config is not set!");
@@ -126,10 +126,10 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
         try {
           List<String> clientUris =
               zks.getZKDatabase().getChildren(rootPath + "/" + domainName, null, null);
-          for (String clientUri : clientUris) {
-            LOG.debug("Adding client uri mapping:{} {}", clientUri, domainName);
-            newClientUriToDomainNames.computeIfAbsent(clientUri, k -> new HashSet<>()).add(domainName);
-          }
+          clientUris.forEach(clientUri -> {
+              LOG.debug("ZkClientUriDomainMappingHelper::parseZNodeMapping(): Adding client uri mapping:{} {}", clientUri, domainName);
+              newClientUriToDomainNames.computeIfAbsent(clientUri, k -> new HashSet<>()).add(domainName);
+          });
         } catch (KeeperException.NoNodeException e) {
           LOG.warn(
               "ZkClientUriDomainMappingHelper::parseZNodeMapping(): No clientUri ZNodes found under domain: {}",
