@@ -60,6 +60,7 @@ import org.apache.zookeeper.server.ZooKeeperServer.PrecalculatedDigest;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
 import org.apache.zookeeper.server.quorum.LeaderZooKeeperServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
@@ -1020,6 +1021,21 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 // authenticated ids of the requestor
                 boolean authIdValid = false;
                 for (Id cid : authInfo) {
+
+                    // Special handling for super user id / cross domain component use cases
+                    // when X509ClientIdAsAcl is enabled
+                    if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled() && cid
+                        .getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)) {
+                        authIdValid = true;
+
+                        // Cross domain components
+                        if (!cid.getId().equals(
+                            X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId())) {
+                            rv.add(new ACL(a.getPerms(), new Id("x509", cid.getId())));
+                        }
+                        continue;
+                    }
+
                     ServerAuthenticationProvider ap = ProviderRegistry.getServerProvider(cid.getScheme());
                     if (ap == null) {
                         LOG.error("Missing AuthenticationProvider for {}", cid.getScheme());
