@@ -80,6 +80,8 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
 
     if (zks.getZKDatabase().getNode(rootPath) == null) {
       try {
+        // Create a read-only root path, super user (admins) will need to manually set the correct
+        // ACL to root path in order to add clientUri-domain pairs to the mapping
         zks.getZKDatabase().getDataTree().createNode(rootPath, new byte[0],
             ZooDefs.Ids.READ_ACL_UNSAFE, -1L, -1,
             0L, 0L);

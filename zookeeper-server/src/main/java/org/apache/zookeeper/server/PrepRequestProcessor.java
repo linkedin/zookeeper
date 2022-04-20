@@ -1012,8 +1012,14 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             if (id == null || id.getScheme() == null) {
                 throw new KeeperException.InvalidACLException(path);
             }
-            if (id.getScheme().equals("world") && id.getId().equals("anyone") && !X509AuthenticationConfig
-                .getInstance().isX509ClientIdAsAclEnabled()) {
+            boolean isX509ZnodeGroupAclSuperUser =
+                X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled() && authInfo
+                    .stream().anyMatch(authInfoId ->
+                        authInfoId.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)
+                            && authInfoId.getId().equals(
+                            X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId()));
+            if ((id.getScheme().equals("world") && id.getId().equals("anyone") && !X509AuthenticationConfig
+                .getInstance().isX509ClientIdAsAclEnabled()) || isX509ZnodeGroupAclSuperUser) {
                 rv.add(a);
             } else if (id.getScheme().equals("auth") || X509AuthenticationConfig
                 .getInstance().isX509ClientIdAsAclEnabled()) {
@@ -1022,17 +1028,10 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 boolean authIdValid = false;
                 for (Id cid : authInfo) {
 
-                    // Special handling for super user id / cross domain component use cases
-                    // when X509ClientIdAsAcl is enabled
-                    if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled() && cid
-                        .getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)) {
+                    // Special handling for cross domain component use cases when X509ClientIdAsAcl is enabled
+                    if (cid.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)) {
                         authIdValid = true;
-
-                        // Cross domain components
-                        if (!cid.getId().equals(
-                            X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId())) {
-                            rv.add(new ACL(a.getPerms(), new Id("x509", cid.getId())));
-                        }
+                        rv.add(new ACL(a.getPerms(), new Id("x509", cid.getId())));
                         continue;
                     }
 
