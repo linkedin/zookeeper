@@ -1012,14 +1012,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             if (id == null || id.getScheme() == null) {
                 throw new KeeperException.InvalidACLException(path);
             }
-            boolean isX509ZnodeGroupAclSuperUser =
-                X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled() && authInfo
-                    .stream().anyMatch(authInfoId ->
-                        authInfoId.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)
-                            && authInfoId.getId().equals(
-                            X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId()));
-            if ((id.getScheme().equals("world") && id.getId().equals("anyone") && !X509AuthenticationConfig
-                .getInstance().isX509ClientIdAsAclEnabled()) || isX509ZnodeGroupAclSuperUser) {
+            if (id.getScheme().equals("world") && id.getId().equals("anyone") && !X509AuthenticationConfig
+                .getInstance().isX509ClientIdAsAclEnabled()) {
                 rv.add(a);
             } else if (id.getScheme().equals("auth") || X509AuthenticationConfig
                 .getInstance().isX509ClientIdAsAclEnabled()) {
@@ -1027,20 +1021,24 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 // authenticated ids of the requestor
                 boolean authIdValid = false;
                 for (Id cid : authInfo) {
-
-                    // Special handling for cross domain component use cases when X509ClientIdAsAcl is enabled
+                    // Special handling for super user / cross domain component use cases when X509ClientIdAsAcl is enabled
                     if (cid.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)) {
                         authIdValid = true;
-                        rv.add(new ACL(a.getPerms(), new Id("x509", cid.getId())));
-                        continue;
-                    }
-
-                    ServerAuthenticationProvider ap = ProviderRegistry.getServerProvider(cid.getScheme());
-                    if (ap == null) {
-                        LOG.error("Missing AuthenticationProvider for {}", cid.getScheme());
-                    } else if (ap.isAuthenticated()) {
-                        authIdValid = true;
-                        rv.add(new ACL(a.getPerms(), cid));
+                        // Allow operation but do not set client Id as znode ACL for super user
+                        if (!cid.getId().equals(
+                            X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId())) {
+                            // Allow operation but set domain name as znode ACL for cross domain components
+                            rv.add(new ACL(a.getPerms(), new Id("509", cid.getId())));
+                        }
+                    } else {
+                        ServerAuthenticationProvider ap =
+                            ProviderRegistry.getServerProvider(cid.getScheme());
+                        if (ap == null) {
+                            LOG.error("Missing AuthenticationProvider for {}", cid.getScheme());
+                        } else if (ap.isAuthenticated()) {
+                            authIdValid = true;
+                            rv.add(new ACL(a.getPerms(), cid));
+                        }
                     }
                 }
                 // If the znode path contains open read access node path prefix, add (world:anyone, r)

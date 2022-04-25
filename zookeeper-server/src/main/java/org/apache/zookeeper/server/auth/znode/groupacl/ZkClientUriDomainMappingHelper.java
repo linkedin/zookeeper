@@ -80,15 +80,23 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
 
     if (zks.getZKDatabase().getNode(rootPath) == null) {
       try {
-        // Create a read-only root path, super user (admins) will need to manually set the correct
-        // ACL to root path in order to add clientUri-domain pairs to the mapping
+        // Create a persistent root path node for clientURI-domain mapping
+        // Admins need to manually set ACL to the root path if the node is meant to be protected
+        // ephemeralOwner = -1 -> persistent node
+        // parentCVersion = -1 -> increment on current parentCVersion
+        // zxid = 0, time = 0 -> values from a default StatPersisted object
         zks.getZKDatabase().getDataTree().createNode(rootPath, new byte[0],
-            ZooDefs.Ids.READ_ACL_UNSAFE, -1L, -1,
+            ZooDefs.Ids.OPEN_ACL_UNSAFE, -1L, -1,
             0L, 0L);
-      } catch (Exception e) {
+      } catch (KeeperException.NodeExistsException nee) {
         LOG.warn(
+            "ZkClientUriDomainMappingHelper::Failed to create client uri domain mapping root path node"
+                + " because it already exists, exception: ", nee);
+      } catch (Exception e) {
+        LOG.error(
             "ZkClientUriDomainMappingHelper::Failed to create client uri domain mapping root path node, exception: ",
             e);
+        throw new IllegalStateException(e);
       }
     }
 

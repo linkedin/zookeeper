@@ -239,9 +239,12 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
       }
     } else {
       domains.forEach(d -> {
+        // For cross domain components, add (super:domainName) in authInfo
+        // "super" scheme gives access to all znodes without checking znode ACL vs authorized domain name
         if (superUserDomainNames.contains(d)) {
           newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, d));
         } else {
+          // For other cases, add (x509:domainName) in authInfo
           newAuthIds.add(new Id(getScheme(), d));
         }
       });
