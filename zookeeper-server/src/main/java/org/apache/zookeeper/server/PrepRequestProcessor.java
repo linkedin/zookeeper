@@ -1023,13 +1023,13 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 for (Id cid : authInfo) {
                     // Special handling for super user / cross domain component use cases when X509ClientIdAsAcl is enabled
                     if (cid.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)) {
+                        // No need to check authentication provider because user has "super" scheme
                         authIdValid = true;
-                        // Allow operation but do not set client Id as znode ACL for super user
                         if (!cid.getId().equals(
                             X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId())) {
                             // Allow operation but set domain name as znode ACL for cross domain components
-                            rv.add(new ACL(a.getPerms(), new Id("509", cid.getId())));
-                        }
+                            rv.add(new ACL(a.getPerms(), new Id("x509", cid.getId())));
+                        } // else allow operation but do not set client Id as znode ACL for super user
                     } else {
                         ServerAuthenticationProvider ap =
                             ProviderRegistry.getServerProvider(cid.getScheme());
