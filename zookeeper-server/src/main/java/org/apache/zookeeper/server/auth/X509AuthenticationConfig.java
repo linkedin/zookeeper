@@ -343,6 +343,11 @@ public class X509AuthenticationConfig {
         .filter(str -> str.length() > 0).collect(Collectors.toSet());
   }
 
+  public boolean isDedicatedServerEnabled() {
+    return getZnodeGroupAclServerDedicatedDomain() != null
+        && !getZnodeGroupAclServerDedicatedDomain().isEmpty();
+  }
+
   @VisibleForTesting
   public static void reset() {
     synchronized (X509AuthenticationConfig.class) {

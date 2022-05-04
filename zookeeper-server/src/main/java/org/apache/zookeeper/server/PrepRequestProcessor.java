@@ -61,6 +61,7 @@ import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
+import org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider;
 import org.apache.zookeeper.server.quorum.LeaderZooKeeperServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
@@ -1003,6 +1004,32 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             throw new KeeperException.InvalidACLException(path);
         }
         List<ACL> rv = new ArrayList<>();
+
+        // Overwrite the acl list for users (except super user) when znode group acl feature is on
+        // Set znode ACL to the corresponding znode group acl designated ACL instead
+        // For single domain user / cross domain components -> (x509 : domainName)
+        // For user w/o a domain -> (x509: clientURI)
+        if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled() && ProviderRegistry
+            .getServerProvider(
+                X509AuthenticationUtil.X509_SCHEME) instanceof X509ZNodeGroupAclProvider
+            && !X509AuthenticationConfig.getInstance().isDedicatedServerEnabled()) {
+            authInfo.forEach(id -> {
+                if (id.getScheme().equals(X509AuthenticationUtil.X509_SCHEME)) {
+                    overwriteAclListToCreatorId(uniqacls, id);
+                } else if (id.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)
+                    && !(id.getId())
+                    .equals(X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId())) {
+                    overwriteAclListToCreatorId(uniqacls, id);
+                }
+            });
+
+            // If the znode path contains open read access node path prefix, add (world:anyone, r)
+            if (X509AuthenticationConfig.getInstance().getZnodeGroupAclOpenReadAccessPathPrefixes().stream()
+                .anyMatch(path::startsWith)) {
+                uniqacls.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+            }
+        }
+
         for (ACL a : uniqacls) {
             LOG.debug("Processing ACL: {}", a);
             if (a == null) {
@@ -1012,44 +1039,21 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             if (id == null || id.getScheme() == null) {
                 throw new KeeperException.InvalidACLException(path);
             }
-            if (id.getScheme().equals("world") && id.getId().equals("anyone") && !X509AuthenticationConfig
-                .getInstance().isX509ClientIdAsAclEnabled()) {
+            if (id.getScheme().equals("world") && id.getId().equals("anyone")) {
                 rv.add(a);
-            } else if (id.getScheme().equals("auth") || X509AuthenticationConfig
-                .getInstance().isX509ClientIdAsAclEnabled()) {
+            } else if (id.getScheme().equals("auth")) {
                 // This is the "auth" id, so we have to expand it to the
                 // authenticated ids of the requestor
                 boolean authIdValid = false;
                 for (Id cid : authInfo) {
-                    // Special handling for super user / cross domain component use cases when X509ClientIdAsAcl is enabled
-                    if (cid.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)) {
-                        // No need to check authentication provider because user has "super" scheme
+                    ServerAuthenticationProvider ap = ProviderRegistry.getServerProvider(cid.getScheme());
+                    if (ap == null) {
+                        LOG.error("Missing AuthenticationProvider for {}", cid.getScheme());
+                    } else if (ap.isAuthenticated()) {
                         authIdValid = true;
-                        if (cid.getId().equals(
-                            X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId())) {
-                            // Allow operation and set the passed-in acl list as znode ACL for super user
-                            rv.add(a);
-                        } else {
-                            // Allow operation and set domain name as znode ACL for cross domain components
-                            rv.add(new ACL(a.getPerms(), new Id("x509", cid.getId())));
-                        }
-                    } else {
-                        ServerAuthenticationProvider ap =
-                            ProviderRegistry.getServerProvider(cid.getScheme());
-                        if (ap == null) {
-                            LOG.error("Missing AuthenticationProvider for {}", cid.getScheme());
-                        } else if (ap.isAuthenticated()) {
-                            authIdValid = true;
-                            rv.add(new ACL(a.getPerms(), cid));
-                        }
+                        rv.add(new ACL(a.getPerms(), cid));
                     }
                 }
-                // If the znode path contains open read access node path prefix, add (world:anyone, r)
-                if (X509AuthenticationConfig.getInstance().getZnodeGroupAclOpenReadAccessPathPrefixes().stream()
-                    .anyMatch(path::startsWith)) {
-                    rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
-                }
-
                 if (!authIdValid) {
                     throw new KeeperException.InvalidACLException(path);
                 }
@@ -1153,5 +1157,11 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             return;
         }
         request.setTxnDigest(new TxnDigest(digestCalculator.getDigestVersion(), preCalculatedDigest.treeDigest));
+    }
+
+    private static void overwriteAclListToCreatorId(List<ACL> aclList, Id creatorId) {
+        aclList.clear();
+        aclList.add(new ACL(ZooDefs.Perms.ALL,
+            new Id(X509AuthenticationUtil.X509_SCHEME, creatorId.getId())));
     }
 }
