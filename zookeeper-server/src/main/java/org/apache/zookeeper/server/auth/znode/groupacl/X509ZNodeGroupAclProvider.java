@@ -136,7 +136,11 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
 
   @Override
   public boolean isValid(String id) {
-    // Id can be of multiple format since it can be either a domain or a client URI
+    // Id can be of multiple format since it can be either a domain or a client URI,
+    // so the check on Id format can be expensive.
+    // For users, the Id to be set is extracted by server therefore it must be of valid format.
+    // Only superusers can manually set ACL, who we should trust.
+    // Therefore it doesn't seem necessary to perform this check.
     return true;
   }
 
@@ -212,7 +216,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     // Check if user belongs to super user group
     if (clientId.equals(superUser)) {
       newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));
-    } else if (X509AuthenticationConfig.getInstance().isDedicatedServerEnabled()) {
+    } else if (X509AuthenticationConfig.getInstance().isZnodeGroupAclDedicatedServerEnabled()) {
       // If connection filtering feature is turned on, use connection filtering instead of normal authorization
       String serverNamespace = X509AuthenticationConfig.getInstance().getZnodeGroupAclServerDedicatedDomain();
       if (domains.contains(serverNamespace)) {

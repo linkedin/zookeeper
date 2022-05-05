@@ -61,7 +61,6 @@ import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
-import org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider;
 import org.apache.zookeeper.server.quorum.LeaderZooKeeperServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
@@ -1005,28 +1004,41 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         }
         List<ACL> rv = new ArrayList<>();
 
-        // Overwrite the acl list for users (except super user) when znode group acl feature is on
-        // Set znode ACL to the corresponding znode group acl designated ACL instead
-        // For single domain user / cross domain components -> (x509 : domainName)
-        // For user w/o a domain -> (x509: clientURI)
-        if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled() && ProviderRegistry
-            .getServerProvider(
-                X509AuthenticationUtil.X509_SCHEME) instanceof X509ZNodeGroupAclProvider
-            && !X509AuthenticationConfig.getInstance().isDedicatedServerEnabled()) {
-            authInfo.forEach(id -> {
-                if (id.getScheme().equals(X509AuthenticationUtil.X509_SCHEME)) {
-                    overwriteAclListToCreatorId(uniqacls, id);
-                } else if (id.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)
-                    && !(id.getId())
-                    .equals(X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId())) {
-                    overwriteAclListToCreatorId(uniqacls, id);
+        // Overwrite the acl list for users (except super user) when znode group acl feature is on;
+        // Set znode ACL to the corresponding znode group acl designated ACL instead.
+        // Examples that will be processed are:
+        // Single domain user / cross domain components -> set (x509 : domainName) as znode ACL
+        // Users whose extracted clientId is not found in the ClientURIDomainMapping
+        //      -> set (x509: clientURI) as znode ACL
+        // Examples that will not be handled by the process are:
+        //      x509 super user, plaintext port clients, any user when connection filtering feature is on
+        //      -> will go through original zk fixupACL logic
+        boolean isProcessed = false;
+        if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled()
+            && X509AuthenticationConfig.getInstance().isX509ZnodeGroupAclEnabled()
+            && !X509AuthenticationConfig.getInstance().isZnodeGroupAclDedicatedServerEnabled()) {
+            for (Id id : authInfo) {
+                boolean isX509SchemeId = id.getScheme().equals(X509AuthenticationUtil.X509_SCHEME);
+                boolean isX509CrossDomainComponent =
+                    id.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME) && !(id
+                        .getId()).equals(
+                        X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId());
+                if (isX509SchemeId || isX509CrossDomainComponent) {
+                    rv.add(new ACL(ZooDefs.Perms.ALL,
+                        new Id(X509AuthenticationUtil.X509_SCHEME, id.getId())));
+                    isProcessed = true;
                 }
-            });
-
+            }
             // If the znode path contains open read access node path prefix, add (world:anyone, r)
-            if (X509AuthenticationConfig.getInstance().getZnodeGroupAclOpenReadAccessPathPrefixes().stream()
-                .anyMatch(path::startsWith)) {
-                uniqacls.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+            if (X509AuthenticationConfig.getInstance().getZnodeGroupAclOpenReadAccessPathPrefixes()
+                .stream().anyMatch(path::startsWith)) {
+                rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+            }
+            if (isProcessed) { // Only for users who are handled by the above logic, return the result,
+                // for others should continue to original fixupACL logic. This variable is necessary
+                // because if path is open read path, its open read ACL will be add to the list,
+                // regardless of user category, so rv's size won't be a good indicator here.
+                return rv;
             }
         }
 
@@ -1157,11 +1169,5 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             return;
         }
         request.setTxnDigest(new TxnDigest(digestCalculator.getDigestVersion(), preCalculatedDigest.treeDigest));
-    }
-
-    private static void overwriteAclListToCreatorId(List<ACL> aclList, Id creatorId) {
-        aclList.clear();
-        aclList.add(new ACL(ZooDefs.Perms.ALL,
-            new Id(X509AuthenticationUtil.X509_SCHEME, creatorId.getId())));
     }
 }
