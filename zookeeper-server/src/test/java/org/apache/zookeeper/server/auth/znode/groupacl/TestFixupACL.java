@@ -52,6 +52,16 @@ public class TestFixupACL {
       Collections.singletonList(new Id("super", crossDomain));
   private final List<Id> dedicatedDomainAuthInfo =
       Collections.singletonList(new Id(X509AuthenticationUtil.X509_SCHEME, dedicatedDomain));
+  private final List<Id> multiIdAuthInfo = new ArrayList<>();
+
+  {
+    multiIdAuthInfo.add(new Id(X509AuthenticationUtil.X509_SCHEME, "domain1"));
+    multiIdAuthInfo.add(new Id(X509AuthenticationUtil.X509_SCHEME, "domain2"));
+  }
+
+  private final List<Id> nonX509AuthInfo =
+      Collections.singletonList(new Id("ip", "127.0.0.1:2183"));
+
   private List<ACL> aclList = new ArrayList<>();
 
   {
@@ -123,5 +133,20 @@ public class TestFixupACL {
     Assert.assertTrue(
         returnedList.contains(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE)));
     System.clearProperty(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX);
+  }
+
+  @Test
+  public void testMultiId() throws KeeperException.InvalidACLException {
+    List<ACL> returnedList = PrepRequestProcessor.fixupACL(testPath, multiIdAuthInfo, aclList);
+    Assert.assertEquals(2, returnedList.size());
+    multiIdAuthInfo
+        .forEach(id -> Assert.assertTrue(returnedList.contains(new ACL(ZooDefs.Perms.ALL, id))));
+  }
+
+  @Test
+  public void testNonX509ZnodeGroupAclUser() throws KeeperException.InvalidACLException {
+    List<ACL> returnedList = PrepRequestProcessor.fixupACL(testPath, nonX509AuthInfo, aclList);
+    Assert.assertEquals(2, returnedList.size());
+    Assert.assertTrue(returnedList.containsAll(aclList));
   }
 }
