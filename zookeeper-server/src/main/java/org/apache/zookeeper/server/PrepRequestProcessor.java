@@ -1036,7 +1036,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             }
             if (isProcessed) { // Only for users who are handled by the above logic, return the result,
                 // for others should continue to original fixupACL logic. This variable is necessary
-                // because if path is open read path, its open read ACL will be add to the list,
+                // because if path is open read path, its open read ACL will be added to the list,
                 // regardless of user category, so rv's size won't be a good indicator here.
                 return rv;
             }
