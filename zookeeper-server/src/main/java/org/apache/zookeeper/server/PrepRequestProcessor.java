@@ -1016,7 +1016,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         // Examples that will not be handled by the "following logic" are:
         //      x509 super user, plaintext port clients, any user when dedicated server is enabled
         //      -> will go through original zk fixupACL logic
-        boolean isUserProvidedAclOverrode = false;
+        boolean isUserProvidedAclOverriden = false;
         if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled()
             && X509AuthenticationConfig.getInstance().isX509ZnodeGroupAclEnabled()
             && !X509AuthenticationConfig.getInstance().isZnodeGroupAclDedicatedServerEnabled()) {
@@ -1029,7 +1029,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 if (isX509 || isX509CrossDomainComponent) {
                     rv.add(new ACL(ZooDefs.Perms.ALL,
                         new Id(X509AuthenticationUtil.X509_SCHEME, id.getId())));
-                    isUserProvidedAclOverrode = true;
+                    isUserProvidedAclOverriden = true;
                 }
             }
             // If the znode path contains open read access node path prefix, add (world:anyone, r)
@@ -1037,7 +1037,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 .stream().anyMatch(path::startsWith)) {
                 rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
             }
-            if (isUserProvidedAclOverrode) {
+            if (isUserProvidedAclOverriden) {
                 // Only for users who are handled by the above logic, return the result,
                 // for others should continue to original fixupACL logic. This variable is necessary
                 // because if path is open read path, its open read ACL will be added to the list,
