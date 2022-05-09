@@ -139,8 +139,11 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     // Id can be of multiple format since it can be either a domain or a client URI,
     // so the check on Id format can be expensive.
     // For users, the Id to be set is extracted by server therefore it must be of valid format.
+    // Validity of client URI is checked in X509AuthenticationUtil.getClientId when authentication
+    // is done; validity of domain names are checked when client URI - domain pairs are set in
+    // ClientUriDomainMapping.
     // Only superusers can manually set ACL, who we should trust.
-    // Therefore it doesn't seem necessary to perform this check.
+    // Therefore it is necessary to perform this check.
     return true;
   }
 

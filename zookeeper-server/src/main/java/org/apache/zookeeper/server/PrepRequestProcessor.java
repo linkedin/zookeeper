@@ -1004,29 +1004,32 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         }
         List<ACL> rv = new ArrayList<>();
 
-        // Overwrite the acl list for users (except super user) when znode group acl feature is on;
-        // Set znode ACL to the corresponding znode group acl designated ACL instead.
-        // Examples that will be processed are:
+        // Overwrite the acl list for users (except super user) when the auth provider is
+        // X509ZnodeGroupAclProvider, and isX509ClientIdAsAclEnabled is true;
+        // Set x509 ZNode ACL as the client's corresponding domain name. This domain name denotes a
+        // ZNode group the client belongs to and can be derived from the client URI-domain mapping
+        // (UriDomainMappingHelper).
+        // Cases where such grouping by override applies are:
         // Single domain user / cross domain components -> set (x509 : domainName) as znode ACL
         // Users whose extracted clientId is not found in the ClientURIDomainMapping
         //      -> set (x509: clientURI) as znode ACL
-        // Examples that will not be handled by the process are:
-        //      x509 super user, plaintext port clients, any user when connection filtering feature is on
+        // Examples that will not be handled by the "following logic" are:
+        //      x509 super user, plaintext port clients, any user when dedicated server is enabled
         //      -> will go through original zk fixupACL logic
-        boolean isProcessed = false;
+        boolean isUserProvidedAclOverrode = false;
         if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled()
             && X509AuthenticationConfig.getInstance().isX509ZnodeGroupAclEnabled()
             && !X509AuthenticationConfig.getInstance().isZnodeGroupAclDedicatedServerEnabled()) {
             for (Id id : authInfo) {
-                boolean isX509SchemeId = id.getScheme().equals(X509AuthenticationUtil.X509_SCHEME);
+                boolean isX509 = id.getScheme().equals(X509AuthenticationUtil.X509_SCHEME);
                 boolean isX509CrossDomainComponent =
-                    id.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME) && !(id
-                        .getId()).equals(
+                    id.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME) && !id
+                        .getId().equals(
                         X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId());
-                if (isX509SchemeId || isX509CrossDomainComponent) {
+                if (isX509 || isX509CrossDomainComponent) {
                     rv.add(new ACL(ZooDefs.Perms.ALL,
                         new Id(X509AuthenticationUtil.X509_SCHEME, id.getId())));
-                    isProcessed = true;
+                    isUserProvidedAclOverrode = true;
                 }
             }
             // If the znode path contains open read access node path prefix, add (world:anyone, r)
@@ -1034,7 +1037,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 .stream().anyMatch(path::startsWith)) {
                 rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
             }
-            if (isProcessed) { // Only for users who are handled by the above logic, return the result,
+            if (isUserProvidedAclOverrode) {
+                // Only for users who are handled by the above logic, return the result,
                 // for others should continue to original fixupACL logic. This variable is necessary
                 // because if path is open read path, its open read ACL will be added to the list,
                 // regardless of user category, so rv's size won't be a good indicator here.

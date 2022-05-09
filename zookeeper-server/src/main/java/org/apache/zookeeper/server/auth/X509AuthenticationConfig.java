@@ -350,7 +350,7 @@ public class X509AuthenticationConfig {
    * @return true if a domain is set as the server's dedicated domain; false if not set
    */
   public boolean isZnodeGroupAclDedicatedServerEnabled() {
-    return getZnodeGroupAclServerDedicatedDomain() != null
+    return isX509ClientIdAsAclEnabled() && getZnodeGroupAclServerDedicatedDomain() != null
         && !getZnodeGroupAclServerDedicatedDomain().isEmpty();
   }
 

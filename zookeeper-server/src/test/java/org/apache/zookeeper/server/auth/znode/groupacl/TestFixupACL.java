@@ -93,6 +93,8 @@ public class TestFixupACL {
 
   @Test
   public void testCrossDomainComponents() throws KeeperException.InvalidACLException {
+    // User provided ACL list will not be honored for cross domain components.
+    // (x509 :  domain name) will be set to the znodes
     List<ACL> returnedList =
         PrepRequestProcessor.fixupACL(testPath, crossDomainComponentAuthInfo, aclList);
     Assert.assertEquals(1, returnedList.size());
@@ -102,6 +104,8 @@ public class TestFixupACL {
 
   @Test
   public void testSuperUserId() throws KeeperException.InvalidACLException {
+    // User provided ACL list will be honored for super users.
+    // No additional ACLs to be set to the znodes besides the user provided ACL list
     List<ACL> returnedList = PrepRequestProcessor.fixupACL(testPath, superUserAuthInfo, aclList);
     Assert.assertEquals(2, returnedList.size());
     Assert.assertTrue(returnedList.containsAll(aclList));
@@ -109,6 +113,8 @@ public class TestFixupACL {
 
   @Test
   public void testSingleDomainUser() throws KeeperException.InvalidACLException {
+    // User provided ACL list will not be honored for single domain users.
+    // (x509 :  domain name) will be set to the znodes
     List<ACL> returnedList = PrepRequestProcessor.fixupACL(testPath, singleDomainAuthInfo, aclList);
     Assert.assertEquals(1, returnedList.size());
     Assert
@@ -116,7 +122,8 @@ public class TestFixupACL {
   }
 
   @Test
-  public void testCnxnFiltering() throws KeeperException.InvalidACLException {
+  public void testDedicatedServer() throws KeeperException.InvalidACLException {
+    // Should route to original fixupACL logic
     System.setProperty(X509AuthenticationConfig.DEDICATED_DOMAIN, dedicatedDomain);
     List<ACL> returnedList =
         PrepRequestProcessor.fixupACL(testPath, dedicatedDomainAuthInfo, aclList);
@@ -127,6 +134,7 @@ public class TestFixupACL {
 
   @Test
   public void testOpenReadPaths() throws KeeperException.InvalidACLException {
+    // Should add (world: anyone, r) to returned ACL list
     System.setProperty(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX, testPath);
     List<ACL> returnedList = PrepRequestProcessor.fixupACL(testPath, singleDomainAuthInfo, aclList);
     Assert.assertEquals(2, returnedList.size());
@@ -137,6 +145,8 @@ public class TestFixupACL {
 
   @Test
   public void testMultiId() throws KeeperException.InvalidACLException {
+    // User provided ACL list will not be honored for single domain users.
+    // One ACL of (x509 :  domain name) for each of the Id in authInfo will be set to the znodes
     List<ACL> returnedList = PrepRequestProcessor.fixupACL(testPath, multiIdAuthInfo, aclList);
     Assert.assertEquals(2, returnedList.size());
     multiIdAuthInfo
@@ -145,6 +155,7 @@ public class TestFixupACL {
 
   @Test
   public void testNonX509ZnodeGroupAclUser() throws KeeperException.InvalidACLException {
+    // Should route to original fixupACL logic
     List<ACL> returnedList = PrepRequestProcessor.fixupACL(testPath, nonX509AuthInfo, aclList);
     Assert.assertEquals(2, returnedList.size());
     Assert.assertTrue(returnedList.containsAll(aclList));
