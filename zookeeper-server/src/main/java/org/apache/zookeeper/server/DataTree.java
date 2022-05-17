@@ -58,6 +58,7 @@ import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.audit.AuditConstants;
 import org.apache.zookeeper.audit.AuditEvent.Result;
+import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.audit.ZKAuditProvider;
 import org.apache.zookeeper.common.PathTrie;
 import org.apache.zookeeper.data.ACL;
@@ -145,6 +146,13 @@ public class DataTree {
 
     /** this will be the string thats stored as a child of /zookeeper */
     private static final String configChildZookeeper = configZookeeper.substring(procZookeeper.length() + 1);
+
+    /** Root path for storing client URI-domain mappings for X509ZNodeGroupAclProvider. For more information
+     * about what info is stored under this path please see ZkClientUriDomainMappingHelper documentation. */
+    private static final String uriDomainMapZookeeper = ZooDefs.URI_DOMAIN_MAP_NODE;
+
+    /** this will be the string thats stored as a child of /zookeeper */
+    private static final String uriDomainMapChildZookeeper = uriDomainMapZookeeper.substring(procZookeeper.length() + 1);
 
     /**
      * the path trie that keeps track of the quota nodes in this datatree
@@ -332,6 +340,8 @@ public class DataTree {
 
         addConfigNode();
 
+        addUriDomainMapNode();
+
         nodeDataSize.set(approximateDataSize());
         try {
             dataWatches = WatchManagerFactory.createWatchManager();
@@ -367,6 +377,30 @@ public class DataTree {
     }
 
     /**
+     * create a /zookeeper/uri-domain-map node for maintaining client-URIs to domain mapping for
+     * zookeeper
+     */
+    public void addUriDomainMapNode() {
+        if (!X509AuthenticationConfig.getInstance().isX509ZnodeGroupAclEnabled()) {
+            return;
+        }
+        DataNode zookeeperZnode = nodes.get(procZookeeper);
+        if (zookeeperZnode != null) { // should always be the case
+            zookeeperZnode.addChild(uriDomainMapChildZookeeper);
+        } else {
+            assert false : "There's no /zookeeper znode - this should never happen.";
+        }
+
+        nodes.put(uriDomainMapZookeeper, new DataNode(new byte[0], -1L, new StatPersisted()));
+        try {
+            // Reconfig node is access controlled by default (ZOOKEEPER-2014).
+            setACL(uriDomainMapZookeeper, ZooDefs.Ids.OPEN_ACL_UNSAFE, -1);
+        } catch (KeeperException.NoNodeException e) {
+            assert false : "There's no " + uriDomainMapZookeeper + " znode - this should never happen.";
+        }
+    }
+
+    /**
      * is the path one of the special paths owned by zookeeper.
      *
      * @param path
@@ -377,7 +411,8 @@ public class DataTree {
         return rootZookeeper.equals(path)
                || procZookeeper.equals(path)
                || quotaZookeeper.equals(path)
-               || configZookeeper.equals(path);
+               || configZookeeper.equals(path)
+               || (X509AuthenticationConfig.getInstance().isX509ZnodeGroupAclEnabled() && uriDomainMapZookeeper.equals(path));
     }
 
     public static void copyStatPersisted(StatPersisted from, StatPersisted to) {

@@ -32,6 +32,10 @@ public class ZooDefs {
 
     public static final String ZOOKEEPER_NODE_SUBTREE = "/zookeeper/";
 
+    /** Root path for storing client URI-domain mappings for X509ZNodeGroupAclProvider. For more information
+     * about what info is stored under this path please see ZkClientUriDomainMappingHelper documentation. */
+    public static final String URI_DOMAIN_MAP_NODE = "/zookeeper/uri-domain-map";
+
     @InterfaceAudience.Public
     public interface OpCode {
 
