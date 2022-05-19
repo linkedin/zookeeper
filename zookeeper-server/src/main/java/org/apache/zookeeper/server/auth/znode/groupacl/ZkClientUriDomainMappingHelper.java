@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
  *
  * The following illustrates the ZNode hierarchy:
  * . (root)
- * └── _CLIENT_URI_DOMAIN_MAPPING (mapping root path)
+ * └── /zookeeper/uri-domain-map (mapping root path)
  *     ├── bar (application domain)
  *     │   ├── bar0 (client URI)
  *     │   └── bar1 (client URI)

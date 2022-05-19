@@ -149,7 +149,7 @@ public class DataTree {
 
     /** Root path for storing client URI-domain mappings for X509ZNodeGroupAclProvider. For more information
      * about what info is stored under this path please see ZkClientUriDomainMappingHelper documentation. */
-    private static final String uriDomainMapZookeeper = ZooDefs.URI_DOMAIN_MAP_NODE;
+    private static final String uriDomainMapZookeeper = X509AuthenticationConfig.getInstance().getZnodeGroupAclClientUriDomainMappingRootPath();
 
     /** this will be the string thats stored as a child of /zookeeper */
     private static final String uriDomainMapChildZookeeper = uriDomainMapZookeeper.substring(procZookeeper.length() + 1);
@@ -384,19 +384,15 @@ public class DataTree {
         if (!X509AuthenticationConfig.getInstance().isX509ZnodeGroupAclEnabled()) {
             return;
         }
-        DataNode zookeeperZnode = nodes.get(procZookeeper);
-        if (zookeeperZnode != null) { // should always be the case
-            zookeeperZnode.addChild(uriDomainMapChildZookeeper);
-        } else {
-            assert false : "There's no /zookeeper znode - this should never happen.";
-        }
-
-        nodes.put(uriDomainMapZookeeper, new DataNode(new byte[0], -1L, new StatPersisted()));
         try {
-            // Reconfig node is access controlled by default (ZOOKEEPER-2014).
+            DataNode zookeeperZnode = nodes.get(procZookeeper);
+            zookeeperZnode.addChild(uriDomainMapChildZookeeper);
+
+            nodes.put(uriDomainMapZookeeper, new DataNode(new byte[0], -1L, new StatPersisted()));
             setACL(uriDomainMapZookeeper, ZooDefs.Ids.OPEN_ACL_UNSAFE, -1);
-        } catch (KeeperException.NoNodeException e) {
-            assert false : "There's no " + uriDomainMapZookeeper + " znode - this should never happen.";
+            LOG.info("Successfully created client URI-domain root path :{}", uriDomainMapZookeeper);
+        } catch (Exception e) {
+            LOG.error("Failed to create client URI-domain mapping node {} :{}", uriDomainMapZookeeper, e);
         }
     }
 
