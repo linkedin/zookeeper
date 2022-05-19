@@ -42,7 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An implementation of ZkClientUriDomainMappingHelper that stores the mapping inside the ZK server
+ * An implementation of ClientUriDomainMappingHelper that stores the mapping inside the ZK server
  * as a hierarchy of ZNodes.
  *
  * Note that the mapping metadata itself will be stored in ZKDatabase as a ZNode tree and will also
