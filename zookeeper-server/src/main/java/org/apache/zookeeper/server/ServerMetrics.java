@@ -232,7 +232,7 @@ public final class ServerMetrics {
         UNIFIED_PORT_NONSSL_REQUESTS = metricsContext.getCounter("unified_port_nonssl_requests");
         UNIFIED_PORT_SSL_REQUESTS = metricsContext.getCounter("unified_port_ssl_requests");
         X509_AUTH_REQUESTS = metricsContext.getCounter("x509_auth_requests");
-        X509ZNODEGROUPACL_AUTH_PROVDER_REQUESTS = metricsContext.getCounter("x509ZNodeGroupACL_auth_requests");
+        X509_ZNODEGROUPACL_AUTH_PROVDER_REQUESTS = metricsContext.getCounter("x509_ZNodeGroupACL_auth_requests");
 
         NETTY_QUEUED_BUFFER = metricsContext.getSummary("netty_queued_buffer_capacity", DetailLevel.BASIC);
 
@@ -455,7 +455,7 @@ public final class ServerMetrics {
     public final Counter UNIFIED_PORT_NONSSL_REQUESTS;
     public final Counter UNIFIED_PORT_SSL_REQUESTS;
     public final Counter X509_AUTH_REQUESTS;
-    public final Counter X509ZNODEGROUPACL_AUTH_PROVDER_REQUESTS;
+    public final Counter X509_ZNODEGROUPACL_AUTH_PROVDER_REQUESTS;
 
     public final Summary NETTY_QUEUED_BUFFER;
 
