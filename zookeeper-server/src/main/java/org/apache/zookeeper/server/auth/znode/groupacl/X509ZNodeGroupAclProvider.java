@@ -219,6 +219,14 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     // Check if user belongs to super user group
     if (clientId.equals(superUser)) {
       newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));
+    } else if (superUserDomainNames.stream().anyMatch(d -> domains.contains(d))) {
+      domains.forEach(d -> {
+        // For cross domain components, add (super:domainName) in authInfo
+        // "super" scheme gives access to all znodes without checking znode ACL vs authorized domain name
+        if (superUserDomainNames.contains(d)) {
+          newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, d));
+        }
+      });
     } else if (X509AuthenticationConfig.getInstance().isZnodeGroupAclDedicatedServerEnabled()) {
       // If connection filtering feature is turned on, use connection filtering instead of normal authorization
       String serverNamespace = X509AuthenticationConfig.getInstance().getZnodeGroupAclServerDedicatedDomain();
@@ -235,16 +243,8 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
         cnxn.close(ServerCnxn.DisconnectReason.SSL_AUTH_FAILURE);
       }
     } else {
-      domains.forEach(d -> {
-        // For cross domain components, add (super:domainName) in authInfo
-        // "super" scheme gives access to all znodes without checking znode ACL vs authorized domain name
-        if (superUserDomainNames.contains(d)) {
-          newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, d));
-        } else {
-          // For other cases, add (x509:domainName) in authInfo
-          newAuthIds.add(new Id(getScheme(), d));
-        }
-      });
+      // For other cases, add (x509:domainName) in authInfo
+      domains.stream().forEach(d -> newAuthIds.add(new Id(getScheme(), d)));
     }
 
     // Update the existing connection AuthInfo accordingly.
