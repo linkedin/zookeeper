@@ -70,7 +70,6 @@ import org.slf4j.LoggerFactory;
  */
 public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   private static final Logger LOG = LoggerFactory.getLogger(X509ZNodeGroupAclProvider.class);
-  private final String logStrPrefix = this.getClass().getName() + ":: ";
   private final X509TrustManager trustManager;
   private final X509KeyManager keyManager;
   // Although using "volatile" keyword with double checked locking could prevent the undesired
@@ -98,8 +97,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
       return KeeperException.Code.AUTHFAILED;
     } catch (Exception e) {
       // Failed to extract clientId from certificate
-      LOG.error(logStrPrefix + "Failed to extract URI from certificate for session 0x{}",
-          Long.toHexString(cnxn.getSessionId()), e);
+      LOG.error("Failed to extract URI from certificate for session 0x{}", Long.toHexString(cnxn.getSessionId()), e);
       return KeeperException.Code.OK;
     }
 
@@ -109,7 +107,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
       // Initially assign AuthInfo to the new connection by triggering the helper update method.
       helper.updateDomainBasedAuthInfo(cnxn);
     } catch (Exception e) {
-      LOG.error(logStrPrefix + "Failed to authorize session 0x{}", Long.toHexString(cnxn.getSessionId()), e);
+      LOG.error("Failed to authorize session 0x{}", Long.toHexString(cnxn.getSessionId()), e);
     }
 
     // Authentication is done regardless of whether authorization is done or not.
@@ -166,12 +164,10 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
                   // If no domain name is found, use client Id as default domain name
                   clientUriToDomainNames.getOrDefault(clientId, Collections.singleton(clientId)));
             } catch (UnsupportedOperationException unsupportedEx) {
-              LOG.info(logStrPrefix + "Cannot update AuthInfo for session 0x{} since the operation is not supported.",
+              LOG.info("Cannot update AuthInfo for session 0x{} since the operation is not supported.",
                   Long.toHexString(cnxn.getSessionId()));
             } catch (KeeperException.AuthFailedException authEx) {
-              LOG.error(logStrPrefix
-                      + "Failed to authenticate session 0x{} for AuthInfo update. "
-                      + "Revoking all of its ZNodeGroupAcl AuthInfo.",
+              LOG.error("Failed to authenticate session 0x{} for AuthInfo update. Revoking all of its ZNodeGroupAcl AuthInfo.",
                   Long.toHexString(cnxn.getSessionId()), authEx);
               try {
                 cnxn.getAuthInfo()
@@ -179,18 +175,17 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
                     .filter(id -> isZnodeGroupAclScheme(id.getScheme()))
                     .forEach(id -> cnxn.removeAuthInfo(id));
               } catch (Exception ex) {
-                LOG.error(logStrPrefix + "Failed to revoke AuthInfo for session 0x{}.",
+                LOG.error("Failed to revoke AuthInfo for session 0x{}.",
                     Long.toHexString(cnxn.getSessionId()), ex);
               }
             } catch (Exception e) {
-              LOG.error(logStrPrefix
-                      + "Failed to update AuthInfo for session 0x{}. Keep the existing ZNodeGroupAcl AuthInfo.",
+              LOG.error("Failed to update AuthInfo for session 0x{}. Keep the existing ZNodeGroupAcl AuthInfo.",
                   Long.toHexString(cnxn.getSessionId()), e);
               // TODO Emitting errors to ZK metrics so the out-of-date AuthInfo can trigger alerts and get fixed.
             }
           });
           uriDomainMappingHelper = helper;
-          LOG.info(logStrPrefix + "New UriDomainMappingHelper has been instantiated.");
+          LOG.info("New UriDomainMappingHelper has been instantiated.");
         }
       }
     }
@@ -223,14 +218,12 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
       // If connection filtering feature is turned on, use connection filtering instead of normal authorization
       String serverNamespace = X509AuthenticationConfig.getInstance().getZnodeGroupAclServerDedicatedDomain();
       if (domains.contains(serverNamespace)) {
-        LOG.info(logStrPrefix
-                + "Id '{}' belongs to domain that matches server namespace '{}', authorized for access.",
+        LOG.info("Id '{}' belongs to domain that matches server namespace '{}', authorized for access.",
             clientId, serverNamespace);
         // Same as storing authenticated user info in X509AuthenticationProvider
         newAuthIds.add(new Id(getScheme(), clientId));
       } else {
-        LOG.info(logStrPrefix
-                + "Id '{}' does not belong to domain that matches server namespace '{}', disconnected the connection.",
+        LOG.info("Id '{}' does not belong to domain that matches server namespace '{}', disconnected the connection.",
             clientId, serverNamespace);
         cnxn.close(ServerCnxn.DisconnectReason.SSL_AUTH_FAILURE);
       }
@@ -253,16 +246,16 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
       // Remove all previously assigned ZNodeGroupAcls that are no longer valid.
       if (isZnodeGroupAclScheme(id.getScheme()) && !newAuthIds.contains(id)) {
         cnxn.removeAuthInfo(id);
-        LOG.info(logStrPrefix + "Authenticated Id 'scheme: {}, id: {}' has been removed from session 0x{}.",
-            id.getScheme(), id.getId(), Long.toHexString(cnxn.getSessionId()));
+        LOG.info("Authenticated Id 'scheme: {}, id: {}' has been removed from session 0x{} of host {}.",
+            id.getScheme(), id.getId(), Long.toHexString(cnxn.getSessionId()), cnxn.getHostAddress());
       }
     });
 
     newAuthIds.stream().forEach(id -> {
       if (!currentCnxnAuthIds.contains(id)) {
         cnxn.addAuthInfo(id);
-        LOG.info(logStrPrefix + "Authenticated Id 'scheme: {}, id: {}' has been added to session 0x{}.", id.getScheme(),
-            id.getId(), Long.toHexString(cnxn.getSessionId()));
+        LOG.info("Authenticated Id 'scheme: {}, id: {}' has been added to session 0x{} from host {}.",
+            id.getScheme(), id.getId(), Long.toHexString(cnxn.getSessionId()), cnxn.getHostAddress());
       }
     });
   }
