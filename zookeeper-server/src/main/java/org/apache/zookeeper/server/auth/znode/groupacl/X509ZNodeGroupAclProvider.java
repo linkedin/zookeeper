@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.stream.Collectors;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.List;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
@@ -219,8 +220,8 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     Set<Id> newAuthIds = new HashSet<>();
 
     // Find interesecting super user domains/cross domains from provided domains list
-    Set<String> commonSuperUserDomains =
-        superUserDomainNames.stream().filter(domains::contains).collect(Collectors.toSet());
+    List<String> commonSuperUserDomains =
+        superUserDomainNames.stream().filter(domains::contains).collect(Collectors.toList());
 
     // Check if user belongs to super user group
     if (clientId.equals(superUser)) {
