@@ -145,8 +145,8 @@ public class ZkClientUriDomainMappingHelper implements Watcher, ClientUriDomainM
     parseZNodeMapping();
     // Update AuthInfo for all the known connections.
     // Note : It is not ideal to iterate over all plaintext connections which are connected over non-TLS but right now
-    // there is no way to find out if connection on unified port is using SSLHandler or nonSSLHandler. And anways we
-    // should not ideally have any nonSSLHandler connection on unified port.
+    // there is no way to find out if connection on unified port is using SSLHandler or nonSSLHandler. Anyways, we
+    // should not ideally have any nonSSLHandler connections on unified port after complete rollout.
 
     // TODO Change to read SecureServerCnxnFactory only. The current logic is to support unit test who is not creating
     // a secured server cnxn factory. It won't cause any problem but is not technically correct.
