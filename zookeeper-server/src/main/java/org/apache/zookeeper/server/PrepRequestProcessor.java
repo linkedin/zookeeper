@@ -1025,7 +1025,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 boolean isX509 = id.getScheme().equals(X509AuthenticationUtil.X509_SCHEME);
                 boolean isX509CrossDomainComponent =
                     id.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)
-                        && !X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId()
+                        && !X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserIds()
                         .contains(id.getId());
                 if (isX509 || isX509CrossDomainComponent) {
                     rv.add(new ACL(ZooDefs.Perms.ALL,

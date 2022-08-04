@@ -209,7 +209,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
    */
   private void assignAuthInfo(ServerCnxn cnxn, String clientId, Set<String> domains) {
     Set<String> superUserDomainNames = X509AuthenticationConfig.getInstance().getZnodeGroupAclCrossDomainAccessDomains();
-    Set<String> superUsers = X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserId();
+    Set<String> superUsers = X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserIds();
 
     Set<Id> newAuthIds = new HashSet<>();
 

@@ -20,7 +20,6 @@ package org.apache.zookeeper.server.auth;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -134,7 +133,7 @@ public class X509AuthenticationConfig {
   private static final String ZNODE_GROUP_ACL_CLIENTURI_DOMAIN_MAPPING_ROOT_PATH = "/zookeeper/uri-domain-map";
 
   private String x509ClientIdAsAclEnabled;
-  private String znodeGroupAclSuperUserId;
+  private String znodeGroupAclSuperUserIdStr;
   private String znodeGroupAclCrossDomainAccessDomainNameStr;
   private String znodeGroupAclOpenReadAccessPathPrefixStr;
   private String znodeGroupAclServerDedicatedDomain;
@@ -200,8 +199,8 @@ public class X509AuthenticationConfig {
     x509ClientIdAsAclEnabled = enabled;
   }
 
-  public void setZnodeGroupAclSuperUserId(String znodeGroupAclSuperUserId) {
-    this.znodeGroupAclSuperUserId = znodeGroupAclSuperUserId;
+  public void setZnodeGroupAclSuperUserIdStr(String znodeGroupAclSuperUserIdStr) {
+    this.znodeGroupAclSuperUserIdStr = znodeGroupAclSuperUserIdStr;
   }
 
   public void setZnodeGroupAclCrossDomainAccessDomainNameStr(
@@ -264,7 +263,7 @@ public class X509AuthenticationConfig {
         .parseBoolean(System.getProperty(SET_X509_CLIENT_ID_AS_ACL));
   }
 
-  public Set<String> getZnodeGroupAclSuperUserId() {
+  public Set<String> getZnodeGroupAclSuperUserIds() {
     if (znodeGroupAclSuperUserIds == null) {
       synchronized (znodeGroupAclSuperUserIdsLock) {
         if (znodeGroupAclSuperUserIds == null) {
@@ -309,13 +308,13 @@ public class X509AuthenticationConfig {
   }
 
   private Set<String> loadSuperUserIds() {
-    if (znodeGroupAclSuperUserId == null) {
-      setZnodeGroupAclSuperUserId(System.getProperty(ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID));
+    if (znodeGroupAclSuperUserIdStr == null) {
+      setZnodeGroupAclSuperUserIdStr(System.getProperty(ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID));
     }
-    if (znodeGroupAclSuperUserId == null || znodeGroupAclSuperUserId.isEmpty()) {
+    if (znodeGroupAclSuperUserIdStr == null || znodeGroupAclSuperUserIdStr.isEmpty()) {
       return Collections.emptySet();
     }
-    return Arrays.stream(znodeGroupAclSuperUserId.split(",")).filter(str -> str.length() > 0)
+    return Arrays.stream(znodeGroupAclSuperUserIdStr.split(",")).filter(str -> str.length() > 0)
         .collect(Collectors.toSet());
   }
 
