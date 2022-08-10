@@ -31,6 +31,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
@@ -107,6 +109,13 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
     private final boolean digestEnabled;
     private DigestCalculator digestCalculator;
 
+    private static final String ZOOKEEPER_MAX_EPHEMERAL_COUNT_PER_SESSION = "zookeeper.ephemeral.count.limit";
+    public static final int ZOOKEEPER_MAX_EPHEMERAL_COUNT_PER_SESSION_DEFAULT = 10000;
+    private ConcurrentMap<Long, Integer> ephemeralNodesPerSessionMap;
+
+    // max number of ephemeral nodes that can be created per session
+    protected int maxEphemeralNodesPerSession;
+
     ZooKeeperServer zks;
 
     public enum DigestOpCode {
@@ -120,9 +129,28 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             + "):", zks.getZooKeeperServerListener());
         this.nextProcessor = nextProcessor;
         this.zks = zks;
+        initMaxEphemeralNodesPerSession();
         this.digestEnabled = ZooKeeperServer.isDigestEnabled();
         if (this.digestEnabled) {
             this.digestCalculator = new DigestCalculator();
+        }
+    }
+
+    private void initMaxEphemeralNodesPerSession() {
+        this.ephemeralNodesPerSessionMap = new ConcurrentHashMap<>();
+        maxEphemeralNodesPerSession = Integer.getInteger(ZOOKEEPER_MAX_EPHEMERAL_COUNT_PER_SESSION, ZOOKEEPER_MAX_EPHEMERAL_COUNT_PER_SESSION_DEFAULT);
+        if (maxEphemeralNodesPerSession < 0) {
+            maxEphemeralNodesPerSession = ZOOKEEPER_MAX_EPHEMERAL_COUNT_PER_SESSION_DEFAULT;
+            LOG.warn("maxEphemeralNodesPerSession should be greater than or equal to 0, using default vlaue {}.",
+                ZOOKEEPER_MAX_EPHEMERAL_COUNT_PER_SESSION_DEFAULT);
+        } else if (maxEphemeralNodesPerSession == ZOOKEEPER_MAX_EPHEMERAL_COUNT_PER_SESSION_DEFAULT) {
+            LOG.warn("maxEphemeralNodesPerSession is not configured, using default value {}.",
+                ZOOKEEPER_MAX_EPHEMERAL_COUNT_PER_SESSION_DEFAULT);
+        } else {
+            LOG.info("maxEphemeralNodesPerSession configured value is {}.", maxEphemeralNodesPerSession);
+        }
+        for (Map.Entry<Long, Set<String>> entry : this.zks.getZKDatabase().getEphemerals().entrySet()) {
+            this.ephemeralNodesPerSessionMap.put(entry.getKey(), entry.getValue().size());
         }
     }
 
@@ -372,6 +400,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             if (nodeRecord.childCount > 0) {
                 throw new KeeperException.NotEmptyException(path);
             }
+            ephemeralNodesPerSessionMap.computeIfPresent(nodeRecord.stat.getEphemeralOwner(), (key, value) -> value - 1);
             request.setTxn(new DeleteTxn(path));
             parentRecord = parentRecord.duplicate(request.getHdr().getZxid());
             parentRecord.childCount--;
@@ -619,6 +648,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                     request.setTxn(new CloseSessionTxn(new ArrayList<String>(es)));
                 }
                 zks.sessionTracker.setSessionClosing(request.sessionId);
+                ephemeralNodesPerSessionMap.remove(request.sessionId);
             }
             ServerMetrics.getMetrics().CLOSE_SESSION_PREP_TIME.add(Time.currentElapsedTime() - startTime);
             break;
@@ -706,6 +736,14 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             request.setTxn(new CreateTxn(path, data, listACL, createMode.isEphemeral(), newCversion));
         }
 
+        if (createMode.isEphemeral()) {
+            int count = ephemeralNodesPerSessionMap.getOrDefault(request.sessionId, 0);
+            if (maxEphemeralNodesPerSession != -1 && count >= maxEphemeralNodesPerSession) {
+                ServerMetrics.getMetrics().EPHEMERAL_VIOLATION_REQUEST_REJECTION_COUNT.inc();
+                throw new KeeperException.SessionEphemeralCountExceedException();
+            }
+            ephemeralNodesPerSessionMap.put(request.sessionId, count + 1);
+        }
         TxnHeader hdr = request.getHdr();
         long ephemeralOwner = 0;
         if (createMode.isContainer()) {

@@ -234,6 +234,13 @@ public final class ServerMetrics {
         DIGEST_MISMATCHES_COUNT = metricsContext.getCounter("digest_mismatches_count");
         TLS_HANDSHAKE_EXCEEDED = metricsContext.getCounter("tls_handshake_exceeded");
 
+        /**
+         * Ephemeral node per session throttling related metrics.
+         */
+        MAX_EPHEMERAL_VIOLATION_COUNT = metricsContext.getCounter("max_ephemeral_per_session_violation_count");
+        EPHEMERAL_VIOLATION_REQUEST_REJECTION_COUNT = metricsContext.getCounter("ephemeral_violation_request_rejection_count");
+        THROTTLED_OPS = metricsContext.getCounter("throttled_ops");
+
         JVM_PAUSE_TIME = metricsContext.getSummary("jvm_pause_time_ms", DetailLevel.ADVANCED);
     }
 
@@ -445,6 +452,11 @@ public final class ServerMetrics {
     public final Counter LARGE_REQUESTS_REJECTED;
 
     public final Summary NETTY_QUEUED_BUFFER;
+
+    // Ephemeral node throttling per session
+    public final Counter MAX_EPHEMERAL_VIOLATION_COUNT;
+    public final Counter EPHEMERAL_VIOLATION_REQUEST_REJECTION_COUNT;
+    public final Counter THROTTLED_OPS;
 
     // Total number of digest mismatches that are observed when applying
     // txns to data tree.

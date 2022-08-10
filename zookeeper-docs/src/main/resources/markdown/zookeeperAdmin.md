@@ -886,193 +886,193 @@ property, when available, is noted below.
     By default, this value is unset (`-1`) which, on Linux, uses a backlog of
     `50`. This value must be a positive number.
 
-* *serverCnxnFactory* :
-    (Java system property: **zookeeper.serverCnxnFactory**)
-    Specifies ServerCnxnFactory implementation.
-    This should be set to `NettyServerCnxnFactory` in order to use TLS based server communication.
-    Default is `NIOServerCnxnFactory`.
+ * *serverCnxnFactory* :
+     (Java system property: **zookeeper.serverCnxnFactory**)
+     Specifies ServerCnxnFactory implementation.
+     This should be set to `NettyServerCnxnFactory` in order to use TLS based server communication.
+     Default is `NIOServerCnxnFactory`.
 
-* *flushDelay* :
-    (Java system property: **zookeeper.flushDelay**)
-    Time in milliseconds to delay the flush of the commit log.
-    Does not affect the limit defined by *maxBatchSize*.
-    Disabled by default (with value 0). Ensembles with high write rates
-    may see throughput improved with a value of 10-20 ms.
+ * *flushDelay* :
+     (Java system property: **zookeeper.flushDelay**)
+     Time in milliseconds to delay the flush of the commit log.
+     Does not affect the limit defined by *maxBatchSize*.
+     Disabled by default (with value 0). Ensembles with high write rates
+     may see throughput improved with a value of 10-20 ms.
 
-* *maxWriteQueuePollTime* :
-    (Java system property: **zookeeper.maxWriteQueuePollTime**)
-    If *flushDelay* is enabled, this determines the amount of time in milliseconds
-    to wait before flushing when no new requests are being queued.
-    Set to *flushDelay*/3 by default (implicitly disabled by default).
+ * *maxWriteQueuePollTime* :
+     (Java system property: **zookeeper.maxWriteQueuePollTime**)
+     If *flushDelay* is enabled, this determines the amount of time in milliseconds
+     to wait before flushing when no new requests are being queued.
+     Set to *flushDelay*/3 by default (implicitly disabled by default).
 
-* *maxBatchSize* :
-    (Java system property: **zookeeper.maxBatchSize**)
-    The number of transactions allowed in the server before a flush of the
-    commit log is triggered.
-    Does not affect the limit defined by *flushDelay*.
-    Default is 1000.
+ * *maxBatchSize* :
+     (Java system property: **zookeeper.maxBatchSize**)
+     The number of transactions allowed in the server before a flush of the
+     commit log is triggered.
+     Does not affect the limit defined by *flushDelay*.
+     Default is 1000.
 
-* *requestThrottleLimit* :
-    (Java system property: **zookeeper.request_throttle_max_requests**)
-    **New in 3.6.0:**
-    The total number of outstanding requests allowed before the RequestThrottler starts stalling. When set to 0, throttling is disabled. The default is 0.
+ * *requestThrottleLimit* :
+     (Java system property: **zookeeper.request_throttle_max_requests**)
+     **New in 3.6.0:**
+     The total number of outstanding requests allowed before the RequestThrottler starts stalling. When set to 0, throttling is disabled. The default is 0.
 
-* *requestThrottleStallTime* :
-    (Java system property: **zookeeper.request_throttle_stall_time**)
-    **New in 3.6.0:**
-    The maximum time (in milliseconds) for which a thread may wait to be notified that it may proceed processing a request. The default is 100.
+ * *requestThrottleStallTime* :
+     (Java system property: **zookeeper.request_throttle_stall_time**)
+     **New in 3.6.0:**
+     The maximum time (in milliseconds) for which a thread may wait to be notified that it may proceed processing a request. The default is 100.
 
-* *requestThrottleDropStale* :
-    (Java system property: **request_throttle_drop_stale**)
-    **New in 3.6.0:**
-    When enabled, the throttler will drop stale requests rather than issue them to the request pipeline. A stale request is a request sent by a connection that is now closed, and/or a request that will have a  request latency higher than the sessionTimeout. The default is true.
+ * *requestThrottleDropStale* :
+     (Java system property: **request_throttle_drop_stale**)
+     **New in 3.6.0:**
+     When enabled, the throttler will drop stale requests rather than issue them to the request pipeline. A stale request is a request sent by a connection that is now closed, and/or a request that will have a  request latency higher than the sessionTimeout. The default is true.
 
-* *requestStaleLatencyCheck* :
-    (Java system property: **zookeeper.request_stale_latency_check**)
-    **New in 3.6.0:**
-    When enabled, a request is considered stale if the request latency is higher than its associated session timeout. Disabled by default.
+ * *requestStaleLatencyCheck* :
+     (Java system property: **zookeeper.request_stale_latency_check**)
+     **New in 3.6.0:**
+     When enabled, a request is considered stale if the request latency is higher than its associated session timeout. Disabled by default.
 
-* *requestStaleConnectionCheck* :
-    (Java system property: **zookeeper.request_stale_connection_check**)
-    **New in 3.6.0:**
-    When enabled, a request is considered stale if the request's connection has closed. Enabled by default.
+ * *requestStaleConnectionCheck* :
+     (Java system property: **zookeeper.request_stale_connection_check**)
+     **New in 3.6.0:**
+     When enabled, a request is considered stale if the request's connection has closed. Enabled by default.
 
-* *zookeeper.request_throttler.shutdownTimeout* :
-    (Java system property only)
-    **New in 3.6.0:**
-    The time (in milliseconds) the RequestThrottler waits for the request queue to drain during shutdown before it shuts down forcefully. The default is 10000.  
+ * *zookeeper.request_throttler.shutdownTimeout* :
+     (Java system property only)
+     **New in 3.6.0:**
+     The time (in milliseconds) the RequestThrottler waits for the request queue to drain during shutdown before it shuts down forcefully. The default is 10000.  
 
-* *advancedFlowControlEnabled* :
-    (Java system property: **zookeeper.netty.advancedFlowControl.enabled**)
-    Using accurate flow control in netty based on the status of ZooKeeper
-    pipeline to avoid direct buffer OOM. It will disable the AUTO_READ in
-    Netty.
+ * *advancedFlowControlEnabled* :
+     (Java system property: **zookeeper.netty.advancedFlowControl.enabled**)
+     Using accurate flow control in netty based on the status of ZooKeeper
+     pipeline to avoid direct buffer OOM. It will disable the AUTO_READ in
+     Netty.
 
-* *enableEagerACLCheck* :
-    (Java system property only: **zookeeper.enableEagerACLCheck**)
-    When set to "true", enables eager ACL check on write requests on each local
-    server before sending the requests to quorum. Default is "false".
+ * *enableEagerACLCheck* :
+     (Java system property only: **zookeeper.enableEagerACLCheck**)
+     When set to "true", enables eager ACL check on write requests on each local
+     server before sending the requests to quorum. Default is "false".
 
-* *maxConcurrentSnapSyncs* :
-    (Java system property: **zookeeper.leader.maxConcurrentSnapSyncs**)
-    The maximum number of snap syncs a leader or a follower can serve at the same
-    time. The default is 10.
+ * *maxConcurrentSnapSyncs* :
+     (Java system property: **zookeeper.leader.maxConcurrentSnapSyncs**)
+     The maximum number of snap syncs a leader or a follower can serve at the same
+     time. The default is 10.
 
-* *maxConcurrentDiffSyncs* :
-    (Java system property: **zookeeper.leader.maxConcurrentDiffSyncs**)
-    The maximum number of diff syncs a leader or a follower can serve at the same
-    time. The default is 100.
+ * *maxConcurrentDiffSyncs* :
+     (Java system property: **zookeeper.leader.maxConcurrentDiffSyncs**)
+     The maximum number of diff syncs a leader or a follower can serve at the same
+     time. The default is 100.
 
-* *digest.enabled* :
-    (Java system property only: **zookeeper.digest.enabled**)
-    **New in 3.6.0:**
-    The digest feature is added to detect the data inconsistency inside
-    ZooKeeper when loading database from disk, catching up and following
-    leader, its doing incrementally hash check for the DataTree based on 
-    the adHash paper mentioned in
+ * *digest.enabled* :
+     (Java system property only: **zookeeper.digest.enabled**)
+     **New in 3.6.0:**
+     The digest feature is added to detect the data inconsistency inside
+     ZooKeeper when loading database from disk, catching up and following
+     leader, its doing incrementally hash check for the DataTree based on 
+     the adHash paper mentioned in
 
-        https://cseweb.ucsd.edu/~daniele/papers/IncHash.pdf
+         https://cseweb.ucsd.edu/~daniele/papers/IncHash.pdf
 
-    The idea is simple, the hash value of DataTree will be updated incrementally 
-    based on the changes to the set of data. When the leader is preparing the txn, 
-    it will pre-calculate the hash of the tree based on the changes happened with 
-    formula:
+     The idea is simple, the hash value of DataTree will be updated incrementally 
+     based on the changes to the set of data. When the leader is preparing the txn, 
+     it will pre-calculate the hash of the tree based on the changes happened with 
+     formula:
 
-        current_hash = current_hash + hash(new node data) - hash(old node data)
+         current_hash = current_hash + hash(new node data) - hash(old node data)
 
-    If it’s creating a new node, the hash(old node data) will be 0, and if it’s a 
-    delete node op, the hash(new node data) will be 0.
+     If it’s creating a new node, the hash(old node data) will be 0, and if it’s a 
+     delete node op, the hash(new node data) will be 0.
 
-    This hash will be associated with each txn to represent the expected hash value 
-    after applying the txn to the data tree, it will be sent to followers with 
-    original proposals. Learner will compare the actual hash value with the one in 
-    the txn after applying the txn to the data tree, and report mismatch if it’s not 
-    the same.
+     This hash will be associated with each txn to represent the expected hash value 
+     after applying the txn to the data tree, it will be sent to followers with 
+     original proposals. Learner will compare the actual hash value with the one in 
+     the txn after applying the txn to the data tree, and report mismatch if it’s not 
+     the same.
 
-    These digest value will also be persisted with each txn and snapshot on the disk, 
-    so when servers restarted and load data from disk, it will compare and see if 
-    there is hash mismatch, which will help detect data loss issue on disk.
+     These digest value will also be persisted with each txn and snapshot on the disk, 
+     so when servers restarted and load data from disk, it will compare and see if 
+     there is hash mismatch, which will help detect data loss issue on disk.
 
-    For the actual hash function, we’re using CRC internally, it’s not a collisionless 
-    hash function, but it’s more efficient compared to collisionless hash, and the 
-    collision possibility is really really rare and can already meet our needs here.
+     For the actual hash function, we’re using CRC internally, it’s not a collisionless 
+     hash function, but it’s more efficient compared to collisionless hash, and the 
+     collision possibility is really really rare and can already meet our needs here.
 
-    This feature is backward and forward compatible, so it can safely rolling upgrade, 
-    downgrade, enabled and later disabled without any compatible issue. Here are the 
-    scenarios have been covered and tested:
+     This feature is backward and forward compatible, so it can safely rolling upgrade, 
+     downgrade, enabled and later disabled without any compatible issue. Here are the 
+     scenarios have been covered and tested:
 
-    1. When leader runs with new code while follower runs with old one, the digest will 
-       be append to the end of each txn, follower will only read header and txn data, 
-       digest value in the txn will be ignored. It won't affect the follower reads and 
-       processes the next txn.
-    2. When leader runs with old code while follower runs with new one, the digest won't
-       be sent with txn, when follower tries to read the digest, it will throw EOF which 
-       is caught and handled gracefully with digest value set to null.
-    3. When loading old snapshot with new code, it will throw IOException when trying to
-       read the non-exist digest value, and the exception will be caught and digest will
-       be set to null, which means we won't compare digest when loading this snapshot, 
-       which is expected to happen during rolling upgrade
-    4. When loading new snapshot with old code, it will finish successfully after deserialzing 
-       the data tree, the digest value at the end of snapshot file will be ignored
-    5. The scenarios of rolling restart with flags change are similar to the 1st and 2nd 
-       scenarios discussed above, if the leader enabled but follower not, digest value will
-       be ignored, and follower won't compare the digest during runtime; if leader disabled
-       but follower enabled, follower will get EOF exception which is handled gracefully.
+     1. When leader runs with new code while follower runs with old one, the digest will 
+        be append to the end of each txn, follower will only read header and txn data, 
+        digest value in the txn will be ignored. It won't affect the follower reads and 
+        processes the next txn.
+     2. When leader runs with old code while follower runs with new one, the digest won't
+        be sent with txn, when follower tries to read the digest, it will throw EOF which 
+        is caught and handled gracefully with digest value set to null.
+     3. When loading old snapshot with new code, it will throw IOException when trying to
+        read the non-exist digest value, and the exception will be caught and digest will
+        be set to null, which means we won't compare digest when loading this snapshot, 
+        which is expected to happen during rolling upgrade
+     4. When loading new snapshot with old code, it will finish successfully after deserialzing 
+        the data tree, the digest value at the end of snapshot file will be ignored
+     5. The scenarios of rolling restart with flags change are similar to the 1st and 2nd 
+        scenarios discussed above, if the leader enabled but follower not, digest value will
+        be ignored, and follower won't compare the digest during runtime; if leader disabled
+        but follower enabled, follower will get EOF exception which is handled gracefully.
 
-    Note: the current digest calculation excluded nodes under /zookeeper 
-    due to the potential inconsistency in the /zookeeper/quota stat node, 
-    we can include that after that issue is fixed.
+     Note: the current digest calculation excluded nodes under /zookeeper 
+     due to the potential inconsistency in the /zookeeper/quota stat node, 
+     we can include that after that issue is fixed.
 
-    By default, this feature is enabled, set "false" to disable it.
+     By default, this feature is enabled, set "false" to disable it.
 
-* *snapshot.compression.method* :
-    (Java system property: **zookeeper.snapshot.compression.method**)
-    **New in 3.6.0:**
-    This property controls whether or not ZooKeeper should compress snapshots
-    before storing them on disk (see [ZOOKEEPER-3179](https://issues.apache.org/jira/browse/ZOOKEEPER-3179)).
-    Possible values are:
-    - "": Disabled (no snapshot compression). This is the default behavior.
-    - "gz": See [gzip compression](https://en.wikipedia.org/wiki/Gzip).
-    - "snappy": See [Snappy compression](https://en.wikipedia.org/wiki/Snappy_(compression)).
+ * *snapshot.compression.method* :
+     (Java system property: **zookeeper.snapshot.compression.method**)
+     **New in 3.6.0:**
+     This property controls whether or not ZooKeeper should compress snapshots
+     before storing them on disk (see [ZOOKEEPER-3179](https://issues.apache.org/jira/browse/ZOOKEEPER-3179)).
+     Possible values are:
+     - "": Disabled (no snapshot compression). This is the default behavior.
+     - "gz": See [gzip compression](https://en.wikipedia.org/wiki/Gzip).
+     - "snappy": See [Snappy compression](https://en.wikipedia.org/wiki/Snappy_(compression)).
 
-* *snapshot.trust.empty* :
-    (Java system property: **zookeeper.snapshot.trust.empty**)
-    **New in 3.5.6:**
-    This property controls whether or not ZooKeeper should treat missing
-    snapshot files as a fatal state that can't be recovered from.
-    Set to true to allow ZooKeeper servers recover without snapshot
-    files. This should only be set during upgrading from old versions of
-    ZooKeeper (3.4.x, pre 3.5.3) where ZooKeeper might only have transaction
-    log files but without presence of snapshot files. If the value is set
-    during upgrade, we recommend to set the value back to false after upgrading
-    and restart ZooKeeper process so ZooKeeper can continue normal data
-    consistency check during recovery process.
-    Default value is false.
+ * *snapshot.trust.empty* :
+     (Java system property: **zookeeper.snapshot.trust.empty**)
+     **New in 3.5.6:**
+     This property controls whether or not ZooKeeper should treat missing
+     snapshot files as a fatal state that can't be recovered from.
+     Set to true to allow ZooKeeper servers recover without snapshot
+     files. This should only be set during upgrading from old versions of
+     ZooKeeper (3.4.x, pre 3.5.3) where ZooKeeper might only have transaction
+     log files but without presence of snapshot files. If the value is set
+     during upgrade, we recommend to set the value back to false after upgrading
+     and restart ZooKeeper process so ZooKeeper can continue normal data
+     consistency check during recovery process.
+     Default value is false.
 
-* *audit.enable* :
-    (Java system property: **zookeeper.audit.enable**)
-    **New in 3.6.0:**
-    By default audit logs are disabled. Set to "true" to enable it. Default value is "false".
-    See the [ZooKeeper audit logs](zookeeperAuditLogs.html) for more information.
+ * *audit.enable* :
+     (Java system property: **zookeeper.audit.enable**)
+     **New in 3.6.0:**
+     By default audit logs are disabled. Set to "true" to enable it. Default value is "false".
+     See the [ZooKeeper audit logs](zookeeperAuditLogs.html) for more information.
     
-* *audit.impl.class* :
-    (Java system property: **zookeeper.audit.impl.class**)
-    **New in 3.6.0:**
-    Class to implement the audit logger. By default log4j based audit logger org.apache.zookeeper.audit
-    .Log4jAuditLogger is used.
-    See the [ZooKeeper audit logs](zookeeperAuditLogs.html) for more information.
+ * *audit.impl.class* :
+     (Java system property: **zookeeper.audit.impl.class**)
+     **New in 3.6.0:**
+     Class to implement the audit logger. By default log4j based audit logger org.apache.zookeeper.audit
+     .Log4jAuditLogger is used.
+     See the [ZooKeeper audit logs](zookeeperAuditLogs.html) for more information.
 
-* *largeRequestMaxBytes* :
-    (Java system property: **zookeeper.largeRequestMaxBytes**)
-    **New in 3.6.0:**
-    The maximum number of bytes of all inflight large request. The connection will be closed if a coming large request causes the limit exceeded. The default is 100 * 1024 * 1024.
+ * *largeRequestMaxBytes* :
+     (Java system property: **zookeeper.largeRequestMaxBytes**)
+     **New in 3.6.0:**
+     The maximum number of bytes of all inflight large request. The connection will be closed if a coming large request causes the limit exceeded. The default is 100 * 1024 * 1024.
 
-* *largeRequestThreshold* :
-    (Java system property: **zookeeper.largeRequestThreshold**)
-    **New in 3.6.0:**
-    The size threshold after which a request is considered a large request. If it is -1, then all requests are considered small, effectively turning off large request throttling. The default is -1.
+ * *largeRequestThreshold* :
+     (Java system property: **zookeeper.largeRequestThreshold**)
+     **New in 3.6.0:**
+     The size threshold after which a request is considered a large request. If it is -1, then all requests are considered small, effectively turning off large request throttling. The default is -1.
 
-* *outstandingHandshake.limit* 
+ * *outstandingHandshake.limit* 
     (Jave system property only: **zookeeper.netty.server.outstandingHandshake.limit**)
     The maximum in-flight TLS handshake connections could have in ZooKeeper, 
     the connections exceed this limit will be rejected before starting handshake. 
@@ -1080,12 +1080,17 @@ property, when available, is noted below.
     effect due to TLS handshake timeout when there are too many in-flight TLS 
     handshakes. Set it to something like 250 is good enough to avoid herd effect.
 
-* *learner.asyncSending*
-  (Java system property: **zookeeper.learner.asyncSending**)
-  (Java system property: **learner.asyncSending**)(Added for backward compatibility)
-  **New in 3.7.0:**
-  The sending and receiving packets in Learner were done synchronously in a critical section. An untimely network issue could cause the followers to hang (see [ZOOKEEPER-3575](https://issues.apache.org/jira/browse/ZOOKEEPER-3575) and [ZOOKEEPER-4074](https://issues.apache.org/jira/browse/ZOOKEEPER-4074)). The new design moves sending packets in Learner to a separate thread and sends the packets asynchronously. The new design is enabled with this parameter (learner.asyncSending).
-  The default is false.
+ * *ephemeral.count.limit* :
+   (Java system property: **zookeeper.ephemeral.count.limit**)
+   **New in 3.6.3**
+   This property sets a limit on the number of ephemeral nodes a session can create. The default value is 10000.
+
+ * *learner.asyncSending*
+   (Java system property: **zookeeper.learner.asyncSending**)
+   (Java system property: **learner.asyncSending**)(Added for backward compatibility)
+   **New in 3.7.0:**
+   The sending and receiving packets in Learner were done synchronously in a critical section. An untimely network issue could cause the followers to hang (see [ZOOKEEPER-3575](https://issues.apache.org/jira/browse/ZOOKEEPER-3575) and [ZOOKEEPER-4074](https://issues.apache.org/jira/browse/ZOOKEEPER-4074)). The new design moves sending packets in Learner to a separate thread and sends the packets asynchronously. The new design is enabled with this parameter (learner.asyncSending).
+   The default is false.
 <a name="sc_clusterOptions"></a>
 
 #### Cluster Options
