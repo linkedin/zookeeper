@@ -113,7 +113,10 @@ public class BackupStorageUtil {
    * @throws IOException
    */
   public static void createFile(File file, boolean overwriteIfExist) throws IOException {
-    file.getParentFile().mkdirs();
+    boolean ret = file.getParentFile().mkdirs();
+    if (!ret) {
+      System.err.println("Failed to create dirs");
+    }
     if (!file.getParentFile().exists()) {
       throw new BackupException("Failed to create parent directories for file " + file.getName());
     }

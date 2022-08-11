@@ -75,7 +75,10 @@ public class BackupStatus {
     }
 
     if (!statusFile.getParentFile().exists()) {
-      statusFile.getParentFile().mkdirs();
+      boolean ret = statusFile.getParentFile().mkdirs();
+      if (!ret) {
+        LOG.warn("Failed to create dirs");
+      }
     }
 
     if (!statusFile.exists()) {
@@ -133,7 +136,10 @@ public class BackupStatus {
     if (!statusFile.exists()) {
       LOG.info("BackupStatus::update(): BackupStatus file doesn't exist. Creating file at path: "
           + statusFile.getAbsolutePath());
-      statusFile.createNewFile();
+       boolean ret = statusFile.createNewFile();
+       if (!ret) {
+         LOG.warn("Failed to delete file :{}", statusFile);
+       }
     }
 
     FileOutputStream os = null;
