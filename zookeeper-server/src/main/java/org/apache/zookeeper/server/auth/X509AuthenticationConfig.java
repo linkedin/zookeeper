@@ -18,6 +18,7 @@
 
 package org.apache.zookeeper.server.auth;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
@@ -38,6 +39,11 @@ public class X509AuthenticationConfig {
   private X509AuthenticationConfig() {
   }
 
+  /**
+   * X509AuthenticationConfig are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public static X509AuthenticationConfig getInstance() {
     if (instance == null) {
       synchronized (X509AuthenticationConfig.class) {
@@ -267,6 +273,11 @@ public class X509AuthenticationConfig {
     return znodeGroupAclSuperUserId;
   }
 
+  /**
+   * crossDomainAccessDomains are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Set<String> getZnodeGroupAclCrossDomainAccessDomains() {
     if (crossDomainAccessDomains == null) {
       synchronized (crossDomainAccessDomainsLock) {
@@ -278,6 +289,11 @@ public class X509AuthenticationConfig {
     return crossDomainAccessDomains;
   }
 
+  /**
+   * openReadAccessPathPrefixes are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Set<String> getZnodeGroupAclOpenReadAccessPathPrefixes() {
     if (openReadAccessPathPrefixes == null) {
       synchronized (openReadAccessPathPrefixesLock) {
