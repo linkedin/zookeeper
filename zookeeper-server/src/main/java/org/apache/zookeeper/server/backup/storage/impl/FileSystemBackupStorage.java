@@ -19,7 +19,6 @@
 package org.apache.zookeeper.server.backup.storage.impl;
 
 import java.io.File;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
@@ -143,7 +142,6 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
   }
 
   @Override
-  @SuppressFBWarnings("UL_UNRELEASED_LOCK_EXCEPTION_PATH")
   public void copyToBackupStorage(File srcFile, File destName) throws IOException {
     InputStream inputStream = null;
     OutputStream outputStream = null;
@@ -177,8 +175,9 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
         }
       } catch (Exception e) {
         // empty catch block. This is added incase exception occurs before releasing sharedLock.
+      } finally {
+        sharedLock.unlock();
       }
-      sharedLock.unlock();
     }
   }
 

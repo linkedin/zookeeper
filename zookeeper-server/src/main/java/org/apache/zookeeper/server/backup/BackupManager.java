@@ -122,8 +122,7 @@ public class BackupManager {
      */
     public void cleanup() {
       if (isTemporary && exists()) {
-        boolean ret = file.delete();
-        if (!ret) {
+        if (!file.delete()) {
           LOG.warn("Failed to delete file {}", file);
         }
       }
@@ -273,8 +272,7 @@ public class BackupManager {
               BackupUtil.LOST_LOG_PREFIX,
               Long.toHexString(startingZxid));
           File lostZxidFile = new File(tmpDir, fileName);
-          boolean retValue = lostZxidFile.createNewFile();
-          if (!retValue) {
+          if (!lostZxidFile.createNewFile()) {
             logger.warn("Failed to create file");
           }
 
