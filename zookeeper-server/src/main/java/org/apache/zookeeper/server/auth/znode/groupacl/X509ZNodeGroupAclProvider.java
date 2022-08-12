@@ -226,9 +226,6 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
       // "super" scheme gives access to all znodes without checking znode ACL vs authorized domain name
       commonSuperUserDomains.stream().forEach(d ->
           newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, d)));
-      if (X509AuthenticationConfig.getInstance().isStoreAuthedClientIdEnabled()) {
-        newAuthIds.add(new Id(getScheme(), clientId));
-      }
     } else if (X509AuthenticationConfig.getInstance().isZnodeGroupAclDedicatedServerEnabled()) {
       // If connection filtering feature is turned on, use connection filtering instead of normal authorization
       String serverNamespace = X509AuthenticationConfig.getInstance().getZnodeGroupAclServerDedicatedDomain();
@@ -245,6 +242,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     } else {
       // For other cases, add (x509:domainName) in authInfo
       domains.stream().forEach(d -> newAuthIds.add(new Id(getScheme(), d)));
+      // If no domain is matched for the clientId, then clientId will be added to authInfo;
+      // if StoreAuthedClientId feature is enabled, clientId will be added to authInfo in addition
+      // to matched domain names.
       if (domains.isEmpty() || X509AuthenticationConfig.getInstance().isStoreAuthedClientIdEnabled()) {
         newAuthIds.add(new Id(getScheme(), clientId));
       }

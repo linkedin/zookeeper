@@ -308,18 +308,16 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     Assert.assertEquals(SCHEME, authInfo.get(1).getScheme());
     Assert.assertEquals("DomainXUser", authInfo.get(1).getId());
 
-    // Cross domain component
+    // Cross domain component - should be same no matter this feature is on or not
     provider = createProvider(crossDomainCert);
     cnxn = new MockServerCnxn();
     cnxn.clientChain = new X509Certificate[]{crossDomainCert};
     Assert.assertEquals(KeeperException.Code.OK, provider
         .handleAuthentication(new ServerAuthenticationProvider.ServerObjs(zks, cnxn), new byte[0]));
     authInfo = cnxn.getAuthInfo();
-    Assert.assertEquals(2, authInfo.size());
+    Assert.assertEquals(1, authInfo.size());
     Assert.assertEquals("super", authInfo.get(0).getScheme());
     Assert.assertEquals("CrossDomain", authInfo.get(0).getId());
-    Assert.assertEquals("x509", authInfo.get(1).getScheme());
-    Assert.assertEquals("CrossDomainUser", authInfo.get(1).getId());
 
     // Super user - should be same no matter this feature is on or not
     provider = createProvider(superCert);
