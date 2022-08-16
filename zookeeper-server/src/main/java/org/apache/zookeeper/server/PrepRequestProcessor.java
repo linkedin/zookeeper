@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
+
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
 import org.apache.zookeeper.CreateMode;
@@ -59,6 +60,8 @@ import org.apache.zookeeper.server.ZooKeeperServer.ChangeRecord;
 import org.apache.zookeeper.server.ZooKeeperServer.PrecalculatedDigest;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
+import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
 import org.apache.zookeeper.server.quorum.LeaderZooKeeperServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
@@ -1001,6 +1004,49 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             throw new KeeperException.InvalidACLException(path);
         }
         List<ACL> rv = new ArrayList<>();
+
+        // Overwrite the acl list for users (except super user) when the auth provider is
+        // X509ZnodeGroupAclProvider, and isX509ClientIdAsAclEnabled is true;
+        // Set x509 ZNode ACL as the client's corresponding domain name. This domain name denotes a
+        // ZNode group the client belongs to and can be derived from the client URI-domain mapping
+        // (UriDomainMappingHelper).
+        // Cases where such grouping by override applies are:
+        // Single domain user / cross domain components -> set (x509 : domainName) as znode ACL
+        // Users whose extracted clientId is not found in the ClientURIDomainMapping
+        //      -> set (x509: clientURI) as znode ACL
+        // Examples that will not be handled by the "following logic" are:
+        //      x509 super user, plaintext port clients, any user when dedicated server is enabled
+        //      -> will go through original zk fixupACL logic
+        boolean isUserProvidedAclOverriden = false;
+        if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled()
+            && X509AuthenticationConfig.getInstance().isX509ZnodeGroupAclEnabled()
+            && !X509AuthenticationConfig.getInstance().isZnodeGroupAclDedicatedServerEnabled()) {
+            for (Id id : authInfo) {
+                boolean isX509 = id.getScheme().equals(X509AuthenticationUtil.X509_SCHEME);
+                boolean isX509CrossDomainComponent =
+                    id.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)
+                        && !X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserIds()
+                        .contains(id.getId());
+                if (isX509 || isX509CrossDomainComponent) {
+                    rv.add(new ACL(ZooDefs.Perms.ALL,
+                        new Id(X509AuthenticationUtil.X509_SCHEME, id.getId())));
+                    isUserProvidedAclOverriden = true;
+                }
+            }
+            // If the znode path contains open read access node path prefix, add (world:anyone, r)
+            if (X509AuthenticationConfig.getInstance().getZnodeGroupAclOpenReadAccessPathPrefixes()
+                .stream().anyMatch(path::startsWith)) {
+                rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+            }
+            if (isUserProvidedAclOverriden) {
+                // Only for users who are handled by the above logic, return the result,
+                // for others should continue to original fixupACL logic. This variable is necessary
+                // because if path is open read path, its open read ACL will be added to the list,
+                // regardless of user category, so rv's size won't be a good indicator here.
+                return rv;
+            }
+        }
+
         for (ACL a : uniqacls) {
             LOG.debug("Processing ACL: {}", a);
             if (a == null) {

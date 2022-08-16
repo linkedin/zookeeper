@@ -47,6 +47,7 @@ import org.apache.zookeeper.common.StringUtils;
 import org.apache.zookeeper.metrics.impl.DefaultMetricsProvider;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.backup.BackupConfig;
 import org.apache.zookeeper.server.backup.BackupSystemProperty;
 import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
@@ -112,7 +113,6 @@ public class QuorumPeerConfig {
     protected boolean backupEnabled = false;
     protected BackupConfig backupConfig;
     protected BackupConfig.Builder backupConfigBuilder = new BackupConfig.Builder();
-
     protected String initialConfig;
 
     protected LearnerType peerType = LearnerType.PARTICIPANT;
@@ -377,6 +377,26 @@ public class QuorumPeerConfig {
                 backupConfigBuilder.setTimetableStoragePath(value);
             } else if (key.equals(BackupSystemProperty.BACKUP_TIMETABLE_BACKUP_INTERVAL_MS)) {
                 backupConfigBuilder.setTimetableBackupIntervalInMs(Long.parseLong(value));
+            } else if (key.equals(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL)) {
+                X509AuthenticationConfig.getInstance().setX509ClientIdAsAclEnabled(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdType(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdSanMatchType(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdSanMatchRegex(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdSanExtractRegex(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdSanExtractMatcherGroupIndex(value);
+            } else if (key.equals(X509AuthenticationConfig.CROSS_DOMAIN_ACCESS_DOMAIN_NAME)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclCrossDomainAccessDomainNameStr(value);
+            } else if (key.equals(X509AuthenticationConfig.DEDICATED_DOMAIN)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclServerDedicatedDomain(value);
+            } else if (key.equals(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclSuperUserIdStr(value);
+            } else if (key.equals(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclOpenReadAccessPathPrefixStr(value);
             } else if (key.equals("standaloneEnabled")) {
                 if (value.toLowerCase().equals("true")) {
                     setStandaloneEnabled(true);
