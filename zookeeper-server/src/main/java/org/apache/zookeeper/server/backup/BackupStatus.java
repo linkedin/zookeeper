@@ -136,7 +136,7 @@ public class BackupStatus {
       LOG.info("BackupStatus::update(): BackupStatus file doesn't exist. Creating file at path: "
           + statusFile.getAbsolutePath());
        if (!statusFile.createNewFile()) {
-         LOG.warn("Failed to delete file :{}", statusFile);
+         LOG.warn("Failed to delete file: {}", statusFile);
        }
     }
 
