@@ -60,12 +60,11 @@ import org.apache.zookeeper.common.X509Exception;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.metrics.BaseTestMetricsProvider;
 import org.apache.zookeeper.metrics.impl.NullMetricsProvider;
-import org.apache.zookeeper.server.ServerMetrics;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
 import org.apache.zookeeper.server.quorum.Leader.Proposal;
 import org.apache.zookeeper.test.ClientBase;
-import org.junit.Test;
 import org.apache.zookeeper.test.LoggerTestTool;
+import org.junit.Test;
 
 /**
  * Test stand-alone server.
