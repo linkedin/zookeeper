@@ -312,8 +312,7 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
         String searchString = " - ";
         int logStartIndex = log.indexOf(searchString);
         String auditLog = log.substring(logStartIndex + searchString.length());
-        assertEquals(expectedLog, auditLog);
-
+        Assert.assertTrue(auditLog.endsWith(expectedLog));
     }
 
     private static void verifyLogs(String expectedLog, List<String> logs) {
