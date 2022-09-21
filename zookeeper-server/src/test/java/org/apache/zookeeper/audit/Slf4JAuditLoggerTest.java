@@ -419,6 +419,11 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+            try {
+                os.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 }
