@@ -330,4 +330,5 @@ public class ReadOnlyModeTest extends ZKTestCase {
             assertTrue(found, "Majority server wasn't found while connected to r/o server");
         }
     }
+
 }
