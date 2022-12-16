@@ -163,7 +163,8 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
    * the functionality of getting watches
    */
   public void testB_GetWatches() {
+    ClientUriDomainMappingHelper helper = new ZkClientUriDomainMappingHelper(zookeeperServer);
     WatchesReport report = zookeeperServer.getZKDatabase().getDataTree().getWatches();
-    Assert.assertNotNull(report);
+    Assert.assertEquals(1, report.getPaths(0).size());
   }
 }
