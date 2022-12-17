@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.ZooDefs;
@@ -104,6 +105,10 @@ public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHel
 
   /**
    * Install a persistent recursive watch on the root path.
+   * The watcher has to be added here instead of in {@link org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider}
+   * because this class is one layer above connections, and is a central place to handle add watch,
+   * process event, etc logic for all the connections in this server.
+   * Therefore, only one watch needs to be added per server.
    */
   private void addWatches() {
     zks.getZKDatabase().addWatch(rootPath, new MappingRootWatcher(), ZooDefs.AddWatchModes.persistentRecursive);
@@ -157,7 +162,8 @@ public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHel
 
   /**
    * The watcher used to listen on client uri - domain mapping root path for mapping update
-   * Extends DumbWatcher instead of ServerCnxn here some methods in ServerCnxn are not accessible from here
+   * Extends DumbWatcher instead of ServerCnxn because there are some package-private methods in
+   * ServerCnxn which cannot be overridden here, such as {@code abstract void setSessionId(long sessionId);}.
    */
   public class MappingRootWatcher extends DumbWatcher {
     @Override
