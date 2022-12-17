@@ -27,7 +27,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Comparator;
 import java.util.stream.Stream;
-
 import org.apache.zookeeper.server.backup.exception.BackupException;
 import org.apache.zookeeper.server.persistence.Util;
 
@@ -113,7 +112,9 @@ public class BackupStorageUtil {
    * @throws IOException
    */
   public static void createFile(File file, boolean overwriteIfExist) throws IOException {
-    file.getParentFile().mkdirs();
+    if (!file.getParentFile().mkdirs()) {
+      System.err.println("Failed to create dirs");
+    }
     if (!file.getParentFile().exists()) {
       throw new BackupException("Failed to create parent directories for file " + file.getName());
     }

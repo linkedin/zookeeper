@@ -18,6 +18,7 @@
 
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -91,6 +92,7 @@ public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHel
    * @return True if the new updater is setup to the helper instance. False if the specified updater is not set since
    * another updater has already been configured.
    */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   boolean setDomainAuthUpdater(ConnectionAuthInfoUpdater updater) {
     if (this.updater == null) {
       synchronized (this) {

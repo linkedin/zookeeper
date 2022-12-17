@@ -18,11 +18,12 @@
 
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Collections;
-import java.util.stream.Collectors;
 import java.util.HashSet;
-import java.util.Set;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
 import org.apache.zookeeper.KeeperException;
@@ -61,6 +62,8 @@ import org.slf4j.LoggerFactory;
  *    "open read access": this feature concerns read access only. Add (world, anyone r) to all
  *          newly-written znodes whose path prefixes are given in the znode group acl config
  *          (comma-delimited, multiple such prefixes are possible).
+ *    "store authed clientId": If enabled, the server will store the clientId in authInfo, in addition
+ *          to the matched domain. This feature is only available in non-dedicated server cases.
  *    "connection filtering": If the server is a dedicated server that only serves one domain,
  *          the name of the domain is made the "dedicatedDomain" of the server. The server will decline
  *          the connection requests from client who belongs to a domain that does not match with the
@@ -147,9 +150,12 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   }
 
   /**
-   * Initialize a new ClientUriDomainMappingHelper instance if it hasn't been instantiated for the ACL provider.
+   * Initialize a new ClientUriDomainMappingHelper instance lazily if it hasn't been instantiated for the ACL provider.
+   * Since it's lazy initialization suppressing spotbugs DC_DOUBLECHECK warning.
+   * Supressing IS2_INCONSISTENT_SYNC warning for uriDomainMappingHelper since it's guarded correctly by synchronized block.
    * @param zks
    */
+  @SuppressFBWarnings({"DC_DOUBLECHECK", "IS2_INCONSISTENT_SYNC"})
   private ClientUriDomainMappingHelper getUriDomainMappingHelper(ZooKeeperServer zks) {
     if (uriDomainMappingHelper == null) {
       synchronized (this) {
@@ -162,8 +168,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
             try {
               String clientId = X509AuthenticationUtil.getClientId(cnxn, trustManager);
               assignAuthInfo(cnxn, clientId,
-                  // If no domain name is found, use client Id as default domain name
-                  clientUriToDomainNames.getOrDefault(clientId, Collections.singleton(clientId)));
+                  clientUriToDomainNames.getOrDefault(clientId, Collections.emptySet()));
             } catch (UnsupportedOperationException unsupportedEx) {
               LOG.info("Cannot update AuthInfo for session 0x{} since the operation is not supported.",
                   Long.toHexString(cnxn.getSessionId()));
@@ -241,6 +246,12 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     } else {
       // For other cases, add (x509:domainName) in authInfo
       domains.stream().forEach(d -> newAuthIds.add(new Id(getScheme(), d)));
+      // If no domain is matched for the clientId, then clientId will be added to authInfo;
+      // if StoreAuthedClientId feature is enabled, clientId will be added to authInfo in addition
+      // to matched domain names.
+      if (domains.isEmpty() || X509AuthenticationConfig.getInstance().isStoreAuthedClientIdEnabled()) {
+        newAuthIds.add(new Id(getScheme(), clientId));
+      }
     }
 
     // Update the existing connection AuthInfo accordingly.

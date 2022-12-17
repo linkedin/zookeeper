@@ -35,7 +35,6 @@ import java.util.List;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
 import org.apache.zookeeper.server.backup.BackupConfig;
 import org.apache.zookeeper.server.backup.BackupFileInfo;
 import org.apache.zookeeper.server.backup.exception.BackupException;
@@ -166,13 +165,18 @@ public class FileSystemBackupStorage implements BackupStorageProvider {
           Paths.get(BackupStorageUtil.constructBackupFilePath(destName.getName(), fileRootPath)),
           StandardCopyOption.REPLACE_EXISTING);
     } finally {
-      if (inputStream != null) {
-        inputStream.close();
+      try {
+        if (inputStream != null) {
+          inputStream.close();
+        }
+        if (outputStream != null) {
+          outputStream.close();
+        }
+      } catch (Exception e) {
+        // empty catch block. This is added incase exception occurs before releasing sharedLock.
+      } finally {
+        sharedLock.unlock();
       }
-      if (outputStream != null) {
-        outputStream.close();
-      }
-      sharedLock.unlock();
     }
   }
 

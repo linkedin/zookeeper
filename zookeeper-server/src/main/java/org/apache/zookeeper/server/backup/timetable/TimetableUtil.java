@@ -23,7 +23,6 @@ import java.io.FileInputStream;
 import java.io.ObjectInputStream;
 import java.util.Map;
 import java.util.TreeMap;
-
 import org.apache.zookeeper.server.backup.BackupUtil;
 import org.apache.zookeeper.server.backup.exception.BackupException;
 
@@ -116,6 +115,7 @@ public final class TimetableUtil {
       @SuppressWarnings("unchecked")
       Map<Long, String> map = (TreeMap<Long, String>) ois.readObject();
       timestampZxidPairs.putAll(map);
+      ois.close();
     } catch (Exception e) {
       throw new BackupException(
           "TimetableUtil::findLastZxidFromTimestamp(): failed to read timetable backup files!", e);

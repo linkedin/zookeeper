@@ -18,6 +18,10 @@
 
 package org.apache.zookeeper.server.backup;
 
+import static com.google.common.base.Preconditions.checkState;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Range;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -28,10 +32,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Range;
 import org.apache.commons.cli.CommandLine;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.cli.RestoreCommand;
@@ -138,7 +138,7 @@ public class RestoreFromBackupTool {
    * @return true if the arguments parse correctly; false in all other cases.
    * @throws IOException if the backup provider cannot be instantiated correctly.
    */
-  public void parseArgs(CommandLine cl) {
+  public void parseArgs(CommandLine cl) throws Exception {
     String backupStoragePath = cl.getOptionValue(RestoreCommand.OptionShortForm.BACKUP_STORE);
     createBackupStorageProvider(backupStoragePath);
 
@@ -168,14 +168,14 @@ public class RestoreFromBackupTool {
     System.out.println("parseArgs successful.");
   }
 
-  private void createBackupStorageProvider(String backupStoragePath) {
+  private void createBackupStorageProvider(String backupStoragePath) throws Exception {
     String[] backupStorageParams = backupStoragePath.split(":");
     if (backupStorageParams.length != 4) {
       System.err.println(
           "Failed to parse backup storage connection information from the backup storage path provided, please check the input.");
       System.err.println(
           "For example: the format for a gpfs backup storage path should be \"gpfs:<config_path>:<backup_path>:<namespace>\".");
-      System.exit(1);
+      throw new IllegalArgumentException("Failed to create backup storage provider");
     }
 
     String userProvidedStorageName = backupStorageParams[0].toUpperCase();
@@ -195,19 +195,19 @@ public class RestoreFromBackupTool {
       System.err.println("Could not find a valid backup storage option based on the input: "
           + userProvidedStorageName + ". Error message: " + e.getMessage());
       e.printStackTrace();
-      System.exit(1);
+      throw e;
     } catch (ConfigException e) {
       System.err.println(
           "Could not generate a backup config based on the input, error message: " + e
               .getMessage());
-      e.getStackTrace();
-      System.exit(1);
+      e.printStackTrace();
+      throw e;
     } catch (InstantiationException | InvocationTargetException | NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
       System.err.println(
           "Could not generate a backup storage provider based on the input, error message: " + e
               .getMessage());
       e.printStackTrace();
-      System.exit(1);
+      throw e;
     }
   }
 
@@ -228,7 +228,7 @@ public class RestoreFromBackupTool {
       } catch (NumberFormatException nfe) {
         System.err
             .println("Invalid number specified for restore zxid point, the input is: " + numStr);
-        System.exit(2);
+        throw nfe;
       }
     }
   }
@@ -244,7 +244,7 @@ public class RestoreFromBackupTool {
         .listFiles(file -> file.getName().startsWith(TimetableBackup.TIMETABLE_PREFIX));
     if (timetableFiles == null || timetableFiles.length == 0) {
       System.err.println("Could not find timetable files at the path: " + timetableStoragePath);
-      System.exit(2);
+      throw new IllegalArgumentException("Could not find timetable files.");
     }
     Map.Entry<Long, String> restorePoint;
     String message;
@@ -268,11 +268,11 @@ public class RestoreFromBackupTool {
           "Could not find a valid zxid from timetable using the timestamp provided: " + timestampStr
               + ". The error message is: " + e.getMessage());
       e.printStackTrace();
-      System.exit(2);
+      throw e;
     }
   }
 
-  private void parseAndValidateOfflineRestoreDestination(CommandLine cl) {
+  private void parseAndValidateOfflineRestoreDestination(CommandLine cl) throws IOException {
     if (isSpotRestoration) {
       return;
     }
@@ -293,7 +293,7 @@ public class RestoreFromBackupTool {
       checkSnapDataDirFileExistence();
     } catch (IOException ioe) {
       System.err.println("Could not setup transaction log utility." + ioe);
-      System.exit(3);
+      throw ioe;
     }
   }
 
@@ -345,7 +345,14 @@ public class RestoreFromBackupTool {
    * @return true if the restore completed successfully, false in all other cases.
    */
   public boolean runWithRetries(CommandLine cl) {
-    parseArgs(cl);
+    try {
+      parseArgs(cl);
+    } catch (Exception e) {
+      System.err.println(
+          "Restore attempt failed, could not parse arguments. "
+              + "Error message: " + e.getMessage());
+      return false;
+    }
 
     int tries = 0;
 
@@ -490,7 +497,7 @@ public class RestoreFromBackupTool {
    * @return true if a valid log range is found; false in all other cases.
    */
   private boolean findLogRange() {
-    Preconditions.checkState(snapNeededIndex >= 0 && snapNeededIndex < snaps.size());
+    checkState(snapNeededIndex >= 0 && snapNeededIndex < snaps.size());
 
     if (logs.size() == 0) {
       return false;
@@ -530,13 +537,13 @@ public class RestoreFromBackupTool {
   }
 
   private boolean validateLogRange() {
-    Preconditions.checkState(oldestLogNeededIndex >= 0);
-    Preconditions.checkState(oldestLogNeededIndex < logs.size());
-    Preconditions.checkState(mostRecentLogNeededIndex >= 0);
-    Preconditions.checkState(mostRecentLogNeededIndex < logs.size());
-    Preconditions.checkState(oldestLogNeededIndex >= mostRecentLogNeededIndex);
-    Preconditions.checkState(snapNeededIndex >= 0);
-    Preconditions.checkState(snapNeededIndex < snaps.size());
+    checkState(oldestLogNeededIndex >= 0);
+    checkState(oldestLogNeededIndex < logs.size());
+    checkState(mostRecentLogNeededIndex >= 0);
+    checkState(mostRecentLogNeededIndex < logs.size());
+    checkState(oldestLogNeededIndex >= mostRecentLogNeededIndex);
+    checkState(snapNeededIndex >= 0);
+    checkState(snapNeededIndex < snaps.size());
 
     BackupFileInfo snap = snaps.get(snapNeededIndex);
     BackupFileInfo oldestLog = logs.get(oldestLogNeededIndex);
@@ -588,7 +595,10 @@ public class RestoreFromBackupTool {
    * Check if the specified snap dir and data dir already have files inside.
    * If so, ask user to confirm if they want to overwrite these two directories with restored files,
    * which means to wipe out all existing files and the directories be populated with restored files.
+   * Note : Supressing no null spotbugs warning because it's showing false positive thing and might be fixed in
+   * https://github.com/spotbugs/spotbugs/issues/456
    */
+  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void checkSnapDataDirFileExistence() {
     File dataDir = snapLog.getDataDir();
     File snapDir = snapLog.getSnapDir();

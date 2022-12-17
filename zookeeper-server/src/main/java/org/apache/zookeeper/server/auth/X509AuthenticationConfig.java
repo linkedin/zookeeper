@@ -18,12 +18,12 @@
 
 package org.apache.zookeeper.server.auth;
 
+import com.google.common.annotations.VisibleForTesting;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +39,11 @@ public class X509AuthenticationConfig {
   private X509AuthenticationConfig() {
   }
 
+  /**
+   * X509AuthenticationConfig are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public static X509AuthenticationConfig getInstance() {
     if (instance == null) {
       synchronized (X509AuthenticationConfig.class) {
@@ -125,6 +130,12 @@ public class X509AuthenticationConfig {
    * and enable connection filtering feature for this domain.
    */
   public static final String DEDICATED_DOMAIN = ZNODE_GROUP_ACL_CONFIG_PREFIX + "dedicatedDomain";
+  /**
+   * This config property applies to non-dedicated server. If this property is set to true,
+   * clientId extracted from the certificate will be stored in authInfo, along with the matched
+   * domain name.
+   */
+  public static final String STORE_AUTHED_CLIENT_ID = ZNODE_GROUP_ACL_CONFIG_PREFIX + "storeAuthedClientId";
 
   // The root path for client URI - domain mapping that stored in zk data tree. Refer to
   // {@link org.apache.zookeeper.server.auth.znode.groupacl.ZkClientUriDomainMappingHelper} for
@@ -137,6 +148,7 @@ public class X509AuthenticationConfig {
   private String znodeGroupAclCrossDomainAccessDomainNameStr;
   private String znodeGroupAclOpenReadAccessPathPrefixStr;
   private String znodeGroupAclServerDedicatedDomain;
+  private String storeAuthedClientIdEnabled;
 
   // Although using "volatile" keyword with double checked locking could prevent the undesired
   //creation of multiple objects; not using here for the consideration of read performance
@@ -217,6 +229,10 @@ public class X509AuthenticationConfig {
     this.znodeGroupAclServerDedicatedDomain = znodeGroupAclServerDedicatedDomain;
   }
 
+  public void setStoreAuthedClientIdEnabled(String enabled) {
+    storeAuthedClientIdEnabled = enabled;
+  }
+
   // Getters for X509 properties
 
   public String getClientCertIdType() {
@@ -263,6 +279,7 @@ public class X509AuthenticationConfig {
         .parseBoolean(System.getProperty(SET_X509_CLIENT_ID_AS_ACL));
   }
 
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Set<String> getZnodeGroupAclSuperUserIds() {
     if (znodeGroupAclSuperUserIds == null) {
       synchronized (znodeGroupAclSuperUserIdsLock) {
@@ -274,6 +291,11 @@ public class X509AuthenticationConfig {
     return znodeGroupAclSuperUserIds;
   }
 
+  /**
+   * crossDomainAccessDomains are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Set<String> getZnodeGroupAclCrossDomainAccessDomains() {
     if (crossDomainAccessDomains == null) {
       synchronized (crossDomainAccessDomainsLock) {
@@ -285,6 +307,11 @@ public class X509AuthenticationConfig {
     return crossDomainAccessDomains;
   }
 
+  /**
+   * openReadAccessPathPrefixes are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Set<String> getZnodeGroupAclOpenReadAccessPathPrefixes() {
     if (openReadAccessPathPrefixes == null) {
       synchronized (openReadAccessPathPrefixesLock) {
@@ -305,6 +332,11 @@ public class X509AuthenticationConfig {
 
   public String getZnodeGroupAclClientUriDomainMappingRootPath() {
     return ZNODE_GROUP_ACL_CLIENTURI_DOMAIN_MAPPING_ROOT_PATH;
+  }
+
+  public boolean isStoreAuthedClientIdEnabled() {
+    return Boolean.parseBoolean(storeAuthedClientIdEnabled) || Boolean
+        .parseBoolean(System.getProperty(STORE_AUTHED_CLIENT_ID));
   }
 
   private Set<String> loadSuperUserIds() {
