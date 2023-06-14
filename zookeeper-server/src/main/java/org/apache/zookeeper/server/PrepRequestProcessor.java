@@ -1021,7 +1021,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         // Examples that will not be handled by the "following logic" are:
         //      x509 super user, plaintext port clients, any user when dedicated server is enabled
         //      -> will go through original zk fixupACL logic
-        Set<String> enabledX509ClientIdAsCL = authInfo.stream()
+        Set<String> enabledX509ClientIdAsACL = authInfo.stream()
             .filter(id -> X509AuthenticationUtil.X509_SCHEME.equals(id.getScheme()))
             .map(Id::getId)
             .collect(Collectors.toCollection(HashSet::new));
@@ -1029,16 +1029,16 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
           // If clientIdAsAclEnabled is true, all the X509 auth entries should be added to the ACL. If it's not enabled,
           // only preserve the ones that are present in allowedClientIdAsAclDomains. If the intersection is empty,
           // overwriting the ACL will be disabled.
-          enabledX509ClientIdAsCL
+          enabledX509ClientIdAsACL
               .removeIf(id -> !X509AuthenticationConfig.getInstance().getAllowedClientIdAsAclDomains().contains(id));
         }
 
-      if ((!enabledX509ClientIdAsCL.isEmpty() || X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled())
+      if ((!enabledX509ClientIdAsACL.isEmpty() || X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled())
             && X509AuthenticationConfig.getInstance().isX509ZnodeGroupAclEnabled()
             && !X509AuthenticationConfig.getInstance().isZnodeGroupAclDedicatedServerEnabled()) {
             boolean isUserProvidedAclOverriden = false;
             for (Id id : authInfo) {
-                boolean isX509 = enabledX509ClientIdAsCL.contains(id.getId());
+                boolean isX509 = enabledX509ClientIdAsACL.contains(id.getId());
                 boolean isX509CrossDomainComponent =
                     id.getScheme().equals(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME)
                         && !X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserIds()
