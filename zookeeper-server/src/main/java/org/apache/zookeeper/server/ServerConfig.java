@@ -56,6 +56,11 @@ public class ServerConfig {
     protected int listenBacklog = -1;
     protected String initialConfig;
 
+    // Spiral Specific - ZKBridge
+    protected String spiralServer = null;
+    protected long spiralServerPort = -1L;
+
+
     /** JVM Pause Monitor feature switch */
     protected boolean jvmPauseMonitorToRun = false;
     /** JVM Pause Monitor warn threshold in ms */
@@ -121,6 +126,8 @@ public class ServerConfig {
         metricsProviderConfiguration = config.getMetricsProviderConfiguration();
         listenBacklog = config.getClientPortListenBacklog();
         initialConfig = config.getInitialConfig();
+        spiralServer = config.getSpiralServer();
+        spiralServerPort = config.getSpiralServerPort();
     }
 
     public InetSocketAddress getClientPortAddress() {
@@ -171,6 +178,10 @@ public class ServerConfig {
     /** Maximum number of pending socket connections to read, -1 if unset */
     public int getClientPortListenBacklog() {
         return listenBacklog;
+    }
+
+    public String getSpiralEndpoint() {
+        return spiralServer + ":" + spiralServerPort;
     }
 
 }

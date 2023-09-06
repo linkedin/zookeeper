@@ -66,6 +66,7 @@
     <module>zookeeper-client</module>
     <module>zookeeper-recipes</module>
     <module>zookeeper-assembly</module>
+    <module>zbridge-assembly</module>
     <module>zookeeper-compatibility-tests</module>
   </modules>
 
@@ -500,6 +501,36 @@
         <groupId>org.xerial.snappy</groupId>
         <artifactId>snappy-java</artifactId>
         <version>${snappy.version}</version>
+      </dependency>
+      <dependency>
+          <groupId>com.linkedin.spiral-schemas</groupId>
+          <artifactId>spiral-api</artifactId>
+          <version>0.0.3</version>
+      </dependency> 
+      <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-api</artifactId>
+        <version>1.49.2</version>
+      </dependency>
+      <dependency>
+          <groupId>io.grpc</groupId>
+          <artifactId>grpc-netty-shaded</artifactId>
+          <version>1.49.2</version>
+      </dependency>
+      <dependency>
+          <groupId>io.grpc</groupId>
+          <artifactId>grpc-protobuf</artifactId>
+          <version>1.49.2</version>
+      </dependency>
+      <dependency>
+          <groupId>io.grpc</groupId>
+          <artifactId>grpc-stub</artifactId>
+          <version>1.49.2</version>
+      </dependency>
+      <dependency>
+          <groupId>io.grpc</groupId>
+          <artifactId>grpc-testing</artifactId>
+          <version>1.49.2</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -947,7 +978,6 @@
       </resource>
     </resources>
   </build>
-
   <reporting>
     <plugins>
       <plugin>
@@ -956,6 +986,13 @@
       </plugin>
     </plugins>
   </reporting>
+  <repositories>
+  <repository>
+    <id>artifactory</id>
+    <name>LinkedIn's Artifactory</name>
+    <url>https://artifactory.corp.linkedin.com:8083/artifactory/release/</url>
+  </repository>
+  </repositories>
 
   <distributionManagement>
     <repository>

@@ -205,6 +205,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         }
     }
 
+
     /**
      * Grab current pending change records for each op in a multi-op.
      *
@@ -682,7 +683,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         List<ACL> listACL = fixupACL(path, request.authInfo, acl);
         ChangeRecord parentRecord = getRecordForPath(parentPath);
 
-        zks.checkACL(request.cnxn, parentRecord.acl, ZooDefs.Perms.CREATE, request.authInfo, path, listACL);
+        zks.checkACL(request.cnxn, parentRecord.acl, ZooDefs.Perms.CREATE, request.authInfo, path,
+            listACL);
         int parentCVersion = parentRecord.stat.getCversion();
         if (createMode.isSequential()) {
             path = path + String.format(Locale.ENGLISH, "%010d", parentCVersion);
@@ -722,17 +724,24 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         parentRecord.childCount++;
         parentRecord.stat.setCversion(newCversion);
         parentRecord.stat.setPzxid(request.getHdr().getZxid());
-        parentRecord.precalculatedDigest = precalculateDigest(
-                DigestOpCode.UPDATE, parentPath, parentRecord.data, parentRecord.stat);
+        parentRecord.precalculatedDigest =
+            precalculateDigest(DigestOpCode.UPDATE, parentPath, parentRecord.data, parentRecord.stat);
         addChangeRecord(parentRecord);
-        ChangeRecord nodeRecord = new ChangeRecord(
-                request.getHdr().getZxid(), path, s, 0, listACL);
+        //updateSpiral(parentRecord);
+        ChangeRecord nodeRecord = new ChangeRecord(request.getHdr().getZxid(), path, s, 0, listACL);
         nodeRecord.data = data;
-        nodeRecord.precalculatedDigest = precalculateDigest(
-                DigestOpCode.ADD, path, nodeRecord.data, s);
+        nodeRecord.precalculatedDigest = precalculateDigest(DigestOpCode.ADD, path, nodeRecord.data, s);
         setTxnDigest(request, nodeRecord.precalculatedDigest);
         addChangeRecord(nodeRecord);
+        SpiralNode spiral = new SpiralNode(data, 0L, s);
+        try {
+            zks.createSpiralRecord(path, spiral);
+        } catch (IOException e) {
+            // handle exception
+        }
     }
+
+
 
     private void validatePath(String path, long sessionId) throws BadArgumentsException {
         try {
@@ -1191,4 +1200,26 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         }
         request.setTxnDigest(new TxnDigest(digestCalculator.getDigestVersion(), preCalculatedDigest.treeDigest));
     }
+
+    public SpiralNode convert2Spiral(Request request) throws IOException {
+        CreateRequest createRequest = new CreateRequest();
+        ByteBufferInputStream.byteBuffer2Record(request.request, createRequest);
+
+        // TODO - convert lit of ACL to some long?
+        long acl = 0;
+        byte[] data = createRequest.getData();
+        StatPersisted stat = new StatPersisted();
+        stat.setCtime(request.getHdr().getTime());
+        stat.setMtime(request.getHdr().getTime());
+        stat.setCzxid(request.getHdr().getZxid());
+        stat.setMzxid(request.getHdr().getZxid());
+        stat.setPzxid(request.getHdr().getZxid());
+        stat.setVersion(0);
+        stat.setAversion(0);
+        stat.setEphemeralOwner(0);
+        return new SpiralNode(data, acl, stat);
+    }
+
+
 }
+
