@@ -117,6 +117,10 @@ public class QuorumPeerConfig {
 
     protected LearnerType peerType = LearnerType.PARTICIPANT;
 
+    // Spiral Related
+    protected String spiralServer;
+    protected long spiralServerPort;
+
     /**
      * Configurations for the quorumpeer-to-quorumpeer sasl authentication
      */
@@ -474,6 +478,10 @@ public class QuorumPeerConfig {
                 multiAddressReachabilityCheckTimeoutMs = Integer.parseInt(value);
             } else if (key.equals("multiAddress.reachabilityCheckEnabled")) {
                 multiAddressReachabilityCheckEnabled = Boolean.parseBoolean(value);
+            } else if (key.equals("spiral-server")) {
+                spiralServer = value;
+            } else if (key.equals("spiral-port")) {
+                spiralServerPort= Long.parseLong(value);
             } else {
                 System.setProperty("zookeeper." + key, value);
             }
@@ -1052,5 +1060,13 @@ public class QuorumPeerConfig {
 
     public BackupConfig getBackupConfig() {
         return backupConfig;
+    }
+
+    public String getSpiralServer() {
+        return spiralServer;
+    }
+
+    public long getSpiralServerPort() {
+        return spiralServerPort;
     }
 }

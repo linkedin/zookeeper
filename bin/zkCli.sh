@@ -37,6 +37,7 @@ else
 fi
 
 ZOO_LOG_FILE=zookeeper-$USER-cli-$HOSTNAME.log
+export CLIENT_JVMFLAGS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5006"
 
 "$JAVA" "-Dzookeeper.log.dir=${ZOO_LOG_DIR}" "-Dzookeeper.log.file=${ZOO_LOG_FILE}" \
      -cp "$CLASSPATH" $CLIENT_JVMFLAGS $JVMFLAGS \

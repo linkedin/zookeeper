@@ -19,6 +19,8 @@
 package org.apache.zookeeper.server;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -38,6 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import javax.security.sasl.SaslException;
+
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
@@ -48,7 +51,6 @@ import org.apache.zookeeper.KeeperException.SessionExpiredException;
 import org.apache.zookeeper.Version;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
-import org.apache.zookeeper.ZookeeperBanner;
 import org.apache.zookeeper.common.Time;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
@@ -71,6 +73,7 @@ import org.apache.zookeeper.server.RequestProcessor.RequestProcessorException;
 import org.apache.zookeeper.server.ServerCnxn.CloseRequestException;
 import org.apache.zookeeper.server.SessionTracker.Session;
 import org.apache.zookeeper.server.SessionTracker.SessionExpirer;
+import org.apache.zookeeper.spiral.SpiralClient;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
@@ -91,6 +94,7 @@ import org.slf4j.LoggerFactory;
  * following chain of RequestProcessors to process requests:
  * PrepRequestProcessor -&gt; SyncRequestProcessor -&gt; FinalRequestProcessor
  */
+@SuppressWarnings("ALL")
 public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
     protected static final Logger LOG;
@@ -113,15 +117,18 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     public static final String ZOOKEEPER_DIGEST_ENABLED = "zookeeper.digest.enabled";
     private static boolean digestEnabled;
 
+
     // Add a enable/disable option for now, we should remove this one when
     // this feature is confirmed to be stable
     public static final String CLOSE_SESSION_TXN_ENABLED = "zookeeper.closeSessionTxn.enabled";
     private static boolean closeSessionTxnEnabled = true;
 
+    // Connection to spiralClient.
+    private static SpiralClient spiralClient;
+    private static String spiralEndpoint;
+
     static {
         LOG = LoggerFactory.getLogger(ZooKeeperServer.class);
-
-        ZookeeperBanner.printBanner(LOG);
 
         Environment.logEnv("Server environment:", LOG);
 
@@ -139,6 +146,23 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         closeSessionTxnEnabled = Boolean.parseBoolean(
                 System.getProperty(CLOSE_SESSION_TXN_ENABLED, "true"));
         LOG.info("{} = {}", CLOSE_SESSION_TXN_ENABLED, closeSessionTxnEnabled);
+
+    }
+
+    public SpiralNode getSpiralRecord(String key) {
+        byte[] response = spiralClient.get(key);
+        SpiralNode node = new SpiralNode();
+        BinaryInputArchive bia = BinaryInputArchive.getArchive(new ByteArrayInputStream(response));
+        try {
+            node.deserialize(bia, "node");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return node;
+    }
+
+    public void createSpiralRecord(String key, SpiralNode node) throws IOException {
+        spiralClient.put(key, node.toByteBuffer());
     }
 
     // @VisibleForTesting
@@ -388,6 +412,12 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
      */
     public ZooKeeperServer(FileTxnSnapLog txnLogFactory, int tickTime, String initialConfig) {
         this(txnLogFactory, tickTime, -1, -1, -1, new ZKDatabase(txnLogFactory), initialConfig, QuorumPeerConfig.isReconfigEnabled());
+    }
+
+    public void setSpiralEndpoint(String spiralEndpoint) {
+        // TODO: add to property/env config file.
+        spiralClient = new SpiralClient(spiralEndpoint);
+        this.spiralEndpoint = spiralEndpoint;
     }
 
     public ServerStats serverStats() {

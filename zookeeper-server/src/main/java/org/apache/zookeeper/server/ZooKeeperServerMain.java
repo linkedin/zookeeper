@@ -62,6 +62,7 @@ public class ZooKeeperServerMain {
      * @param args the configfile or the port datadir [ticktime]
      */
     public static void main(String[] args) {
+        LOG.info("Starting Server");
         ZooKeeperServerMain main = new ZooKeeperServerMain();
         try {
             main.initializeAndRun(args);
@@ -108,7 +109,6 @@ public class ZooKeeperServerMain {
         } else {
             config.parse(args);
         }
-
         runFromConfig(config);
     }
 
@@ -141,6 +141,9 @@ public class ZooKeeperServerMain {
             }
             final ZooKeeperServer zkServer = new ZooKeeperServer(jvmPauseMonitor, txnLog, config.tickTime, config.minSessionTimeout, config.maxSessionTimeout, config.listenBacklog, null, config.initialConfig);
             txnLog.setServerStats(zkServer.serverStats());
+
+            // Set Spiral Specific configuration.
+            zkServer.setSpiralEndpoint(config.getSpiralEndpoint());
 
             // Registers shutdown handler which will be used to know the
             // server error or shutdown state changes.

@@ -21,6 +21,7 @@ package org.apache.zookeeper.server;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -41,6 +42,8 @@ import org.apache.zookeeper.OpResult.ErrorResult;
 import org.apache.zookeeper.OpResult.GetChildrenResult;
 import org.apache.zookeeper.OpResult.GetDataResult;
 import org.apache.zookeeper.OpResult.SetDataResult;
+import org.apache.zookeeper.data.StatPersisted;
+import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.PaginationNextPage;
 import org.apache.zookeeper.Watcher.WatcherType;
 import org.apache.zookeeper.ZooDefs;
@@ -53,6 +56,7 @@ import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.proto.AddWatchRequest;
 import org.apache.zookeeper.proto.CheckWatchesRequest;
 import org.apache.zookeeper.proto.Create2Response;
+import org.apache.zookeeper.proto.CreateRequest;
 import org.apache.zookeeper.proto.CreateResponse;
 import org.apache.zookeeper.proto.ErrorResponse;
 import org.apache.zookeeper.proto.ExistsRequest;
@@ -108,6 +112,25 @@ public class FinalRequestProcessor implements RequestProcessor {
         this.requestPathMetricsCollector = zks.getRequestPathMetricsCollector();
     }
 
+    public SpiralNode convert2Spiral(Request request) throws IOException {
+        CreateRequest createRequest = new CreateRequest();
+        ByteBufferInputStream.byteBuffer2Record(request.request, createRequest);
+
+        // TODO - convert lit of ACL to some long?
+        long acl = 0;
+        byte[] data = createRequest.getData();
+        StatPersisted stat = new StatPersisted();
+        stat.setCtime(request.getHdr().getTime());
+        stat.setMtime(request.getHdr().getTime());
+        stat.setCzxid(request.getHdr().getZxid());
+        stat.setMzxid(request.getHdr().getZxid());
+        stat.setPzxid(request.getHdr().getZxid());
+        stat.setVersion(0);
+        stat.setAversion(0);
+        stat.setEphemeralOwner(0);
+        return new SpiralNode(data, acl, stat);
+    }
+
     public void processRequest(Request request) {
         LOG.debug("Processing request:: {}", request);
 
@@ -121,6 +144,7 @@ public class FinalRequestProcessor implements RequestProcessor {
         }
 
         ProcessTxnResult rc = zks.processTxn(request);
+
 
         // ZOOKEEPER-558:
         // In some cases the server does not close the connection (e.g., closeconn buffer
@@ -203,7 +227,6 @@ public class FinalRequestProcessor implements RequestProcessor {
                 zks.serverStats().updateLatency(request.type, request, Time.currentElapsedTime());
                 lastOp = "PING";
                 updateStats(request.type, request, lastOp, lastZxid);
-
                 cnxn.sendResponse(new ReplyHeader(ClientCnxn.PING_XID, lastZxid, 0), null, "response");
                 return;
             }
@@ -288,6 +311,7 @@ public class FinalRequestProcessor implements RequestProcessor {
             }
             case OpCode.create: {
                 lastOp = "CREA";
+                // persist to Spiral
                 rsp = new CreateResponse(rc.path);
                 err = Code.get(rc.err);
                 requestPathMetricsCollector.registerRequest(request.type, rc.path);
@@ -299,6 +323,7 @@ public class FinalRequestProcessor implements RequestProcessor {
                 lastOp = "CREA";
                 rsp = new Create2Response(rc.path, rc.stat);
                 err = Code.get(rc.err);
+                // persist to Spiral
                 requestPathMetricsCollector.registerRequest(request.type, rc.path);
                 break;
             }
@@ -369,7 +394,11 @@ public class FinalRequestProcessor implements RequestProcessor {
                 GetDataRequest getDataRequest = new GetDataRequest();
                 ByteBufferInputStream.byteBuffer2Record(request.request, getDataRequest);
                 path = getDataRequest.getPath();
-                rsp = handleGetDataRequest(getDataRequest, cnxn, request.authInfo);
+                SpiralNode node = zks.getSpiralRecord(path);
+                Stat stat = SpiralNode.convert2Stat(node.stat);
+                rsp = new GetDataResponse(node.data, stat);
+                // TODO: let us store only in Spiral and not in ZK
+                //rsp = handleGetDataRequest(getDataRequest, cnxn, request.authInfo);
                 requestPathMetricsCollector.registerRequest(request.type, path);
                 break;
             }
@@ -421,6 +450,7 @@ public class FinalRequestProcessor implements RequestProcessor {
                 GetACLRequest getACLRequest = new GetACLRequest();
                 ByteBufferInputStream.byteBuffer2Record(request.request, getACLRequest);
                 path = getACLRequest.getPath();
+                // read data from Spiral - komal
                 DataNode n = zks.getZKDatabase().getNode(path);
                 if (n == null) {
                     throw new KeeperException.NoNodeException();
@@ -485,6 +515,7 @@ public class FinalRequestProcessor implements RequestProcessor {
                     path,
                     null);
                 int number = zks.getZKDatabase().getAllChildrenNumber(path);
+                // AFAIK Spiral doen't have count of children
                 rsp = new GetAllChildrenNumberResponse(number);
                 break;
             }
@@ -690,6 +721,7 @@ public class FinalRequestProcessor implements RequestProcessor {
     private Record handleGetDataRequest(Record request, ServerCnxn cnxn, List<Id> authInfo) throws KeeperException, IOException {
         GetDataRequest getDataRequest = (GetDataRequest) request;
         String path = getDataRequest.getPath();
+
         DataNode n = zks.getZKDatabase().getNode(path);
         if (n == null) {
             throw new KeeperException.NoNodeException();
