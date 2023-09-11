@@ -148,6 +148,8 @@ public abstract class KeeperException extends Exception {
             return new SessionClosedRequireAuthException();
         case REQUESTTIMEOUT:
             return new RequestTimeoutException();
+        case EPHEMERALCOUNTEXCEEDED:
+            return new EphemeralCountExceededException();
         case OK:
         default:
             throw new IllegalArgumentException("Invalid exception code");
@@ -404,7 +406,8 @@ public abstract class KeeperException extends Exception {
         /** The session has been closed by server because server requires client to do SASL authentication,
          *  but client is not configured with SASL authentication or configuted with SASL but failed
          *  (i.e. wrong credential used.). */
-        SESSIONCLOSEDREQUIRESASLAUTH(-124);
+        SESSIONCLOSEDREQUIRESASLAUTH(-124),
+        EPHEMERALCOUNTEXCEEDED(-125);
 
         private static final Map<Integer, Code> lookup = new HashMap<Integer, Code>();
 
@@ -495,6 +498,8 @@ public abstract class KeeperException extends Exception {
             return "Reconfig is disabled";
         case SESSIONCLOSEDREQUIRESASLAUTH:
             return "Session closed because client failed to authenticate";
+        case EPHEMERALCOUNTEXCEEDED:
+            return "Ephemeral count exceeded for session";
         default:
             return "Unknown error " + code;
         }
@@ -938,6 +943,12 @@ public abstract class KeeperException extends Exception {
             super(Code.REQUESTTIMEOUT);
         }
 
+    }
+
+    public static class EphemeralCountExceededException extends KeeperException {
+        public EphemeralCountExceededException() {
+            super(Code.EPHEMERALCOUNTEXCEEDED);
+        }
     }
 
 }

@@ -1069,6 +1069,12 @@ property, when available, is noted below.
     (Java system property: **zookeeper.largeRequestThreshold**)
     **New in 3.6.0:**
     The size threshold after which a request is considered a large request. If it is -1, then all requests are considered small, effectively turning off large request throttling. The default is -1.
+* 
+
+* *ephemeral.count.limit* :
+  (Java system property: **zookeeper.ephemeral.count.limit**)
+  **New in !!! TODO VERSION NUMBER HERE !!!**
+  This property sets a limit on the number of ephemeral nodes a session can create. The default value is 10000.
 
 * *outstandingHandshake.limit* 
     (Jave system property only: **zookeeper.netty.server.outstandingHandshake.limit**)
