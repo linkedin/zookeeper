@@ -708,6 +708,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             request.setTxn(new CreateTxn(path, data, listACL, createMode.isEphemeral(), newCversion));
         }
 
+
         TxnHeader hdr = request.getHdr();
         long ephemeralOwner = 0;
         if (createMode.isContainer()) {
@@ -716,6 +717,13 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             ephemeralOwner = EphemeralType.TTL.toEphemeralOwner(ttl);
         } else if (createMode.isEphemeral()) {
             ephemeralOwner = request.sessionId;
+
+            int count = zks.getZKDatabase().getDataTree().getEphemerals(ephemeralOwner).size();
+            int limit = Integer.getInteger("zookeeper.ephemeral.count.limit", 10000);
+            if (limit != -1 && count >= limit) {
+                ServerMetrics.getMetrics().EPHEMERAL_NODE_MAX_COUNT_VIOLATION.inc();
+                throw new KeeperException.EphemeralCountExceededException();
+            }
         }
         StatPersisted s = DataTree.createStat(hdr.getZxid(), hdr.getTime(), ephemeralOwner);
         parentRecord = parentRecord.duplicate(request.getHdr().getZxid());
