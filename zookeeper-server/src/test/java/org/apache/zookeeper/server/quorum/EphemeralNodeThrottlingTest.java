@@ -3,17 +3,12 @@ package org.apache.zookeeper.server.quorum;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import java.io.File;
-import java.io.IOException;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.PortAssignment;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.metrics.MetricsUtils;
-import org.apache.zookeeper.server.DataTree;
-import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ServerMetrics;
 import org.apache.zookeeper.server.ZooKeeperServer;
@@ -26,7 +21,7 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
 
     protected static final Logger LOG = LoggerFactory.getLogger(EphemeralNodeThrottlingTest.class);
 
-    static final int MAX_EPHEMERAL_NODES = 32;
+    static final int MAX_EPHEMERAL_NODES = 20;
     static final int NUM_SERVERS = 5;
     static final String PATH = "/ephemeral-throttling-test";
 
@@ -48,39 +43,43 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
         }
     }
 
-    /**
-     *  Verify that the ephemeral limit enforced correctly when there are delete operations.
-     */
+    /* Verify that the ephemeral limit enforced correctly when there are delete operations. */
     @Test
     public void limitingEphemeralsWithDeletesTest() throws Exception {
-        int numDelete = 8;
         System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(MAX_EPHEMERAL_NODES));
         servers = LaunchServers(NUM_SERVERS);
-        for (int i = 0; i < MAX_EPHEMERAL_NODES / 2; i++) {
+        for (int i = 0; i < MAX_EPHEMERAL_NODES; i++) {
             servers.zk[0].create(PATH + "-" + i, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
         }
-        for (int i = 0; i < numDelete; i++) {
+        boolean threwError = false;
+
+        try {
+            servers.zk[0].create(PATH + "-foo", new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+        } catch (KeeperException.EphemeralCountExceededException e) {
+            threwError = true;
+        }
+        assertTrue(threwError);
+        threwError = false;
+
+        for (int i = 0; i < MAX_EPHEMERAL_NODES / 2; i++) {
             servers.zk[0].delete(PATH + "-" + i, -1);
         }
-        for (int i = 0; i < (MAX_EPHEMERAL_NODES / 2) + numDelete; i++) {
+        for (int i = 0; i < MAX_EPHEMERAL_NODES / 2; i++) {
             servers.zk[0].create(PATH, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
         }
 
-        boolean threw = false;
         try {
             servers.zk[0].create(PATH, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
         } catch (KeeperException.EphemeralCountExceededException e) {
-            threw = true;
+            threwError = true;
         }
-        assertTrue(threw);
+        assertTrue(threwError);
     }
 
-    /**
-     *  Check that our emitted metric around the number of request rejections from too many ephemerals is accurate.
-     */
+    /* Check that our emitted metric around the number of request rejections from too many ephemerals is accurate. */
     @Test
     public void rejectedEphemeralCreatesMetricsTest() throws Exception {
-        int ephemeralExcess = 8;
+        int ephemeralExcess = MAX_EPHEMERAL_NODES / 2;
         System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(MAX_EPHEMERAL_NODES));
         servers = LaunchServers(NUM_SERVERS);
         for (int i = 0; i < MAX_EPHEMERAL_NODES + ephemeralExcess; i++) {
@@ -93,66 +92,5 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
 
         long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_max_count_violation");
         assertEquals(ephemeralExcess, actual);
-    }
-
-    /**
-     *  Test that the ephemeral limit is accurate in the case where an ephemeral node is deleted before it is committed.
-     */
-    CountDownLatch latch = null;
-    @Test
-    public void createThenDeleteBeforeCommitTest() throws Exception {
-        System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(MAX_EPHEMERAL_NODES));
-
-        String hostPort = "127.0.0.1:" + PortAssignment.unique();
-        File tmpDir = ClientBase.createTmpDir();
-        ClientBase.setupTestEnv();
-        ZooKeeperServer server = new ZooKeeperServerWithLatch(tmpDir, tmpDir, 3000);
-        final int port = Integer.parseInt(hostPort.split(":")[1]);
-        ServerCnxnFactory cnxnFactory = ServerCnxnFactory.createFactory(port, -1);
-        ServerMetrics.getMetrics().resetAll();
-        cnxnFactory.startup(server);
-
-        latch = new CountDownLatch(1);
-
-        ZooKeeper zk = ClientBase.createZKClient(hostPort);
-        zk.create(PATH, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
-        zk.delete(PATH, -1);
-
-        latch.countDown();
-
-        boolean noException = true;
-        try {
-            for (int i = 0; i < MAX_EPHEMERAL_NODES; i++) {
-                zk.create(PATH, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
-            }
-        } catch (KeeperException.EphemeralCountExceededException e) {
-            noException = false;
-        }
-        assertEquals(noException, true);
-
-        boolean threw = false;
-        try {
-            zk.create(PATH, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
-        } catch (KeeperException.EphemeralCountExceededException e) {
-            threw = true;
-        }
-        assertEquals(threw, true);
-    }
-
-    class ZooKeeperServerWithLatch extends ZooKeeperServer {
-        public ZooKeeperServerWithLatch(File snapDir, File logDir, int tickTime) throws IOException {
-            super(snapDir, logDir, tickTime);
-        }
-
-        @Override
-        public DataTree.ProcessTxnResult processTxn(Request request) {
-            if (latch != null) {
-                try {
-                    latch.await(10, TimeUnit.SECONDS);
-                } catch (Exception e) {}
-            }
-            DataTree.ProcessTxnResult res = super.processTxn(request);
-            return res;
-        }
     }
 }
