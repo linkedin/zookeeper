@@ -13,6 +13,7 @@ import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ServerMetrics;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.test.ClientBase;
+import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,22 +26,40 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
     static final int NUM_SERVERS = 5;
     static final String PATH = "/ephemeral-throttling-test";
 
-    @Test(expected = KeeperException.EphemeralCountExceededException.class)
+    @Test()
     public void limitingEphemeralsTest() throws Exception {
         System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(MAX_EPHEMERAL_NODES));
         servers = LaunchServers(NUM_SERVERS);
-        for (int i = 0; i < MAX_EPHEMERAL_NODES + 1; i++) {
+        boolean threwError = false;
+        // Create nodes up to the limit
+        for (int i = 0; i < MAX_EPHEMERAL_NODES; i++) {
             servers.zk[0].create(PATH + "-" + i, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
         }
+
+        try {
+            servers.zk[0].create(PATH + "-" + MAX_EPHEMERAL_NODES, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+        } catch (KeeperException.EphemeralCountExceededException e) {
+            threwError = true;
+        }
+        assertTrue(threwError);
     }
 
-    @Test(expected = KeeperException.EphemeralCountExceededException.class)
+    @Test()
     public void limitingSequentialEphemeralsTest() throws Exception {
         System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(MAX_EPHEMERAL_NODES));
         servers = LaunchServers(NUM_SERVERS);
-        for (int i = 0; i < MAX_EPHEMERAL_NODES + 1; i++) {
+        boolean threwError = false;
+        // Create nodes up to the limit
+        for (int i = 0; i < MAX_EPHEMERAL_NODES; i++) {
             servers.zk[0].create(PATH, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
         }
+
+        try {
+            servers.zk[0].create(PATH, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
+        } catch (KeeperException.EphemeralCountExceededException e) {
+            threwError = true;
+        }
+        assertTrue(threwError);
     }
 
     /* Verify that the ephemeral limit enforced correctly when there are delete operations. */

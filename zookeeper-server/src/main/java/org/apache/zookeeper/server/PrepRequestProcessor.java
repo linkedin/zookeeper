@@ -719,7 +719,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             ephemeralOwner = request.sessionId;
 
             int count = zks.getZKDatabase().getDataTree().getEphemerals(ephemeralOwner).size();
-            int limit = Integer.getInteger("zookeeper.ephemeral.count.limit", 10000);
+            int limit = Integer.getInteger("zookeeper.ephemeral.count.limit", 7500);
             if (limit != -1 && count >= limit) {
                 ServerMetrics.getMetrics().EPHEMERAL_NODE_MAX_COUNT_VIOLATION.inc();
                 throw new KeeperException.EphemeralCountExceededException();
