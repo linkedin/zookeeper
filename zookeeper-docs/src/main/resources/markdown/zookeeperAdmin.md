@@ -1072,7 +1072,7 @@ property, when available, is noted below.
 
 * *ephemeral.count.limit* :
   (Java system property: **zookeeper.ephemeral.count.limit**)
-  This property sets a limit on the number of ephemeral nodes a session can create. The default value is 10000.
+  This property sets a limit on the number of ephemeral nodes a session can create. The default value is 7500, set in PrepRequestProcessor.java.
 
 * *outstandingHandshake.limit* 
     (Jave system property only: **zookeeper.netty.server.outstandingHandshake.limit**)
