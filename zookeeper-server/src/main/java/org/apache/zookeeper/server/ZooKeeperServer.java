@@ -99,6 +99,9 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
     public static final String ENABLE_EAGER_ACL_CHECK = "zookeeper.enableEagerACLCheck";
     public static final String SKIP_ACL = "zookeeper.skipACL";
+    public static final String EPHEMERAL_COUNT_LIMIT_KEY = "zookeeper.ephemeral.count.limit";
+    public static final int DEFAULT_EPHEMERAL_COUNT_LIMIT = 7500;
+    private static int ephemeralCountLimit;
 
     // When enabled, will check ACL constraints appertained to the requests first,
     // before sending the requests to the quorum.
@@ -139,6 +142,9 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         closeSessionTxnEnabled = Boolean.parseBoolean(
                 System.getProperty(CLOSE_SESSION_TXN_ENABLED, "true"));
         LOG.info("{} = {}", CLOSE_SESSION_TXN_ENABLED, closeSessionTxnEnabled);
+
+        ephemeralCountLimit = Integer.getInteger(EPHEMERAL_COUNT_LIMIT_KEY, DEFAULT_EPHEMERAL_COUNT_LIMIT);
+        LOG.info("{} = {}",EPHEMERAL_COUNT_LIMIT_KEY, ephemeralCountLimit);
     }
 
     // @VisibleForTesting
@@ -161,6 +167,8 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         LOG.info("Update {} to {}", CLOSE_SESSION_TXN_ENABLED,
                 ZooKeeperServer.closeSessionTxnEnabled);
     }
+
+    public static int getEphemeralCountLimit() {return ephemeralCountLimit;}
 
     protected ZooKeeperServerBean jmxServerBean;
     protected DataTreeBean jmxDataTreeBean;

@@ -108,7 +108,6 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
     private final RequestProcessor nextProcessor;
     private final boolean digestEnabled;
     private DigestCalculator digestCalculator;
-    private int ephemeralCountLimit;
 
     ZooKeeperServer zks;
 
@@ -127,7 +126,6 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         if (this.digestEnabled) {
             this.digestCalculator = new DigestCalculator();
         }
-        this.ephemeralCountLimit = Integer.getInteger("zookeeper.ephemeral.count.limit", 7500);
     }
 
     /**
@@ -721,8 +719,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             ephemeralOwner = request.sessionId;
 
             int count = zks.getZKDatabase().getDataTree().getEphemerals(ephemeralOwner).size();
-
-            if (ephemeralCountLimit != -1 && count >= ephemeralCountLimit) {
+            if (ZooKeeperServer.getEphemeralCountLimit() != -1 && count >= ZooKeeperServer.getEphemeralCountLimit()) {
                 ServerMetrics.getMetrics().EPHEMERAL_NODE_MAX_COUNT_VIOLATION.inc();
                 throw new KeeperException.EphemeralCountExceededException();
             }
