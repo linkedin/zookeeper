@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -718,8 +719,15 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         } else if (createMode.isEphemeral()) {
             ephemeralOwner = request.sessionId;
 
-            int count = zks.getZKDatabase().getDataTree().getEphemerals(ephemeralOwner).size();
-            if (ZooKeeperServer.getEphemeralCountLimit() != -1 && count >= ZooKeeperServer.getEphemeralCountLimit()) {
+            // int count = zks.getZKDatabase().getDataTree().getEphemerals(ephemeralOwner).size();
+            // if (ZooKeeperServer.getEphemeralCountLimit() != -1 && count >= ZooKeeperServer.getEphemeralCountLimit()) {
+            //     ServerMetrics.getMetrics().EPHEMERAL_NODE_MAX_COUNT_VIOLATION.inc();
+            //     throw new KeeperException.EphemeralCountExceededException();
+            // }
+
+            int count = zks.getZKDatabase().getDataTree().getTotalEphemeralsByteSize(ephemeralOwner);
+            if (ZooKeeperServer.getEphemeralCountLimit() != -1 && count + path.getBytes(StandardCharsets.UTF_8).length
+                    > ZooKeeperServer.getEphemeralCountLimit()) {
                 ServerMetrics.getMetrics().EPHEMERAL_NODE_MAX_COUNT_VIOLATION.inc();
                 throw new KeeperException.EphemeralCountExceededException();
             }

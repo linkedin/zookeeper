@@ -26,6 +26,8 @@ import org.apache.zookeeper.metrics.MetricsUtils;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -37,34 +39,42 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
     protected static final Logger LOG = LoggerFactory.getLogger(EphemeralNodeThrottlingTest.class);
 
     static final int DEFAULT_MAX_EPHEMERAL_NODES = 20;
+    static final int DEFAULT_MAX_EPHEMERAL_NODE_BYTES = 2000;
     static final int NUM_SERVERS = 5;
     static final String PATH = "/ephemeral-throttling-test";
 
     @Test
-    public void limitingEphemeralsTest() throws Exception {
-        System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(DEFAULT_MAX_EPHEMERAL_NODES));
+    public void byteSizeTest() throws Exception {
+        System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(200));
         servers = LaunchServers(NUM_SERVERS);
-        boolean leaderThrewError = false;
-        boolean followerThrewError = false;
         ZooKeeper leaderServer = servers.zk[servers.findLeader()];
-        ZooKeeper followerServer = servers.zk[servers.findAnyFollower()];
-        // Create nodes up to the limit
-        for (int i = 0; i < DEFAULT_MAX_EPHEMERAL_NODES; i++) {
-            leaderServer.create(PATH + "-leader-" + i, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
-            followerServer.create(PATH + "-follower-" + i, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+        int cumulativeBytes = 0;
+        int i = 0;
+        while (cumulativeBytes < 200) {
+            cumulativeBytes += (PATH+i).getBytes().length;
+            try {
+                leaderServer.create(PATH + i++, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+            } catch (Exception e) {
+                break;
+            }
         }
+        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_max_count_violation");
+        assertEquals(1, actual);
 
-        try {
-            leaderServer.create(PATH + "-follower-" + DEFAULT_MAX_EPHEMERAL_NODES, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
-        } catch (KeeperException.EphemeralCountExceededException e) {
-            leaderThrewError = true;
-        }
-        try {
-            followerServer.create(PATH + "-follower-" + DEFAULT_MAX_EPHEMERAL_NODES, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
-        } catch (KeeperException.EphemeralCountExceededException e) {
-            followerThrewError = true;
-        }
-        assertTrue(leaderThrewError && followerThrewError);
+        servers.shutDownAllServers();
+    }
+
+    @Test
+    public void limitingEphemeralsTest() throws Exception {
+        System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(DEFAULT_MAX_EPHEMERAL_NODE_BYTES));
+        servers = LaunchServers(NUM_SERVERS);
+        ZooKeeper leaderServer = servers.zk[servers.findLeader()];
+        String leaderSubPath = PATH + "-leader-";
+        assertTrue(checkLimitEnforcedForServer(leaderServer, leaderSubPath));
+
+        ZooKeeper followerServer = servers.zk[servers.findAnyFollower()];
+        String followerSubPath = PATH + "-follower-";
+        assertTrue(checkLimitEnforcedForServer(followerServer, followerSubPath));
 
         long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_max_count_violation");
         assertEquals(2, actual);
@@ -72,6 +82,8 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
         servers.shutDownAllServers();
     }
 
+
+    // TODO: for sequentials we can just check if byte length + 1 would hit limit. The following request will have greater than 2 bytes so don't need to be super precise.
     @Test
     public void limitingSequentialEphemeralsTest() throws Exception {
         System.setProperty("zookeeper.ephemeral.count.limit", Integer.toString(DEFAULT_MAX_EPHEMERAL_NODES));
@@ -102,6 +114,24 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
         assertEquals(2, actual);
 
         servers.shutDownAllServers();
+    }
+
+    public boolean checkLimitEnforcedForServer(ZooKeeper server, String subPath) throws Exception {
+        int leaderCumulativeBytes = 0;
+        int i = 0;
+        while (leaderCumulativeBytes + (subPath+i).getBytes(StandardCharsets.UTF_8).length
+                < Integer.getInteger("zookeeper.ephemeral.count.limit")) {
+            server.create(subPath+i, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+            leaderCumulativeBytes += (subPath+i).getBytes(StandardCharsets.UTF_8).length;
+            i++;
+        }
+
+        try {
+            server.create(subPath + "-follower-" + i, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+        } catch (KeeperException.EphemeralCountExceededException e) {
+            return true;
+        }
+        return false;
     }
 
     @Test

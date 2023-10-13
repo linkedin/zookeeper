@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -35,6 +36,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.InputArchive;
@@ -160,6 +162,7 @@ public class DataTree {
      * This hashtable lists the paths of the ephemeral nodes of a session.
      */
     private final Map<Long, HashSet<String>> ephemerals = new ConcurrentHashMap<Long, HashSet<String>>();
+    private final Map<Long, AtomicInteger> ephemeralsByteSizeMap = new ConcurrentHashMap<Long, AtomicInteger>();
 
     /**
      * This set contains the paths of all container nodes
@@ -220,6 +223,12 @@ public class DataTree {
             cloned = (HashSet<String>) retv.clone();
         }
         return cloned;
+    }
+
+    public int getTotalEphemeralsByteSize(long sessionID) {
+        return ephemeralsByteSizeMap.getOrDefault(sessionID, new AtomicInteger()).get();
+
+
     }
 
     public Set<String> getContainers() {
@@ -554,12 +563,22 @@ public class DataTree {
                 ttls.add(path);
             } else if (ephemeralOwner != 0) {
                 HashSet<String> list = ephemerals.get(ephemeralOwner);
+                AtomicInteger totalEphemeralsByteSize = ephemeralsByteSizeMap.get(ephemeralOwner);
                 if (list == null) {
                     list = new HashSet<String>();
                     ephemerals.put(ephemeralOwner, list);
                 }
                 synchronized (list) {
                     list.add(path);
+                }
+                //  Only store sum of ephemeral node byte sizes if we're enforcing a limit
+                if (ZooKeeperServer.getEphemeralCountLimit() != 1) {
+                    if (totalEphemeralsByteSize == null) {
+                        totalEphemeralsByteSize = new AtomicInteger();
+                        ephemeralsByteSizeMap.put(ephemeralOwner, totalEphemeralsByteSize);
+                    }
+                    int byteSize = totalEphemeralsByteSize.addAndGet(path.getBytes(StandardCharsets.UTF_8).length);
+                    System.out.println("----- byte size is " + byteSize + " for path" + path + " -----");
                 }
             }
             if (outputStat != null) {
