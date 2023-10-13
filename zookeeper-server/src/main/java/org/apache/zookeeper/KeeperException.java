@@ -148,8 +148,8 @@ public abstract class KeeperException extends Exception {
             return new SessionClosedRequireAuthException();
         case REQUESTTIMEOUT:
             return new RequestTimeoutException();
-        case EPHEMERALCOUNTEXCEEDED:
-            return new EphemeralCountExceededException();
+        case TOTALEPHEMERALLIMITEXCEEDED:
+            return new TotalEphemeralLimitExceeded();
         case OK:
         default:
             throw new IllegalArgumentException("Invalid exception code");
@@ -409,7 +409,7 @@ public abstract class KeeperException extends Exception {
         SESSIONCLOSEDREQUIRESASLAUTH(-124),
         /** Request to create ephemeral node was rejected because the limit for the session was exceeded. The default is
          * 7500, but can be set through the "zookeeper.ephemeral.count.limit" system property. */
-        EPHEMERALCOUNTEXCEEDED(-125);
+        TOTALEPHEMERALLIMITEXCEEDED(-125);
 
         private static final Map<Integer, Code> lookup = new HashMap<Integer, Code>();
 
@@ -500,7 +500,7 @@ public abstract class KeeperException extends Exception {
             return "Reconfig is disabled";
         case SESSIONCLOSEDREQUIRESASLAUTH:
             return "Session closed because client failed to authenticate";
-        case EPHEMERALCOUNTEXCEEDED:
+        case TOTALEPHEMERALLIMITEXCEEDED:
             return "Ephemeral count exceeded for session";
         default:
             return "Unknown error " + code;
@@ -947,9 +947,9 @@ public abstract class KeeperException extends Exception {
 
     }
 
-    public static class EphemeralCountExceededException extends KeeperException {
-        public EphemeralCountExceededException() {
-            super(Code.EPHEMERALCOUNTEXCEEDED);
+    public static class TotalEphemeralLimitExceeded extends KeeperException {
+        public TotalEphemeralLimitExceeded() {
+            super(Code.TOTALEPHEMERALLIMITEXCEEDED);
         }
     }
 

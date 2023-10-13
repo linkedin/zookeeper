@@ -718,18 +718,11 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             ephemeralOwner = EphemeralType.TTL.toEphemeralOwner(ttl);
         } else if (createMode.isEphemeral()) {
             ephemeralOwner = request.sessionId;
-
-            // int count = zks.getZKDatabase().getDataTree().getEphemerals(ephemeralOwner).size();
-            // if (ZooKeeperServer.getEphemeralCountLimit() != -1 && count >= ZooKeeperServer.getEphemeralCountLimit()) {
-            //     ServerMetrics.getMetrics().EPHEMERAL_NODE_MAX_COUNT_VIOLATION.inc();
-            //     throw new KeeperException.EphemeralCountExceededException();
-            // }
-
-            int count = zks.getZKDatabase().getDataTree().getTotalEphemeralsByteSize(ephemeralOwner);
-            if (ZooKeeperServer.getEphemeralCountLimit() != -1 && count + path.getBytes(StandardCharsets.UTF_8).length
+            int currentByteSize = zks.getZKDatabase().getDataTree().getTotalEphemeralsByteSize(ephemeralOwner);
+            if (ZooKeeperServer.getEphemeralCountLimit() != -1 && currentByteSize + path.getBytes(StandardCharsets.UTF_8).length
                     > ZooKeeperServer.getEphemeralCountLimit()) {
-                ServerMetrics.getMetrics().EPHEMERAL_NODE_MAX_COUNT_VIOLATION.inc();
-                throw new KeeperException.EphemeralCountExceededException();
+                ServerMetrics.getMetrics().EPHEMERAL_NODE_LIMIT_VIOLATION.inc();
+                throw new KeeperException.TotalEphemeralLimitExceeded();
             }
         }
         StatPersisted s = DataTree.createStat(hdr.getZxid(), hdr.getTime(), ephemeralOwner);

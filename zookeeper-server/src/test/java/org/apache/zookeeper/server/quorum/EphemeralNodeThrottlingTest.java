@@ -58,7 +58,7 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
                 break;
             }
         }
-        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_max_count_violation");
+        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_limit_violation");
         assertEquals(1, actual);
 
         servers.shutDownAllServers();
@@ -76,7 +76,7 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
         String followerSubPath = PATH + "-follower-";
         assertTrue(checkLimitEnforcedForServer(followerServer, followerSubPath));
 
-        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_max_count_violation");
+        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_limit_violation");
         assertEquals(2, actual);
 
         servers.shutDownAllServers();
@@ -100,17 +100,17 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
 
         try {
             leaderServer.create(PATH + "-leader-", new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
-        } catch (KeeperException.EphemeralCountExceededException e) {
+        } catch (KeeperException.TotalEphemeralLimitExceeded e) {
             leaderThrewError = true;
         }
         try {
             followerServer.create(PATH + "-follower-", new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
-        } catch (KeeperException.EphemeralCountExceededException e) {
+        } catch (KeeperException.TotalEphemeralLimitExceeded e) {
             followerThrewError = true;
         }
         assertTrue(leaderThrewError && followerThrewError);
 
-        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_max_count_violation");
+        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_limit_violation");
         assertEquals(2, actual);
 
         servers.shutDownAllServers();
@@ -128,7 +128,7 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
 
         try {
             server.create(subPath + "-follower-" + i, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
-        } catch (KeeperException.EphemeralCountExceededException e) {
+        } catch (KeeperException.TotalEphemeralLimitExceeded e) {
             return true;
         }
         return false;
@@ -142,12 +142,12 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
         for (int i = 0; i < DEFAULT_MAX_EPHEMERAL_NODES + ephemeralExcess; i++) {
             try {
                 servers.zk[0].create(PATH + "-" + i, new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
-            } catch (KeeperException.EphemeralCountExceededException e) {
-                LOG.info("Encountered EphemeralCountExceededException as expected, continuing...");
+            } catch (KeeperException.TotalEphemeralLimitExceeded e) {
+                LOG.info("Encountered TotalEphemeralLimitExceeded as expected, continuing...");
             }
         }
 
-        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_max_count_violation");
+        long actual = (long) MetricsUtils.currentServerMetrics().get("ephemeral_node_limit_violation");
         assertEquals(ephemeralExcess, actual);
 
         servers.shutDownAllServers();
@@ -186,7 +186,7 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
                 while (System.currentTimeMillis() - startTime < 10000) {
                     try {
                         server.create(PATH+"_"+threadID+"_", new byte[512], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
-                    } catch (KeeperException.EphemeralCountExceededException expectedException) {
+                    } catch (KeeperException.TotalEphemeralLimitExceeded expectedException) {
                         //  Ignore Ephemeral Count exceeded exception, as this is expected to occur
                     } catch (Exception e) {
                         LOG.error("Thread encountered an exception but ignored it:\n" + e.getMessage());
@@ -209,7 +209,7 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
                             System.out.println("deleted node: " + ephemeralNode);
                         }
                     }
-                } catch (KeeperException.EphemeralCountExceededException expectedException) {
+                } catch (KeeperException.TotalEphemeralLimitExceeded expectedException) {
                     //  Ignore Ephemeral Count exceeded exception, as this is expected to occur
                 } catch (Exception e) {
                     LOG.error("Thread encountered an exception but ignored it:\n" + e.getMessage());
