@@ -719,8 +719,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         } else if (createMode.isEphemeral()) {
             ephemeralOwner = request.sessionId;
             int currentByteSize = zks.getZKDatabase().getDataTree().getTotalEphemeralsByteSize(ephemeralOwner);
-            if (ZooKeeperServer.getEphemeralCountLimit() != -1 && currentByteSize + path.getBytes(StandardCharsets.UTF_8).length
-                    > ZooKeeperServer.getEphemeralCountLimit()) {
+            if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != -1 && currentByteSize + BinaryOutputArchive.getSerializedStringByteSize(path)
+                    > ZooKeeperServer.getEphemeralNodesTotalByteLimit()) {
                 ServerMetrics.getMetrics().EPHEMERAL_NODE_LIMIT_VIOLATION.inc();
                 throw new KeeperException.TotalEphemeralLimitExceeded();
             }

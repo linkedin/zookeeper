@@ -407,8 +407,8 @@ public abstract class KeeperException extends Exception {
          *  but client is not configured with SASL authentication or configuted with SASL but failed
          *  (i.e. wrong credential used.). */
         SESSIONCLOSEDREQUIRESASLAUTH(-124),
-        /** Request to create ephemeral node was rejected because the limit for the session was exceeded. The default is
-         * 7500, but can be set through the "zookeeper.ephemeral.count.limit" system property. */
+        /** Request to create ephemeral node was rejected because the total byte limit for the session was exceeded.
+         * This limit is manually set through the "zookeeper.ephemeralNodes.total.byte.limit" system property. */
         TOTALEPHEMERALLIMITEXCEEDED(-125);
 
         private static final Map<Integer, Code> lookup = new HashMap<Integer, Code>();

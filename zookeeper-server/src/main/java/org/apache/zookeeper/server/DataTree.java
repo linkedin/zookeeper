@@ -568,13 +568,12 @@ public class DataTree {
                     list.add(path);
                 }
                 //  Only store sum of ephemeral node byte sizes if we're enforcing a limit
-                if (ZooKeeperServer.getEphemeralCountLimit() != 1) {
+                if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != 1) {
                     if (totalEphemeralsByteSize == null) {
                         totalEphemeralsByteSize = new AtomicInteger();
                         ephemeralsByteSizeMap.put(ephemeralOwner, totalEphemeralsByteSize);
                     }
-                    int byteSize = totalEphemeralsByteSize.addAndGet(BinaryOutputArchive.getSerializedStringByteSize(path));
-                    System.out.println("----- total byte size is " + byteSize + " after adding path" + path + " -----");
+                    totalEphemeralsByteSize.addAndGet(BinaryOutputArchive.getSerializedStringByteSize(path));
                 }
             }
             if (outputStat != null) {
@@ -662,13 +661,13 @@ public class DataTree {
                 Set<String> nodes = ephemerals.get(eowner);
                 AtomicInteger totalEphemeralsByteSize = ephemeralsByteSizeMap.get(eowner);
                 if (nodes != null) {
+                    Boolean nodeExisted;
                     synchronized (nodes) {
-                        nodes.remove(path);
+                        nodeExisted = nodes.remove(path);
                     }
                     //  Only store sum of ephemeral node byte sizes if we're enforcing a limit
-                    if (totalEphemeralsByteSize != null && ZooKeeperServer.getEphemeralCountLimit() != 1) {
-                        int byteSize = totalEphemeralsByteSize.addAndGet(-(BinaryOutputArchive.getSerializedStringByteSize(path)));
-                        System.out.println("----- total byte size is " + byteSize + " after adding path" + path + " -----");
+                    if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != 1 && nodeExisted && totalEphemeralsByteSize != null) {
+                        totalEphemeralsByteSize.addAndGet(-(BinaryOutputArchive.getSerializedStringByteSize(path)));
                     }
                 }
             }

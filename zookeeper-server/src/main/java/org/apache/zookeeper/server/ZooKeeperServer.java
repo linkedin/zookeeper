@@ -99,9 +99,10 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
     public static final String ENABLE_EAGER_ACL_CHECK = "zookeeper.enableEagerACLCheck";
     public static final String SKIP_ACL = "zookeeper.skipACL";
-    public static final String EPHEMERAL_COUNT_LIMIT_KEY = "zookeeper.ephemeral.count.limit";
-    public static final int DEFAULT_EPHEMERAL_COUNT_LIMIT = 7500;
+    public static final String EPHEMERAL_NODES_TOTAL_BYTE_LIMIT_KEY = "zookeeper.ephemeralNodes.total.byte.limit";
+    public static final int DEFAULT_EPHEMERAL_NODES_TOTAL_BYTE_LIMIT = -1;
     private static int ephemeralCountLimit;
+    private static int ephemeralNodesTotalByteLimit;
 
     // When enabled, will check ACL constraints appertained to the requests first,
     // before sending the requests to the quorum.
@@ -143,8 +144,8 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                 System.getProperty(CLOSE_SESSION_TXN_ENABLED, "true"));
         LOG.info("{} = {}", CLOSE_SESSION_TXN_ENABLED, closeSessionTxnEnabled);
 
-        ephemeralCountLimit = Integer.getInteger(EPHEMERAL_COUNT_LIMIT_KEY, DEFAULT_EPHEMERAL_COUNT_LIMIT);
-        LOG.info("{} = {}",EPHEMERAL_COUNT_LIMIT_KEY, ephemeralCountLimit);
+        ephemeralNodesTotalByteLimit = Integer.getInteger(EPHEMERAL_NODES_TOTAL_BYTE_LIMIT_KEY, DEFAULT_EPHEMERAL_NODES_TOTAL_BYTE_LIMIT);
+        LOG.info("{} = {}",EPHEMERAL_NODES_TOTAL_BYTE_LIMIT_KEY, ephemeralNodesTotalByteLimit);
     }
 
     // @VisibleForTesting
@@ -168,7 +169,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                 ZooKeeperServer.closeSessionTxnEnabled);
     }
 
-    public static int getEphemeralCountLimit() {return ephemeralCountLimit;}
+    public static int getEphemeralNodesTotalByteLimit() {return ephemeralNodesTotalByteLimit;}
 
     protected ZooKeeperServerBean jmxServerBean;
     protected DataTreeBean jmxDataTreeBean;
