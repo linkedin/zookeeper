@@ -46,13 +46,11 @@ public class EphemeralNodeThrottlingMultithreadTest extends QuorumPeerTestBase {
         runMultithreadedRequests(leaderServer);
         runMultithreadedRequests(followerServer);
 
-        // TODO: What % delta do we want to allow here?
-        // Expensive calculation of total byte size for session ephemerals
-        long time = System.currentTimeMillis();
         int leaderSessionEphemeralsByteSum = 0;
         for (String nodePath : leaderServer.getEphemerals()) {
             leaderSessionEphemeralsByteSum += BinaryOutputArchive.getSerializedStringByteSize(nodePath);
         }
+        // TODO: What % delta do we want to allow here?
         assertEquals(totalEphemeralNodesByteLimit, leaderSessionEphemeralsByteSum, totalEphemeralNodesByteLimit/20d);
 
         int followerSessionEphemeralsByteSum = 0;
@@ -61,10 +59,7 @@ public class EphemeralNodeThrottlingMultithreadTest extends QuorumPeerTestBase {
         }
         assertEquals(totalEphemeralNodesByteLimit, followerSessionEphemeralsByteSum, totalEphemeralNodesByteLimit/20d);
 
-        System.out.println("--- total time to calculate sizes was : " + (System.currentTimeMillis() - time) + " ms -----");
         servers.shutDownAllServers();
-        // waitForAll(servers, ZooKeeper.States.CONNECTING);
-        // ServerMetrics.DEFAULT_METRICS_FOR_TESTS.resetAll();
     }
 
     private void runMultithreadedRequests(ZooKeeper server) {
@@ -90,7 +85,7 @@ public class EphemeralNodeThrottlingMultithreadTest extends QuorumPeerTestBase {
         }
 
         // Spin up threads to repeatedly send DELETE requests to server
-        // After a 1-second sleep, this should run concurrently with the create threads, but then end before create threads
+        // After a 1-second sleep, this should run concurrently with the create threads, but then end before create threads end
         // so that we still have time to hit the limit and can then assert that limit was upheld correctly
         for (int i = 0; i < deleteRequestThreads; i++) {
             executor.submit(() -> {
@@ -98,7 +93,7 @@ public class EphemeralNodeThrottlingMultithreadTest extends QuorumPeerTestBase {
                 try {
                     // Brief sleep to reduce chance that ephemeral nodes not yet created
                     Thread.sleep(1000);
-                    while (System.currentTimeMillis() - startTime < 6000) {
+                    while (System.currentTimeMillis() - startTime < 4000) {
                         for (String ephemeralNode : server.getEphemerals()) {
                             server.delete(ephemeralNode, -1);
                         }

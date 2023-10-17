@@ -24,14 +24,9 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.metrics.MetricsUtils;
-import org.apache.zookeeper.server.ServerMetrics;
 import org.junit.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
 
@@ -83,10 +78,6 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
         long actual = (long) MetricsUtils.currentServerMetrics().get(EPHEMERAL_BYTE_LIMIT_VIOLATION_KEY);
         System.out.println("byte limit property is: " + Integer.getInteger(EPHEMERAL_BYTE_LIMIT_KEY));
         assertEquals(1, actual);
-
-
-        // waitForAll(servers, ZooKeeper.States.CONNECTING);
-        // ServerMetrics.DEFAULT_METRICS_FOR_TESTS.resetAll();
     }
 
     @Test
@@ -103,9 +94,6 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
         // Assert both servers emitted failure metric
         long actual = (long) MetricsUtils.currentServerMetrics().get(EPHEMERAL_BYTE_LIMIT_VIOLATION_KEY);
         assertEquals(2, actual);
-
-        // waitForAll(servers, ZooKeeper.States.CONNECTING);
-        // ServerMetrics.DEFAULT_METRICS_FOR_TESTS.resetAll();
     }
 
     @Test
@@ -122,9 +110,6 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
         // Assert both servers emitted failure metric
         long actual = (long) MetricsUtils.currentServerMetrics().get(EPHEMERAL_BYTE_LIMIT_VIOLATION_KEY);
         assertEquals(2, actual);
-
-        // waitForAll(servers, ZooKeeper.States.CONNECTING);
-        // ServerMetrics.DEFAULT_METRICS_FOR_TESTS.resetAll();
     }
 
     public boolean checkLimitEnforcedForServer(ZooKeeper server, String subPath, CreateMode mode) throws Exception {
@@ -187,8 +172,5 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
 
         long actual = (long) MetricsUtils.currentServerMetrics().get(EPHEMERAL_BYTE_LIMIT_VIOLATION_KEY);
         assertEquals(expectedLimitExceededAttempts, actual);
-
-        // waitForAll(servers, ZooKeeper.States.CONNECTING);
-        // ServerMetrics.DEFAULT_METRICS_FOR_TESTS.resetAll();
     }
 }

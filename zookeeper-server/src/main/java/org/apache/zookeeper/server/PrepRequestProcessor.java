@@ -722,7 +722,6 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != -1 && currentByteSize + BinaryOutputArchive.getSerializedStringByteSize(path)
                     > ZooKeeperServer.getEphemeralNodesTotalByteLimit()) {
                 ServerMetrics.getMetrics().EPHEMERAL_NODE_LIMIT_VIOLATION.inc();
-                System.out.println("-------- EPHEMERAL NODE VIOLATION METRIC INCREMENTED -------");
                 throw new KeeperException.TotalEphemeralLimitExceeded();
             }
         }
