@@ -223,7 +223,8 @@ public class DataTree {
     }
 
     public int getTotalEphemeralsByteSize(long sessionID) {
-        return ephemeralsByteSizeMap.getOrDefault(sessionID, new AtomicInteger()).get();
+        AtomicInteger byteSize = ephemeralsByteSizeMap.get(sessionID);
+        return byteSize != null ? byteSize.get() : 0;
     }
 
     public Set<String> getContainers() {
@@ -567,7 +568,7 @@ public class DataTree {
                     list.add(path);
                 }
                 //  Only store sum of ephemeral node byte sizes if we're enforcing a limit
-                if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != 1) {
+                if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != -1) {
                     if (totalEphemeralsByteSize == null) {
                         totalEphemeralsByteSize = new AtomicInteger();
                         ephemeralsByteSizeMap.put(ephemeralOwner, totalEphemeralsByteSize);
@@ -665,7 +666,7 @@ public class DataTree {
                         nodeExisted = nodes.remove(path);
                     }
                     //  Only store sum of ephemeral node byte sizes if we're enforcing a limit
-                    if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != 1 && nodeExisted && totalEphemeralsByteSize != null) {
+                    if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != -1 && nodeExisted && totalEphemeralsByteSize != null) {
                         totalEphemeralsByteSize.addAndGet(-(BinaryOutputArchive.getSerializedStringByteSize(path)));
                     }
                 }

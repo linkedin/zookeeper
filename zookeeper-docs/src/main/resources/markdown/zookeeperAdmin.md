@@ -1074,7 +1074,7 @@ property, when available, is noted below.
   (Java system property: **zookeeper.ephemeralNodes.total.byte.limit**)
   This property set a limit on the amount of ephemeral nodes that can be created in one session. The limit is the number 
   of bytes it takes to store the serialized path strings for all the session's ephemeral nodes. 
-  This limit should always be under the jute maxbuffer, as exceeding will cause the server to crash whne the connection is closed 
+  This limit should always be under the jute maxbuffer, as exceeding will cause the server to crash when the connection is closed 
   and a transaction to delete all the ephemeral nodes for that session are deleted. This limit will be ignored if not explicitly set.
 
 * *outstandingHandshake.limit* 

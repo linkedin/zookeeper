@@ -36,7 +36,6 @@ public class EphemeralNodeThrottlingTest extends QuorumPeerTestBase {
 
     public static final String EPHEMERAL_BYTE_LIMIT_KEY = "zookeeper.ephemeralNodes.total.byte.limit";
     public static final String EPHEMERAL_BYTE_LIMIT_VIOLATION_KEY = "ephemeral_node_limit_violation";
-    // static final int DEFAULT_MAX_EPHEMERAL_NODES = 20;
     static final int DEFAULT_EPHEMERALNODES_TOTAL_BYTE_LIMIT = 2000;
     static final int NUM_SERVERS = 5;
     static final String TEST_PATH = "/ephemeral-throttling-test";
