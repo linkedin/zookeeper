@@ -17,6 +17,9 @@
 
 package org.apache.zookeeper.server.quorum;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import java.net.InetSocketAddress;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZKTestCase;
@@ -24,10 +27,6 @@ import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig.ConfigException;
 import org.junit.After;
 import org.junit.Test;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 
 
 public class QuorumServerTest extends ZKTestCase {
@@ -159,7 +158,7 @@ public class QuorumServerTest extends ZKTestCase {
     @Test
     public void testClientAddrAndSecureClientAddr() throws ConfigException {
         QuorumPeer.QuorumServer qs = new QuorumPeer.QuorumServer(0, "example.com:1234:1236:participant;1237;1238");
-        assertNotNull( "clientPort specified", qs.clientAddr);
+        assertNotNull("clientPort specified", qs.clientAddr);
         assertNotNull("secureClientPort specified", qs.secureClientAddr);
 
         qs = new QuorumPeer.QuorumServer(0, "example.com:1234:1236:participant;;1238");
