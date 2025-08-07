@@ -42,6 +42,8 @@ public interface OutputArchive {
 
     void writeString(String s, String tag) throws IOException;
 
+    public void writeBytes(byte[] b, String string) throws IOException;
+
     void writeBuffer(byte[] buf, String tag)
             throws IOException;
 

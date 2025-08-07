@@ -18,11 +18,21 @@
 
 package org.apache.zookeeper.server;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.concurrent.ConcurrentHashMap;
+import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZKTestCase;
+import org.apache.zookeeper.server.persistence.FileSnap;
+import org.apache.zookeeper.server.util.SerializeUtils;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,14 +68,19 @@ public class SerializationPerfTest extends ZKTestCase {
     }
 
     private static void serializeTree(int depth, int width, int len) throws InterruptedException, IOException, KeeperException.NodeExistsException, KeeperException.NoNodeException {
-        DataTree tree = new DataTree();
-        createNodes(tree, "/", depth, width, tree.getNode("/").stat.getCversion(), new byte[len]);
-        int count = tree.getNodeCount();
+        BinaryInputArchive ia = BinaryInputArchive.getArchive(
+            Files.newInputStream(Paths.get("src/test/resources/data/snapshot.31a6097741")));
+        FileSnap snap = new FileSnap(new File("src/test/resources/data/snapshot.31a6097741"));
+        ConcurrentHashMap<Long, Integer> sessionsWithTimeouts = new ConcurrentHashMap<>();
+        DataTree dataTree = new DataTree();
+        snap.deserialize(dataTree, sessionsWithTimeouts, ia);
+        int count = dataTree.getNodeCount();
 
         BinaryOutputArchive oa = BinaryOutputArchive.getArchive(new NullOutputStream());
         System.gc();
+        LOG.info("Created the tree, now serializing");
         long start = System.nanoTime();
-        tree.serialize(oa, "test");
+        dataTree.serialize(oa, "test");
         long end = System.nanoTime();
         long durationms = (end - start) / 1000000L;
         long pernodeus = ((end - start) / 1000L) / count;
@@ -116,7 +131,7 @@ public class SerializationPerfTest extends ZKTestCase {
 
     @Test
     public void test300Wide3DeepSerialize() throws InterruptedException, IOException, KeeperException.NodeExistsException, KeeperException.NoNodeException {
-        serializeTree(3, 300, 20);
+        serializeTree(3, 300, 1024);
     }
 
 }

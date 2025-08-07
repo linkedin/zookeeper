@@ -90,6 +90,11 @@ public class ToStringOutputArchive implements OutputArchive {
         throwExceptionOnError(tag);
     }
 
+    public void writeBytes(byte[] b, String string) throws IOException {
+        writeBuffer(b, string);
+    }
+
+
     public void writeBuffer(byte[] buf, String tag)
             throws IOException {
         printCommaUnlessFirst();

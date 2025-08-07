@@ -18,6 +18,7 @@
 
 package org.apache.zookeeper.server;
 
+import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -35,6 +36,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.jute.BinaryInputArchive;
@@ -1583,33 +1587,103 @@ public class DataTree {
      * @throws IOException
      */
     void serializeNode(OutputArchive oa, StringBuilder path) throws IOException {
-        String pathString = path.toString();
-        DataNode node = getNode(pathString);
-        if (node == null) {
-            return;
+        long startTime = System.currentTimeMillis();
+        ForkJoinPool customThreadPool = new ForkJoinPool(8);
+
+        Map<Integer, SegmentedList<Map.Entry<String, DataNode>>> sortMap = new ConcurrentHashMap<>();
+        // Submit task and wait for its completion
+        try {
+            customThreadPool.submit(() ->
+                nodes.entrySet().parallelStream().forEach(entry -> {
+                    int keyCount = countOccurrences(entry.getKey(), '/');
+                    // Use thread-safe computeIfAbsent and synchronized list or ConcurrentLinkedQueue
+                    sortMap.computeIfAbsent(keyCount, k -> new SegmentedList<>(64))
+                        .add(entry);
+                })
+            ).get(); // wait for completion
+
+            long midTime = System.currentTimeMillis();
+
+            ByteArrayOutputStream[] baos = new ByteArrayOutputStream[8];
+            BinaryOutputArchive[] localArchive = new BinaryOutputArchive[8];
+            for(int i = 0; i < baos.length; i++) {
+                baos[i] = new ByteArrayOutputStream(256 * 1024);
+                localArchive[i] = BinaryOutputArchive.getArchive(baos[i]);
+            }
+
+            for(int j = 0; j < sortMap.size(); j++) {
+                List<Entry<String, DataNode>> nodeList = sortMap.get(j).toListSnapshot();
+
+                ArrayList<ForkJoinTask<?>> tasks = new ArrayList<>();
+                for (int i = 0; i < 8; i++) {
+                    int taskId = i;
+                    tasks.add(customThreadPool.submit(() -> {
+                        // Task logic for thread
+                        // System.out.println("Executing task " + taskId + " on thread " + Thread.currentThread().getName());
+                        for(int k= taskId; k < nodeList.size(); k += 8) {
+                            DataNode nodeCopy;
+                            DataNode node = nodeList.get(k).getValue();
+                            synchronized (node) {
+                                StatPersisted statCopy = new StatPersisted();
+                                copyStatPersisted(node.stat, statCopy);
+                                //we do not need to make a copy of node.data because the contents
+                                //are never changed
+                                nodeCopy = new DataNode(node.data, node.acl, statCopy);
+                            }
+                            if(nodeList.get(k).getKey().compareTo("/") != 0) {
+                                try {
+                                    serializeNodeData(localArchive[taskId], nodeList.get(k).getKey(), nodeCopy);
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                            if(baos[taskId].size() > 128 * 1024) {
+                                try {
+                                    flushBuffer(oa, baos[taskId]);
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                        }
+                        try {
+                            flushBuffer(oa, baos[taskId]);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }));
+                }
+                // Wait for all tasks to complete
+                for (ForkJoinTask<?> task : tasks) {
+                    task.join();
+                }
+//                System.out.println("Size of level " + i + " = " + sortMap.get(i).size());
+            }
+
+            long endTime = System.currentTimeMillis();
+            LOG.error("serialize took: " + (midTime - startTime) + " ms, writing: " + (endTime - midTime) + " ms");
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
+        } finally {
+            customThreadPool.shutdown();
         }
-        String[] children = null;
-        DataNode nodeCopy;
-        synchronized (node) {
-            StatPersisted statCopy = new StatPersisted();
-            copyStatPersisted(node.stat, statCopy);
-            //we do not need to make a copy of node.data because the contents
-            //are never changed
-            nodeCopy = new DataNode(node.data, node.acl, statCopy);
-            Set<String> childs = node.getChildren();
-            children = childs.toArray(new String[childs.size()]);
+    }
+
+    public synchronized void flushBuffer(OutputArchive oa, ByteArrayOutputStream baos) throws IOException {
+        if(baos.size() > 0) {
+            oa.writeBytes(baos.toByteArray(), "batch");
+            baos.reset();
         }
-        serializeNodeData(oa, pathString, nodeCopy);
-        path.append('/');
-        int off = path.length();
-        for (String child : children) {
-            // since this is single buffer being resused
-            // we need
-            // to truncate the previous bytes of string.
-            path.delete(off, Integer.MAX_VALUE);
-            path.append(child);
-            serializeNode(oa, path);
+    }
+
+    public static int countOccurrences(String haystack, char needle) {
+        int count = 0;
+        char[] chars = haystack.toCharArray();
+        for (char c : chars) {
+            if (c == needle) {
+                count++;
+            }
         }
+        return count;
     }
 
     // visiable for test
