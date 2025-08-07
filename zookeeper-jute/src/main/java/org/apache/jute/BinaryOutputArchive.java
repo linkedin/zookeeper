@@ -135,6 +135,15 @@ public class BinaryOutputArchive implements OutputArchive {
         out.write(bb.array(), bb.position(), bb.limit());
     }
 
+    public void writeBytes(byte[] b, String string) throws IOException {
+        if (b == null) {
+            out.writeInt(-1);
+            return;
+        }
+        out.write(b, 0, b.length);
+    }
+
+
     public void writeBuffer(byte[] barr, String tag)
             throws IOException {
         if (barr == null) {

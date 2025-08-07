@@ -163,14 +163,14 @@ public class SerializeUtils {
         dt.deserialize(ia, "tree");
     }
 
-    public static void serializeSnapshot(DataTree dt, OutputArchive oa, Map<Long, Integer> sessions) throws IOException {
+    public static void serializeSnapshot(DataTree dt, OutputArchive oa, Map<Long, Integer> sessions,  boolean isLeaderBootupSnapshot) throws IOException {
         HashMap<Long, Integer> sessSnap = new HashMap<Long, Integer>(sessions);
         oa.writeInt(sessSnap.size(), "count");
         for (Entry<Long, Integer> entry : sessSnap.entrySet()) {
             oa.writeLong(entry.getKey().longValue(), "id");
             oa.writeInt(entry.getValue().intValue(), "timeout");
         }
-        dt.serialize(oa, "tree");
+        dt.serialize(oa, "tree", isLeaderBootupSnapshot);
     }
 
     public static byte[] serializeRequest(Request request) {

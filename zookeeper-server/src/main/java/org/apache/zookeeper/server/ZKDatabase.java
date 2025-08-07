@@ -645,7 +645,7 @@ public class ZKDatabase {
      * @throws InterruptedException
      */
     public void serializeSnapshot(OutputArchive oa) throws IOException, InterruptedException {
-        SerializeUtils.serializeSnapshot(getDataTree(), oa, getSessionWithTimeOuts());
+        SerializeUtils.serializeSnapshot(getDataTree(), oa, getSessionWithTimeOuts(), false);
     }
 
     /**

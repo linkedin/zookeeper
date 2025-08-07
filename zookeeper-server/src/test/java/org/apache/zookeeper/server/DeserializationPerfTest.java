@@ -44,7 +44,7 @@ public class DeserializationPerfTest extends ZKTestCase {
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             BinaryOutputArchive oa = BinaryOutputArchive.getArchive(baos);
-            tree.serialize(oa, "test");
+            tree.serialize(oa, "test", false);
             baos.flush();
 
             ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());

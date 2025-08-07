@@ -64,7 +64,7 @@ public class EmptySnapshotTest {
         DataTree tree = new DataTree();
         tree.createNode("/empty-snapshot-test-1", "data".getBytes(), null, -1, -1, 1, 1);
         try {
-            snapLog.save(tree, new ConcurrentHashMap<>(), false);
+            snapLog.save(tree, new ConcurrentHashMap<>(), false, false);
             fail("Should have thrown an IOException");
         } catch (IOException e) {
             // no op
@@ -73,7 +73,7 @@ public class EmptySnapshotTest {
         assertEquals(0, ((FileSnap) snapLog.snapLog).findNRecentSnapshots(10).size());
 
         snapLog.snapLog = new FileSnap(snapLog.dataDir);
-        snapLog.save(tree, new ConcurrentHashMap<>(), false);
+        snapLog.save(tree, new ConcurrentHashMap<>(), false, false);
         assertEquals(1, ((FileSnap) snapLog.snapLog).findNRecentSnapshots(10).size());
     }
 

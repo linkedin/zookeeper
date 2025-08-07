@@ -247,7 +247,7 @@ public class DataTreeTest extends ZKTestCase {
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         BinaryOutputArchive oa = BinaryOutputArchive.getArchive(baos);
-        tree.serialize(oa, "test");
+        tree.serialize(oa, "test", false);
         baos.flush();
 
         ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
@@ -305,7 +305,7 @@ public class DataTreeTest extends ZKTestCase {
             }
         };
 
-        tree.serialize(oa, "test");
+        tree.serialize(oa, "test", false);
 
         //Let's make sure that we hit the code that ran the real assertion above
         assertTrue("Didn't find the expected node", ranTestCase.get());
@@ -566,7 +566,7 @@ public class DataTreeTest extends ZKTestCase {
         DataOutputStream out = new DataOutputStream(baos);
         BinaryOutputArchive oa = new BinaryOutputArchive(out);
 
-        tree.serialize(oa, "test");
+        tree.serialize(oa, "test", false);
 
         DataTree tree2 = new DataTree();
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()));
@@ -656,7 +656,7 @@ public class DataTreeTest extends ZKTestCase {
             }
         };
 
-        tree.serialize(oa, "test");
+        tree.serialize(oa, "test", false);
 
         //Let's make sure that we hit the code that ran the real assertion above
         assertTrue("Didn't find the expected node", ranTestCase.get());
@@ -678,7 +678,7 @@ public class DataTreeTest extends ZKTestCase {
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         BinaryOutputArchive oa = BinaryOutputArchive.getArchive(baos);
-        tree.serialize(oa, "test");
+        tree.serialize(oa, "test", false);
         baos.flush();
 
         ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());

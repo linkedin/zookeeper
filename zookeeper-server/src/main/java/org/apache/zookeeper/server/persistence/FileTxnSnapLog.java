@@ -297,7 +297,7 @@ public class FileTxnSnapLog {
             if (trustEmptyDB) {
                 /* TODO: (br33d) we should either put a ConcurrentHashMap on restore()
                  *       or use Map on save() */
-                save(dt, (ConcurrentHashMap<Long, Integer>) sessions, false);
+                save(dt, (ConcurrentHashMap<Long, Integer>) sessions, false, false);
 
                 /* return a zxid of 0, since we know the database is empty */
                 return 0L;
@@ -482,12 +482,12 @@ public class FileTxnSnapLog {
     public void save(
         DataTree dataTree,
         ConcurrentHashMap<Long, Integer> sessionsWithTimeouts,
-        boolean syncSnap) throws IOException {
+        boolean syncSnap, boolean isLeaderBootupSnapshot) throws IOException {
         long lastZxid = dataTree.lastProcessedZxid;
         File snapshotFile = new File(snapDir, Util.makeSnapshotName(lastZxid));
         LOG.info("Snapshotting: 0x{} to {}", Long.toHexString(lastZxid), snapshotFile);
         try {
-            snapLog.serialize(dataTree, sessionsWithTimeouts, snapshotFile, syncSnap);
+            snapLog.serialize(dataTree, sessionsWithTimeouts, snapshotFile, syncSnap, isLeaderBootupSnapshot);
         } catch (IOException e) {
             if (snapshotFile.length() == 0) {
                 /* This may be caused by a full disk. In such a case, the server

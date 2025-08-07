@@ -23,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import org.apache.commons.io.FileUtils;
 import org.apache.zookeeper.PortAssignment;
 import org.apache.zookeeper.ZKTestCase;
@@ -128,4 +129,55 @@ public class InvalidSnapshotTest extends ZKTestCase {
 
     }
 
+    @Test
+    public void testSnapshotBenchmark() throws Exception {
+        File origSnapDir = new File(testData, "prod-test");
+
+        // This test otherwise updates the resources directory.
+        File snapDir = ClientBase.createEmptyTestDir();
+        FileUtils.copyDirectory(origSnapDir, snapDir);
+
+        LOG.info("Snapshot directory contents: {}", Arrays.toString(snapDir.listFiles()));
+        ZooKeeperServer zks = new ZooKeeperServer(snapDir, snapDir, 3000);
+        SyncRequestProcessor.setSnapCount(100);
+        final int PORT = Integer.parseInt(HOSTPORT.split(":")[1]);
+        ServerCnxnFactory f = ServerCnxnFactory.createFactory(PORT, -1);
+        f.startup(zks);
+        LOG.info("starting up the zookeeper server .. waiting");
+        assertTrue("waiting for server being up", ClientBase.waitForServerUp(HOSTPORT, CONNECTION_TIMEOUT));
+        ZooKeeper zk = ClientBase.createZKClient(HOSTPORT);
+
+        long total = 0L;
+
+        try {
+            for (int i=0;i<10;i++) {
+                long start = System.currentTimeMillis();
+                zks.takeSnapshot(true);
+                long end = System.currentTimeMillis();
+                //System.out.printf("\n=======\nSnapshot file count: {}", snapDir.listFiles().length);
+                LOG.error("Snapshot file count: {}", snapDir.listFiles().length);
+                total += (end - start);
+                LOG.error("Snapshot took {} ms", (end - start));
+            }
+
+            LOG.error("Average snapshot time: {} ms", (total / 10));
+
+        } catch (Exception e) {
+            LOG.error("Failed to take snapshot", e);
+            fail("Snapshot failed: " + e.getMessage());
+        }
+
+        try {
+            // we know this from the data files
+            // this node is the last node in the snapshot
+
+            assertTrue(zk.exists("/kafka-kac", false) != null);
+        } finally {
+            zk.close();
+        }
+        f.shutdown();
+        zks.shutdown();
+        assertTrue("waiting for server down", ClientBase.waitForServerDown(HOSTPORT, ClientBase.CONNECTION_TIMEOUT));
+
+    }
 }

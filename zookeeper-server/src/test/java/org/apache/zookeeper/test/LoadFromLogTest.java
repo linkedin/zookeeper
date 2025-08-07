@@ -185,7 +185,7 @@ public class LoadFromLogTest extends ClientBase {
         zks.getZKDatabase().setlastProcessedZxid(zks.getZKDatabase().getDataTreeLastProcessedZxid() - 10);
         LOG.info("Set lastProcessedZxid to {}", zks.getZKDatabase().getDataTreeLastProcessedZxid());
         // Force snapshot and restore
-        zks.takeSnapshot();
+        zks.takeSnapshot(false);
         zks.shutdown();
         stopServer();
 
@@ -245,7 +245,7 @@ public class LoadFromLogTest extends ClientBase {
         LOG.info("Set lastProcessedZxid to {}", zks.getZKDatabase().getDataTreeLastProcessedZxid());
 
         // Force snapshot and restore
-        zks.takeSnapshot();
+        zks.takeSnapshot(false);
         zks.shutdown();
         stopServer();
 
@@ -292,7 +292,7 @@ public class LoadFromLogTest extends ClientBase {
         zks.getZKDatabase().setlastProcessedZxid(createZxId);
         LOG.info("Set lastProcessedZxid to {}", zks.getZKDatabase().getDataTreeLastProcessedZxid());
         // Force snapshot and restore
-        zks.takeSnapshot();
+        zks.takeSnapshot(false);
         zks.shutdown();
         stopServer();
 

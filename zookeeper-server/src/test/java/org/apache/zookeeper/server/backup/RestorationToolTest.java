@@ -136,7 +136,7 @@ public class RestorationToolTest extends ZKTestCase {
         backupManager.getLogBackup().run(1);
       }
       if (getRandomBoolean(0.2f)) {
-        zks.takeSnapshot();
+        zks.takeSnapshot(false);
       }
       // Record a timestamp that's in the valid backup timestamp range, used to test restoration to timestamp
       if (i == txnCnt / 2) {
