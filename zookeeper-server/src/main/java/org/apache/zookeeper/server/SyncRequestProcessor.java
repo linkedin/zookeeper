@@ -190,7 +190,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements Req
                             new ZooKeeperThread("Snapshot Thread") {
                                 public void run() {
                                     try {
-                                        zks.takeSnapshot();
+                                        zks.takeSnapshot(false);
                                     } catch (Exception e) {
                                         LOG.warn("Unexpected exception", e);
                                     } finally {

@@ -240,14 +240,15 @@ public class FileSnap implements SnapShot {
         DataTree dt,
         Map<Long, Integer> sessions,
         OutputArchive oa,
-        FileHeader header) throws IOException {
+        FileHeader header,
+        boolean isLeaderBootupSnapshot) throws IOException {
         // this is really a programmatic error and not something that can
         // happen at runtime
         if (header == null) {
             throw new IllegalStateException("Snapshot's not open for writing: uninitialized header");
         }
         header.serialize(oa, "fileheader");
-        SerializeUtils.serializeSnapshot(dt, oa, sessions);
+        SerializeUtils.serializeSnapshot(dt, oa, sessions, isLeaderBootupSnapshot);
     }
 
     /**
@@ -261,12 +262,13 @@ public class FileSnap implements SnapShot {
         DataTree dt,
         Map<Long, Integer> sessions,
         File snapShot,
-        boolean fsync) throws IOException {
+        boolean fsync,
+        boolean isLeaderBootupSnapshot) throws IOException {
         if (!close) {
             try (CheckedOutputStream snapOS = SnapStream.getOutputStream(snapShot, fsync)) {
                 OutputArchive oa = BinaryOutputArchive.getArchive(snapOS);
                 FileHeader header = new FileHeader(SNAP_MAGIC, VERSION, dbId);
-                serialize(dt, sessions, oa, header);
+                serialize(dt, sessions, oa, header, isLeaderBootupSnapshot);
                 SnapStream.sealStream(snapOS, oa);
 
                 // Digest feature was added after the CRC to make it backward

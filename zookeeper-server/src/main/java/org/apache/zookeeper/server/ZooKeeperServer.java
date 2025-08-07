@@ -530,17 +530,17 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         }
 
         // Make a clean snapshot
-        takeSnapshot();
+        takeSnapshot(true);
     }
 
-    public void takeSnapshot() {
-        takeSnapshot(false);
+    public void takeSnapshot(boolean isLeaderBootupSnapshot) {
+        takeSnapshot(false, isLeaderBootupSnapshot);
     }
 
-    public void takeSnapshot(boolean syncSnap) {
+    public void takeSnapshot(boolean syncSnap, boolean isLeaderBootupSnapshot) {
         long start = Time.currentElapsedTime();
         try {
-            txnLogFactory.save(zkDb.getDataTree(), zkDb.getSessionWithTimeOuts(), syncSnap);
+            txnLogFactory.save(zkDb.getDataTree(), zkDb.getSessionWithTimeOuts(), syncSnap, isLeaderBootupSnapshot);
         } catch (IOException e) {
             LOG.error("Severe unrecoverable error, exiting", e);
             // This is a severe error that we cannot recover from,

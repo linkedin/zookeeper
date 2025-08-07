@@ -447,7 +447,7 @@ public class PurgeTxnTest extends ZKTestCase {
                 for (int i = 0; i < 100; i++, unique++) {
                     zk.create("/snap-" + unique, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
                 }
-                zks.takeSnapshot();
+                zks.takeSnapshot(false);
             }
             // Create some additional znodes without taking a snapshot afterwards.
             for (int i = 0; i < 100; i++, unique++) {

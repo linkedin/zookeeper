@@ -1586,7 +1586,7 @@ public class DataTree {
      *            a string builder.
      * @throws IOException
      */
-    void serializeNode(OutputArchive oa, StringBuilder path) throws IOException {
+    void serializeNode(OutputArchive oa) throws IOException {
         long startTime = System.currentTimeMillis();
         ForkJoinPool customThreadPool = new ForkJoinPool(8);
 
@@ -1686,7 +1686,47 @@ public class DataTree {
         return count;
     }
 
-    // visiable for test
+    /**
+     * this method uses a stringbuilder to create a new path for children. This
+     * is faster than string appends ( str1 + str2).
+     *
+     * @param oa
+     *            OutputArchive to write to.
+     * @param path
+     *            a string builder.
+     * @throws IOException
+     */
+    void serializeNode(OutputArchive oa, StringBuilder path) throws IOException {
+        String pathString = path.toString();
+        DataNode node = getNode(pathString);
+        if (node == null) {
+            return;
+        }
+        String[] children = null;
+        DataNode nodeCopy;
+        synchronized (node) {
+            StatPersisted statCopy = new StatPersisted();
+            copyStatPersisted(node.stat, statCopy);
+            //we do not need to make a copy of node.data because the contents
+            //are never changed
+            nodeCopy = new DataNode(node.data, node.acl, statCopy);
+            Set<String> childs = node.getChildren();
+            children = childs.toArray(new String[childs.size()]);
+        }
+        serializeNodeData(oa, pathString, nodeCopy);
+        path.append('/');
+        int off = path.length();
+        for (String child : children) {
+            // since this is single buffer being resused
+            // we need
+            // to truncate the previous bytes of string.
+            path.delete(off, Integer.MAX_VALUE);
+            path.append(child);
+            serializeNode(oa, path);
+        }
+    }
+
+    // visible for test
     public void serializeNodeData(OutputArchive oa, String path, DataNode node) throws IOException {
         oa.writeString(path, "path");
         oa.writeRecord(node, "node");
@@ -1696,8 +1736,12 @@ public class DataTree {
         aclCache.serialize(oa);
     }
 
-    public void serializeNodes(OutputArchive oa) throws IOException {
-        serializeNode(oa, new StringBuilder());
+    public void serializeNodes(OutputArchive oa,  boolean isLeaderBootupSnapshot) throws IOException {
+        if(isLeaderBootupSnapshot) {
+            serializeNode(oa);
+        } else {
+            serializeNode(oa, new StringBuilder());
+        }
         // / marks end of stream
         // we need to check if clear had been called in between the snapshot.
         if (root != null) {
@@ -1705,9 +1749,9 @@ public class DataTree {
         }
     }
 
-    public void serialize(OutputArchive oa, String tag) throws IOException {
+    public void serialize(OutputArchive oa, String tag,  boolean isLeaderBootupSnapshot) throws IOException {
         serializeAcls(oa);
-        serializeNodes(oa);
+        serializeNodes(oa, isLeaderBootupSnapshot);
     }
 
     public void deserialize(InputArchive ia, String tag) throws IOException {

@@ -82,7 +82,7 @@ public class SnapshotDigestTest extends ClientBase {
     public void testSnapshotDigest() throws Exception {
         // take a empty snapshot without creating any txn and make sure
         // there is no digest mismatch issue
-        server.takeSnapshot();
+        server.takeSnapshot(false);
         reloadSnapshotAndCheckDigest();
 
         // trigger various write requests
@@ -111,7 +111,7 @@ public class SnapshotDigestTest extends ClientBase {
 
         // Take a snapshot and test the logic when loading a non-fuzzy snapshot
         server = serverFactory.getZooKeeperServer();
-        server.takeSnapshot();
+        server.takeSnapshot(false);
 
         reloadSnapshotAndCheckDigest();
     }
@@ -133,7 +133,7 @@ public class SnapshotDigestTest extends ClientBase {
         zk.create(path, path.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
         // take a full snapshot
-        server.takeSnapshot();
+        server.takeSnapshot(false);
 
         //increment the digest version
         int newVersion = currentVersion + 1;
@@ -176,7 +176,7 @@ public class SnapshotDigestTest extends ClientBase {
         zk.create(path, path.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
         // take a full snapshot
-        server.takeSnapshot();
+        server.takeSnapshot(false);
 
         ZooKeeperServer.setDigestEnabled(enabledAfter);
 

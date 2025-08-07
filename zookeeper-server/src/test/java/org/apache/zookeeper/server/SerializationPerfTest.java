@@ -80,7 +80,7 @@ public class SerializationPerfTest extends ZKTestCase {
         System.gc();
         LOG.info("Created the tree, now serializing");
         long start = System.nanoTime();
-        dataTree.serialize(oa, "test");
+        dataTree.serialize(oa, "test" , false);
         long end = System.nanoTime();
         long durationms = (end - start) / 1000000L;
         long pernodeus = ((end - start) / 1000L) / count;

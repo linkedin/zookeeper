@@ -339,7 +339,7 @@ public class FileTxnSnapLogTest {
         leaderDataTree.processTxn(hdr1, txn1);
 
         // Finish the snapshot.
-        leaderDataTree.serializeNodes(oa);
+        leaderDataTree.serializeNodes(oa, false);
         os.close();
 
         // Simulate restore on follower and replay.
@@ -364,7 +364,7 @@ public class FileTxnSnapLogTest {
         ConcurrentHashMap<Long, Integer> sessions = new ConcurrentHashMap<>();
 
         ZooKeeperServer.setDigestEnabled(true);
-        snaplog.save(dataTree, sessions, true);
+        snaplog.save(dataTree, sessions, true, false);
         snaplog.restore(dataTree, sessions, (hdr, rec, digest) -> {  });
 
         assertNull(dataTree.getDigestFromLoadedSnapshot());
@@ -390,7 +390,7 @@ public class FileTxnSnapLogTest {
         CreateTxn txn = new CreateTxn("/" + 1, "data".getBytes(), null, false, 1);
         Request request = new Request(1, 1, 1, txnHeader, txn, 1);
         dataTree.processTxn(request.getHdr(), request.getTxn());
-        snaplog.save(dataTree, sessions, true);
+        snaplog.save(dataTree, sessions, true, false);
 
         int expectedNodeCount = dataTree.getNodeCount();
         ZooKeeperServer.setDigestEnabled(!digestEnabled);

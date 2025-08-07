@@ -152,7 +152,7 @@ public class InvalidSnapshotTest extends ZKTestCase {
         try {
             for (int i=0;i<10;i++) {
                 long start = System.currentTimeMillis();
-                zks.takeSnapshot();
+                zks.takeSnapshot(true);
                 long end = System.currentTimeMillis();
                 //System.out.printf("\n=======\nSnapshot file count: {}", snapDir.listFiles().length);
                 LOG.error("Snapshot file count: {}", snapDir.listFiles().length);

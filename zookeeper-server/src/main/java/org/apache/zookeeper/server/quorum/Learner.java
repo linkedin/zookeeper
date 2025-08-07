@@ -712,7 +712,7 @@ public class Learner {
                         }
                     }
                     if (isPreZAB1_0) {
-                        zk.takeSnapshot(syncSnapshot);
+                        zk.takeSnapshot(syncSnapshot, false);
                         self.setCurrentEpoch(newEpoch);
                     }
                     self.setZooKeeperServer(zk);
@@ -732,7 +732,7 @@ public class Learner {
                     }
 
                     if (snapshotNeeded) {
-                        zk.takeSnapshot(syncSnapshot);
+                        zk.takeSnapshot(syncSnapshot, false);
                     }
 
                     self.setCurrentEpoch(newEpoch);

@@ -369,7 +369,7 @@ public class Zab1_0Test extends ZKTestCase {
             assertTrue(zxid > ZxidUtils.makeZxid(1, 0));
 
             // Generate snapshot and close files.
-            snapLog.save(zkDb.getDataTree(), zkDb.getSessionWithTimeOuts(), false);
+            snapLog.save(zkDb.getDataTree(), zkDb.getSessionWithTimeOuts(), false, false);
             snapLog.close();
 
             QuorumPeer peer = createQuorumPeer(tmpDir);
@@ -623,7 +623,7 @@ public class Zab1_0Test extends ZKTestCase {
                     oa.writeString("BenWasHere", null);
                     Thread.sleep(10); //Give it some time to process the snap
                     //No Snapshot taken yet, the SNAP was applied in memory
-                    verify(f.zk, never()).takeSnapshot();
+                    verify(f.zk, never()).takeSnapshot(false);
 
                     qp.setType(Leader.NEWLEADER);
                     qp.setZxid(ZxidUtils.makeZxid(1, 0));
@@ -801,7 +801,7 @@ public class Zab1_0Test extends ZKTestCase {
                     LOG.info("zkdb2 with timeouts:{}", zkDb2.getSessionWithTimeOuts());
                     assertNotNull(zkDb2.getSessionWithTimeOuts().get(4L));
                     //Snapshot was never taken during very simple sync
-                    verify(f.zk, never()).takeSnapshot();
+                    verify(f.zk, never()).takeSnapshot(false);
                 } finally {
                     TestUtils.deleteFileRecursively(tmpDir);
                 }
@@ -1195,7 +1195,7 @@ public class Zab1_0Test extends ZKTestCase {
             FileTxnSnapLog logFactory = new FileTxnSnapLog(tmpDir, tmpDir);
             File version2 = new File(tmpDir, "version-2");
             version2.mkdir();
-            logFactory.save(new DataTree(), new ConcurrentHashMap<Long, Integer>(), false);
+            logFactory.save(new DataTree(), new ConcurrentHashMap<Long, Integer>(), false, false);
             long zxid = ZxidUtils.makeZxid(3, 3);
             logFactory.append(new Request(1, 1, ZooDefs.OpCode.error, new TxnHeader(1, 1, zxid, 1, ZooDefs.OpCode.error), new ErrorTxn(1), zxid));
             logFactory.commit();
