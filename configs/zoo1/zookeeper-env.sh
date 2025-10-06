@@ -1,0 +1,1 @@
+ZOO_LOG_DIR=/Users/adaggarw/Desktop/version-rollout/personal/zookeeper/configs/zoo1/logs
