@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.1.0 http://maven.apache.org/xsd/settings-1.1.0.xsd" xmlns="http://maven.apache.org/SETTINGS/1.1.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <servers>
+    <server>
+      <!-- the following env vars come from linkedin/zookeeper secrets -->
+      <id>jfrog-linkedin</id>
+      <username>${env.MVN_DEPLOY_JFROG_USER}</username>
+      <password>${env.MVN_DEPLOY_JFROG_KEY}</password>
+    </server>
+  </servers>
+  <profiles>
+    <profile>
+      <repositories>
+        <repository>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+          <id>jfrog-linkedin</id>
+          <name>jfrog</name>
+          <url>https://linkedin.jfrog.io/artifactory/open-source</url>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+          <id>jfrog-linkedin</id>
+          <name>jfrog-plugins</name>
+          <url>https://linkedin.jfrog.io/artifactory/open-source</url>
+        </pluginRepository>
+      </pluginRepositories>
+      <id>artifactory</id>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>artifactory</activeProfile>
+  </activeProfiles>
+</settings>
+
