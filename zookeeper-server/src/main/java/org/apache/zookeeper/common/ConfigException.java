@@ -16,22 +16,14 @@
  * limitations under the License.
  */
 
-package org.apache.zookeeper.cli;
+package org.apache.zookeeper.common;
 
-import org.apache.commons.cli.ParseException;
+public class ConfigException extends Exception {
+  public ConfigException(String msg) {
+    super(msg);
+  }
 
-@SuppressWarnings("serial")
-public class CliParseException extends CliException {
-
-    public CliParseException(ParseException parseException) {
-        super(parseException);
-    }
-
-    public CliParseException(String message) {
-        super(message);
-    }
-
-  public CliParseException(String message, Throwable cause) {
-    super(message, cause);
+  public ConfigException(String msg, Exception exception) {
+    super(msg, exception);
   }
 }
