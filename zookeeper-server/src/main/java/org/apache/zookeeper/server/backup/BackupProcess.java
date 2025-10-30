@@ -58,10 +58,6 @@ public abstract class BackupProcess implements Runnable {
    */
   public BackupProcess(Logger logger, BackupStorageProvider backupStorage,
       long backupIntervalInMilliseconds) {
-    if (logger == null) {
-      throw new IllegalArgumentException("BackupProcess: logger is null!");
-    }
-
     this.logger = logger;
     this.backupStorage = backupStorage;
     this.backupIntervalInMilliseconds = backupIntervalInMilliseconds;
@@ -86,7 +82,6 @@ public abstract class BackupProcess implements Runnable {
       while (isRunning) {
         BackupManager.BackupFile fileToCopy;
         long startTime = System.currentTimeMillis();
-
         try {
           if (logger.isDebugEnabled()) {
             logger.debug("Starting iteration");
