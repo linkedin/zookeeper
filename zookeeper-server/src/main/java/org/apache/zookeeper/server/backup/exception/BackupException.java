@@ -15,23 +15,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.zookeeper.server.backup.exception;
 
-package org.apache.zookeeper.cli;
+/**
+ * Signals a logical error has occurred during the ZooKeeper backup/restore process.
+ * Note this error does not mean an error in I/O, but means the object for the operation is not in appropriate state.
+ * For example: failure to copy a file which maybe due to invalid path or source file does not exist.
+ */
+public class BackupException extends RuntimeException {
+  public BackupException(String message) {
+    super(message);
+  }
 
-import org.apache.commons.cli.ParseException;
-
-@SuppressWarnings("serial")
-public class CliParseException extends CliException {
-
-    public CliParseException(ParseException parseException) {
-        super(parseException);
-    }
-
-    public CliParseException(String message) {
-        super(message);
-    }
-
-  public CliParseException(String message, Throwable cause) {
-    super(message, cause);
+  public BackupException(String message, Exception e) {
+    super(message, e);
   }
 }

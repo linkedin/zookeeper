@@ -204,12 +204,19 @@ public class FileTxnSnapLog {
     }
 
     /**
-     * get the data log dir used by this filetxn
+
+     * get the datadir used by this filetxn
+
      * snap log
-     * @return the data log dir
+
+     * @return the data dir
+
      */
-    public File getDataLogDir() {
+
+    public File getDataDir() {
+
         return this.dataDir;
+
     }
 
     /**
@@ -463,6 +470,15 @@ public class FileTxnSnapLog {
     }
 
     /**
+     * the last logged TxnHeader from the transaction log
+     * @return last logged TxnHeader
+     */
+    public TxnHeader getLastLoggedTxnHeader() {
+        FileTxnLog txnLog = new FileTxnLog(dataDir);
+        return txnLog.getLastLoggedTxnHeader();
+    }
+
+    /**
      * save the datatree and the sessions into a snapshot
      * @param dataTree the datatree to be serialized onto disk
      * @param sessionsWithTimeouts the session timeouts to be
@@ -565,6 +581,20 @@ public class FileTxnSnapLog {
     public List<File> findNValidSnapshots(int n) {
         FileSnap snaplog = new FileSnap(snapDir);
         return snaplog.findNValidSnapshots(n);
+    }
+
+    /**
+     * returns all valid snapshots excluding the zxid interval given
+     * for example, if the interval given is [A, B], then snapshot.B will not be included in the
+     * returned list
+     * @param startZxid start of the zxid interval
+     * @param endZxid end of the zxid interval
+     * @return the list of snapshots in the most recent in front
+     * @throws IOException
+     */
+    public List<File> findValidSnapshots(long startZxid, long endZxid) throws IOException {
+        FileSnap snaplog = new FileSnap(snapDir);
+        return snaplog.findValidSnapshots(startZxid, endZxid);
     }
 
     /**

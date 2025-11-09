@@ -47,6 +47,8 @@ import org.apache.zookeeper.common.StringUtils;
 import org.apache.zookeeper.metrics.impl.DefaultMetricsProvider;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.backup.BackupConfig;
+import org.apache.zookeeper.server.backup.BackupSystemProperty;
 import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.auth.QuorumAuth;
@@ -106,6 +108,11 @@ public class QuorumPeerConfig {
     protected int snapRetainCount = 3;
     protected int purgeInterval = 0;
     protected boolean syncEnabled = true;
+
+    // ZooKeeper server-side backup config
+    protected boolean backupEnabled = false;
+    protected BackupConfig backupConfig;
+    protected BackupConfig.Builder backupConfigBuilder = new BackupConfig.Builder();
 
     protected String initialConfig;
 
@@ -337,6 +344,33 @@ public class QuorumPeerConfig {
                 snapRetainCount = Integer.parseInt(value);
             } else if (key.equals("autopurge.purgeInterval")) {
                 purgeInterval = Integer.parseInt(value);
+            } else if (key.equals(BackupSystemProperty.BACKUP_ENABLED)) {
+                backupEnabled = Boolean.parseBoolean(value);
+                backupConfigBuilder.setEnabled(backupEnabled);
+            } else if (key.equals(BackupSystemProperty.BACKUP_STATUS_DIR)) {
+                backupConfigBuilder.setStatusDir(vff.create(value));
+            } else if (key.equals(BackupSystemProperty.BACKUP_TMP_DIR)) {
+                backupConfigBuilder.setTmpDir(vff.create(value));
+            } else if (key.equals(BackupSystemProperty.BACKUP_INTERVAL_MINUTES)) {
+                backupConfigBuilder.setBackupIntervalInMinutes(Integer.parseInt(value));
+            } else if (key.equals(BackupSystemProperty.BACKUP_STORAGE_CONFIG)) {
+                backupConfigBuilder.setStorageConfig(vff.create(value));
+            } else if (key.equals(BackupSystemProperty.BACKUP_STORAGE_PATH)) {
+                backupConfigBuilder.setBackupStoragePath(value);
+            } else if (key.equals(BackupSystemProperty.BACKUP_RETENTION_DAYS)) {
+                backupConfigBuilder.setRetentionPeriodInDays(Integer.parseInt(value));
+            } else if (key.equals(BackupSystemProperty.BACKUP_RETENTION_MAINTENANCE_INTERVAL_HOURS)) {
+                backupConfigBuilder.setRetentionMaintenanceIntervalInHours(Integer.parseInt(value));
+            } else if (key.equals(BackupSystemProperty.BACKUP_STORAGE_PROVIDER_CLASS_NAME)) {
+                backupConfigBuilder.setStorageProviderClassName(value);
+            } else if (key.equals(BackupSystemProperty.BACKUP_NAMESPACE)) {
+                backupConfigBuilder.setNamespace(value);
+            } else if (key.equals(BackupSystemProperty.BACKUP_TIMETABLE_ENABLED)) {
+                backupConfigBuilder.setTimetableEnabled(Boolean.parseBoolean(value));
+            } else if (key.equals(BackupSystemProperty.BACKUP_TIMETABLE_STORAGE_PATH)) {
+                backupConfigBuilder.setTimetableStoragePath(value);
+            } else if (key.equals(BackupSystemProperty.BACKUP_TIMETABLE_BACKUP_INTERVAL_MS)) {
+                backupConfigBuilder.setTimetableBackupIntervalInMs(Long.parseLong(value));
             } else if (key.equals("standaloneEnabled")) {
                 setStandaloneEnabled(parseBoolean(key, value));
             } else if (key.equals("reconfigEnabled")) {
@@ -489,6 +523,16 @@ public class QuorumPeerConfig {
                 // we don't backup static config for standalone mode.
                 // we also don't backup if reconfig feature is disabled.
                 backupOldConfig();
+            }
+        }
+
+        // Create a BackupConfig object for backup
+        if (backupEnabled) {
+            try {
+                backupConfigBuilder.build().ifPresent(b -> backupConfig = b);
+            } catch (org.apache.zookeeper.common.ConfigException e) {
+                // TODO: Merge QuorumPeerConfig.ConfigException and org.apache.zookeeper.common.ConfigException
+                throw new ConfigException(e.getMessage(), e);
             }
         }
     }
@@ -963,5 +1007,8 @@ public class QuorumPeerConfig {
                                       + key
                                       + ". Choose 'true' or 'false.'");
         }
+    }
+    public BackupConfig getBackupConfig() {
+        return backupConfig;
     }
 }

@@ -385,7 +385,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             getMinSessionTimeout(),
             getMaxSessionTimeout(),
             getClientPortListenBacklog(),
-            txnLogFactory.getDataLogDir(),
+            txnLogFactory.getDataDir(),
             txnLogFactory.getSnapDir());
     }
 
@@ -438,7 +438,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         pwriter.print("dataDirSize=");
         pwriter.println(getDataDirSize());
         pwriter.print("dataLogDir=");
-        pwriter.println(zkDb.snapLog.getDataLogDir().getAbsolutePath());
+        pwriter.println(zkDb.snapLog.getDataDir().getAbsolutePath());
         pwriter.print("dataLogSize=");
         pwriter.println(getLogDirSize());
         pwriter.print("tickTime=");
@@ -460,7 +460,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         return new ZooKeeperServerConf(
             getClientPort(),
             zkDb.snapLog.getSnapDir().getAbsolutePath(),
-            zkDb.snapLog.getDataLogDir().getAbsolutePath(),
+            zkDb.snapLog.getDataDir().getAbsolutePath(),
             getTickTime(),
             getMaxClientCnxnsPerHost(),
             getMinSessionTimeout(),
@@ -577,7 +577,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         if (zkDb == null) {
             return 0L;
         }
-        File path = zkDb.snapLog.getDataLogDir();
+        File path = zkDb.snapLog.getDataDir();
         return getDirSize(path);
     }
 
