@@ -47,6 +47,7 @@ import org.apache.zookeeper.common.StringUtils;
 import org.apache.zookeeper.metrics.impl.DefaultMetricsProvider;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.backup.BackupConfig;
 import org.apache.zookeeper.server.backup.BackupSystemProperty;
 import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
@@ -113,7 +114,6 @@ public class QuorumPeerConfig {
     protected boolean backupEnabled = false;
     protected BackupConfig backupConfig;
     protected BackupConfig.Builder backupConfigBuilder = new BackupConfig.Builder();
-
     protected String initialConfig;
 
     protected LearnerType peerType = LearnerType.PARTICIPANT;
@@ -371,8 +371,51 @@ public class QuorumPeerConfig {
                 backupConfigBuilder.setTimetableStoragePath(value);
             } else if (key.equals(BackupSystemProperty.BACKUP_TIMETABLE_BACKUP_INTERVAL_MS)) {
                 backupConfigBuilder.setTimetableBackupIntervalInMs(Long.parseLong(value));
-            } else if (key.equals("standaloneEnabled")) {
-                setStandaloneEnabled(parseBoolean(key, value));
+            } else if (key.equals(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL)) {
+            // TODO: the above key.equals(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL) is checking if the key
+            //   is equal to "zookeeper.X509ZNodeGroupAclProvider.setX509ClientIdAsAcl" (see
+            //   ZNODE_GROUP_ACL_CONFIG_PREFIX) which is the wrong format for zoo.cfg (zoo.cfg properties do not have
+            //   "zookeeper." prefix typically). So, if "X509ZNodeGroupAclProvider.setX509ClientIdAsAcl" is set in
+            //   in zoo.cfg, it does not get caught by the above "if". Instead, it falls through to the default "else"
+            //   where it gets set as a system property with a "zookeeper." prefix. So NONE of the
+            //   X509AuthenticationConfig "if" matches here are working as expected. Since the setters never get invoked
+            //   here, we rely on the getters in X509ZNodeGroupAclProvider to read the the associated system property
+            //   and invoke the setters there.
+                X509AuthenticationConfig.getInstance().setX509ClientIdAsAclEnabled(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdType(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdSanMatchType(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdSanMatchRegex(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdSanExtractRegex(value);
+            } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX)) {
+                X509AuthenticationConfig.getInstance().setClientCertIdSanExtractMatcherGroupIndex(value);
+            } else if (key.equals(X509AuthenticationConfig.CROSS_DOMAIN_ACCESS_DOMAIN_NAME)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclCrossDomainAccessDomainNameStr(value);
+            } else if (key.equals(X509AuthenticationConfig.DEDICATED_DOMAIN)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclServerDedicatedDomain(value);
+            } else if (key.equals(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclSuperUserIdStr(value);
+            } else if (key.equals(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclOpenReadAccessPathPrefixStr(value);
+            } else if (key.equals(X509AuthenticationConfig.STORE_AUTHED_CLIENT_ID)) {
+                X509AuthenticationConfig.getInstance().setStoreAuthedClientIdEnabled(value);
+            } else if (key.equals(X509AuthenticationConfig.ALLOWED_CLIENT_ID_AS_ACL_DOMAINS)) {
+                X509AuthenticationConfig.getInstance().setAllowedClientIdAsAclDomainsStr(value);
+            } else if (key.equals(X509AuthenticationConfig.ENFORCE_DEDICATED_DOMAIN)) {
+                X509AuthenticationConfig.getInstance().setZnodeGroupAclServerShouldEnforceDedicatedDomain(value);
+            }  else if (key.equals("standaloneEnabled")) {
+                if (value.toLowerCase().equals("true")) {
+                    setStandaloneEnabled(true);
+                } else if (value.toLowerCase().equals("false")) {
+                    setStandaloneEnabled(false);
+                } else {
+                    throw new ConfigException("Invalid option "
+                                              + value
+                                              + " for standalone mode. Choose 'true' or 'false.'");
+                }
             } else if (key.equals("reconfigEnabled")) {
                 setReconfigEnabled(parseBoolean(key, value));
             } else if (key.equals("sslQuorum")) {
