@@ -470,7 +470,7 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
                     }
                     if (KeeperException.Code.OK != code) {
                         zkServer.serverStats().incrementAuthFailedCount();
-                        LOG.error("Authentication failed for session 0x{}", Long.toHexString(cnxn.getSessionId()));
+                        LOG.error("Authentication failed for session 0x{} from address '{}'", Long.toHexString(cnxn.getSessionId()), cnxn.getRemoteSocketAddress());
                         cnxn.close(ServerCnxn.DisconnectReason.SASL_AUTH_FAILURE);
                         return;
                     }
@@ -481,8 +481,8 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
                 addCnxn(cnxn);
             } else {
                 zkServer.serverStats().incrementAuthFailedCount();
-                LOG.error("Unsuccessful handshake with session 0x{}", Long.toHexString(cnxn.getSessionId()));
                 ServerMetrics.getMetrics().UNSUCCESSFUL_HANDSHAKE.add(1);
+                LOG.error("Unsuccessful handshake with session 0x{} from address '{}'", Long.toHexString(cnxn.getSessionId()), cnxn.getRemoteSocketAddress());
                 cnxn.close(ServerCnxn.DisconnectReason.FAILED_HANDSHAKE);
             }
         }
@@ -775,15 +775,18 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
 
     private void addCnxn(final NettyServerCnxn cnxn) {
         cnxns.add(cnxn);
-        InetAddress addr = ((InetSocketAddress) cnxn.getChannel().remoteAddress()).getAddress();
-
-        ipMap.compute(addr, (a, cnxnCount) -> {
-            if (cnxnCount == null) {
-                cnxnCount = new AtomicInteger();
-            }
-            cnxnCount.incrementAndGet();
-            return cnxnCount;
-        });
+        increaseConnectionCreateCount();
+        synchronized (ipMap) {
+            InetAddress addr =
+                ((InetSocketAddress) cnxn.getChannel().remoteAddress()).getAddress();
+            ipMap.compute(addr, (a, cnxnCount) -> {
+                if (cnxnCount == null) {
+                    cnxnCount = new AtomicInteger();
+                }
+                cnxnCount.incrementAndGet();
+                return cnxnCount;
+            });
+        }
     }
 
     void removeCnxnFromIpMap(NettyServerCnxn cnxn, InetAddress remoteAddress) {

@@ -1159,6 +1159,19 @@ property, when available, is noted below.
     the connections exceed this limit will be rejected before starting handshake.
     This setting doesn't limit the max TLS concurrency, but helps avoid herd
     effect due to TLS handshake timeout when there are too many in-flight TLS
+* *ephemeralNodes.total.byte.limit* :
+  (Java system property: **zookeeper.ephemeralNodes.total.byte.limit**)
+  This property set a limit on the amount of ephemeral nodes that can be created in one session. The limit is the number 
+  of bytes it takes to store the serialized path strings for all the session's ephemeral nodes. 
+  This limit should always be under the jute maxbuffer, as exceeding will cause the server to crash when the connection is closed 
+  and a transaction to delete all the ephemeral nodes for that session are deleted. This limit will be ignored if not explicitly set.
+
+* *outstandingHandshake.limit* 
+    (Jave system property only: **zookeeper.netty.server.outstandingHandshake.limit**)
+    The maximum in-flight TLS handshake connections could have in ZooKeeper, 
+    the connections exceed this limit will be rejected before starting handshake. 
+    This setting doesn't limit the max TLS concurrency, but helps avoid herd 
+    effect due to TLS handshake timeout when there are too many in-flight TLS 
     handshakes. Set it to something like 250 is good enough to avoid herd effect.
 
 * *netty.server.earlyDropSecureConnectionHandshakes*
@@ -1199,16 +1212,6 @@ property, when available, is noted below.
   **New in 3.7.0:**
   The sending and receiving packets in Learner were done synchronously in a critical section. An untimely network issue could cause the followers to hang (see [ZOOKEEPER-3575](https://issues.apache.org/jira/browse/ZOOKEEPER-3575) and [ZOOKEEPER-4074](https://issues.apache.org/jira/browse/ZOOKEEPER-4074)). The new design moves sending packets in Learner to a separate thread and sends the packets asynchronously. The new design is enabled with this parameter (learner.asyncSending).
   The default is false.
-
-* *forward_learner_requests_to_commit_processor_disabled*
-    (Java system property: **zookeeper.forward_learner_requests_to_commit_processor_disabled**)
-    When this property is set, the requests from learners won't be enqueued to
-    CommitProcessor queue, which will help save the resources and GC time on 
-    leader.
-
-    The default value is false.
-
-
 <a name="sc_clusterOptions"></a>
 
 #### Cluster Options

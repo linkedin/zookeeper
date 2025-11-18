@@ -163,6 +163,7 @@ public final class ServerMetrics {
         COMMITS_QUEUED = metricsContext.getCounter("request_commit_queued");
         READS_ISSUED_IN_COMMIT_PROC = metricsContext.getSummary("read_commit_proc_issued", DetailLevel.BASIC);
         WRITES_ISSUED_IN_COMMIT_PROC = metricsContext.getSummary("write_commit_proc_issued", DetailLevel.BASIC);
+        EPHEMERAL_NODE_LIMIT_VIOLATION = metricsContext.getCounter("ephemeral_node_limit_violation");
 
         THROTTLED_OPS = metricsContext.getCounter("throttled_ops");
 
@@ -420,6 +421,7 @@ public final class ServerMetrics {
     public final Counter COMMITS_QUEUED;
     public final Summary READS_ISSUED_IN_COMMIT_PROC;
     public final Summary WRITES_ISSUED_IN_COMMIT_PROC;
+    public final Counter EPHEMERAL_NODE_LIMIT_VIOLATION;
 
     // Request op throttling related
     public final Counter THROTTLED_OPS;

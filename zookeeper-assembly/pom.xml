@@ -170,5 +170,11 @@
       </plugin>
     </plugins>
   </build>
-
+  <distributionManagement>
+    <repository>
+      <id>jfrog-linkedin</id>
+      <name>linkedin-releases</name>
+      <url>https://linkedin.jfrog.io/artifactory/zookeeper</url>
+    </repository>
+  </distributionManagement>
 </project>

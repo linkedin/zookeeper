@@ -273,6 +273,7 @@ public class Request {
         case OpCode.removeWatches:
         case OpCode.addWatch:
         case OpCode.whoAmI:
+        case OpCode.getChildrenPaginated:
             return true;
         default:
             return false;

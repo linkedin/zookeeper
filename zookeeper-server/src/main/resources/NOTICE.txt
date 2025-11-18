@@ -182,9 +182,11 @@ framework, which can be obtained at:
 
 This product optionally depends on 'Apache Log4J', a logging framework, which
 can be obtained at:
+This product optionally depends on 'Apache Logback', a logging framework,
+which can be obtained at:
 
   * LICENSE:
-    * license/LICENSE.log4j.txt (Apache License 2.0)
+    * license/LICENSE.logback.txt (Eclipse Public License 1.0)
   * HOMEPAGE:
     * https://logging.apache.org/log4j/
 
@@ -198,6 +200,7 @@ non-blocking XML processor, which can be obtained at:
 
 This product contains a modified version of 'HPACK', a Java implementation of
 the HTTP/2 HPACK algorithm written by Twitter. It can be obtained at:
+    * https://logback.qos.ch/
 
   * LICENSE:
     * license/LICENSE.hpack.txt (Apache License 2.0)

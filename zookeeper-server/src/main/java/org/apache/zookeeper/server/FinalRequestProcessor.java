@@ -42,6 +42,7 @@ import org.apache.zookeeper.OpResult.ErrorResult;
 import org.apache.zookeeper.OpResult.GetChildrenResult;
 import org.apache.zookeeper.OpResult.GetDataResult;
 import org.apache.zookeeper.OpResult.SetDataResult;
+import org.apache.zookeeper.PaginationNextPage;
 import org.apache.zookeeper.Watcher.WatcherType;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
@@ -63,6 +64,8 @@ import org.apache.zookeeper.proto.GetAllChildrenNumberRequest;
 import org.apache.zookeeper.proto.GetAllChildrenNumberResponse;
 import org.apache.zookeeper.proto.GetChildren2Request;
 import org.apache.zookeeper.proto.GetChildren2Response;
+import org.apache.zookeeper.proto.GetChildrenPaginatedRequest;
+import org.apache.zookeeper.proto.GetChildrenPaginatedResponse;
 import org.apache.zookeeper.proto.GetChildrenRequest;
 import org.apache.zookeeper.proto.GetChildrenResponse;
 import org.apache.zookeeper.proto.GetDataRequest;
@@ -213,15 +216,17 @@ public class FinalRequestProcessor implements RequestProcessor {
 
             switch (request.type) {
             case OpCode.ping: {
+                zks.serverStats().updateLatency(request.type, request, Time.currentElapsedTime());
                 lastOp = "PING";
-                updateStats(request, lastOp, lastZxid);
+                updateStats(request.type, request, lastOp, lastZxid);
 
                 responseSize = cnxn.sendResponse(new ReplyHeader(ClientCnxn.PING_XID, lastZxid, 0), null, "response");
                 return;
             }
             case OpCode.createSession: {
+                zks.serverStats().updateLatency(request.type, request, Time.currentElapsedTime());
                 lastOp = "SESS";
-                updateStats(request, lastOp, lastZxid);
+                updateStats(request.type, request, lastOp, lastZxid);
 
                 zks.finishSessionInit(request.cnxn, true);
                 return;
@@ -582,6 +587,35 @@ public class FinalRequestProcessor implements RequestProcessor {
                 rsp = new GetEphemeralsResponse(ephemerals);
                 break;
             }
+            case OpCode.getChildrenPaginated: {
+                lastOp = "GETC";
+                GetChildrenPaginatedRequest getChildrenPaginatedRequest = new GetChildrenPaginatedRequest();
+                ByteBufferInputStream.byteBuffer2Record(request.request,
+                        getChildrenPaginatedRequest);
+                Stat stat = new Stat();
+                path = getChildrenPaginatedRequest.getPath();
+                DataNode n = zks.getZKDatabase().getNode(path);
+                if (n == null) {
+                    throw new KeeperException.NoNodeException();
+                }
+                zks.checkACL(
+                        request.cnxn,
+                        zks.getZKDatabase().aclForNode(n),
+                        ZooDefs.Perms.READ,
+                        request.authInfo, path,
+                        null);
+                final int maxReturned = getChildrenPaginatedRequest.getMaxReturned();
+                final PaginationNextPage nextPage = new PaginationNextPage();
+                List<String> list = zks.getZKDatabase().getPaginatedChildren(
+                        getChildrenPaginatedRequest.getPath(), stat,
+                        getChildrenPaginatedRequest.getWatch() ? cnxn : null,
+                        maxReturned,
+                        getChildrenPaginatedRequest.getMinCzxid(),
+                        getChildrenPaginatedRequest.getCzxidOffset(),
+                        nextPage);
+                rsp = new GetChildrenPaginatedResponse(list, stat, nextPage.getMinCzxid(), nextPage.getMinCzxidOffset());
+                break;
+            }
             }
         } catch (SessionMovedException e) {
             // session moved is a connection level error, we need to tear
@@ -612,7 +646,28 @@ public class FinalRequestProcessor implements RequestProcessor {
 
         ReplyHeader hdr = new ReplyHeader(request.cxid, lastZxid, err.intValue());
 
-        updateStats(request, lastOp, lastZxid);
+        int type = request.type;
+        if (type == OpCode.multi) {
+            // check if contains only read operation
+            boolean containsWrite = false;
+            for (ProcessTxnResult subTxnResult : rc.multiResult) {
+                switch (subTxnResult.type) {
+                    case OpCode.create:
+                    case OpCode.delete:
+                    case OpCode.setData:
+                        containsWrite = true;
+                        break;
+                    case OpCode.check:
+                    case OpCode.error:
+                    default:
+                        break;
+                }
+            }
+            if (!containsWrite) {
+                type = OpCode.check;
+            }
+        }
+        updateStats(type, request, lastOp, lastZxid);
 
         try {
             if (path == null || rsp == null) {
@@ -693,12 +748,12 @@ public class FinalRequestProcessor implements RequestProcessor {
         LOG.info("shutdown of request processor complete");
     }
 
-    private void updateStats(Request request, String lastOp, long lastZxid) {
+    private void updateStats(int type, Request request, String lastOp, long lastZxid) {
         if (request.cnxn == null) {
             return;
         }
         long currentTime = Time.currentElapsedTime();
-        zks.serverStats().updateLatency(request, currentTime);
+        zks.serverStats().updateLatency(type, request, currentTime);
         request.cnxn.updateStatsForResponse(request.cxid, lastZxid, lastOp, request.createTime, currentTime);
     }
 

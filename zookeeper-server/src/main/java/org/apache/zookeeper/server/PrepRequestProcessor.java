@@ -500,8 +500,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                             // extract server id x from first part of joiner: server.x
                             Long sid = Long.parseLong(parts[0].substring(parts[0].lastIndexOf('.') + 1));
                             QuorumServer qs = new QuorumServer(sid, parts[1]);
-                            if (qs.clientAddr == null || qs.electionAddr == null || qs.addr == null) {
-                                throw new KeeperException.BadArgumentsException("Wrong format of server string - each server should have 3 ports specified");
+                            if ((qs.clientAddr == null && qs.secureClientAddr == null) || qs.electionAddr == null || qs.addr == null) {
+                                throw new KeeperException.BadArgumentsException("Wrong format of server string - each server should have at least 3 ports specified");
                             }
 
                             // check duplication of addresses and ports
@@ -718,6 +718,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             request.setTxn(new CreateTxn(path, data, listACL, createMode.isEphemeral(), newCversion));
         }
 
+
         TxnHeader hdr = request.getHdr();
         long ephemeralOwner = 0;
         if (createMode.isContainer()) {
@@ -726,6 +727,15 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             ephemeralOwner = EphemeralType.TTL.toEphemeralOwner(ttl);
         } else if (createMode.isEphemeral()) {
             ephemeralOwner = request.sessionId;
+            int currentByteSize = zks.getZKDatabase().getDataTree().getTotalEphemeralsByteSize(ephemeralOwner);
+            int proposedByteSize = currentByteSize + BinaryOutputArchive.getSerializedStringByteSize(path);
+            if (ZooKeeperServer.getEphemeralNodesTotalByteLimit() != -1 && proposedByteSize
+                    > ZooKeeperServer.getEphemeralNodesTotalByteLimit()) {
+                LOG.error(String.format("Rejecting ephemeral node creation for session %s, zxid %s, path %s.",
+                        request.sessionId, request.getHdr().getZxid(), path));
+                ServerMetrics.getMetrics().EPHEMERAL_NODE_LIMIT_VIOLATION.inc();
+                throw new KeeperException.TotalEphemeralLimitExceeded();
+            }
         }
         StatPersisted s = DataTree.createStat(hdr.getZxid(), hdr.getTime(), ephemeralOwner);
         parentRecord = parentRecord.duplicate(request.getHdr().getZxid());
@@ -921,6 +931,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             case OpCode.getChildren:
             case OpCode.getAllChildrenNumber:
             case OpCode.getChildren2:
+            case OpCode.getChildrenPaginated:
             case OpCode.ping:
             case OpCode.setWatches:
             case OpCode.setWatches2:

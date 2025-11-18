@@ -52,6 +52,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.junit.Assert;
+
 
 public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
     private static final Logger LOG = LoggerFactory.getLogger(Slf4JAuditLoggerTest.class);
@@ -314,6 +316,7 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
         int logStartIndex = log.indexOf(searchString);
         String auditLog = log.substring(logStartIndex + searchString.length());
         assertTrue(auditLog.endsWith(expectedLog));
+        Assert.assertTrue(auditLog.endsWith(expectedLog));
     }
 
     private static void verifyLogs(String expectedLog, List<String> logs) {
@@ -415,6 +418,11 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
                     mt[i].shutdown();
                 }
             } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            try {
+                os.close();
+            } catch (IOException e) {
                 e.printStackTrace();
             }
         }
