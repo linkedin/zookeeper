@@ -42,6 +42,7 @@ import org.apache.zookeeper.OpResult.ErrorResult;
 import org.apache.zookeeper.OpResult.GetChildrenResult;
 import org.apache.zookeeper.OpResult.GetDataResult;
 import org.apache.zookeeper.OpResult.SetDataResult;
+import org.apache.zookeeper.PaginationNextPage;
 import org.apache.zookeeper.Watcher.WatcherType;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
@@ -49,7 +50,6 @@ import org.apache.zookeeper.audit.AuditHelper;
 import org.apache.zookeeper.common.Time;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
-import org.apache.zookeeper.data.PathWithStat;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.proto.AddWatchRequest;
 import org.apache.zookeeper.proto.CheckWatchesRequest;
@@ -605,13 +605,15 @@ public class FinalRequestProcessor implements RequestProcessor {
                         request.authInfo, path,
                         null);
                 final int maxReturned = getChildrenPaginatedRequest.getMaxReturned();
-                List<PathWithStat> list = zks.getZKDatabase().getPaginatedChildren(
+                final PaginationNextPage nextPage = new PaginationNextPage();
+                List<String> list = zks.getZKDatabase().getPaginatedChildren(
                         getChildrenPaginatedRequest.getPath(), stat,
                         getChildrenPaginatedRequest.getWatch() ? cnxn : null,
                         maxReturned,
-                        getChildrenPaginatedRequest.getMinCzxId(),
-                        getChildrenPaginatedRequest.getCzxIdOffset());
-                rsp = new GetChildrenPaginatedResponse(list, stat);
+                        getChildrenPaginatedRequest.getMinCzxid(),
+                        getChildrenPaginatedRequest.getCzxidOffset(),
+                        nextPage);
+                rsp = new GetChildrenPaginatedResponse(list, stat, nextPage.getMinCzxid(), nextPage.getMinCzxidOffset());
                 break;
             }
             }
