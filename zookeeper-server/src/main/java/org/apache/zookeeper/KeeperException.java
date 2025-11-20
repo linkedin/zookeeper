@@ -148,6 +148,8 @@ public abstract class KeeperException extends Exception {
             return new SessionClosedRequireAuthException();
         case REQUESTTIMEOUT:
             return new RequestTimeoutException();
+        case TOTALEPHEMERALLIMITEXCEEDED:
+            return new TotalEphemeralLimitExceeded();
         case QUOTAEXCEEDED:
             return new QuotaExceededException();
         case THROTTLEDOP:
@@ -415,7 +417,10 @@ public abstract class KeeperException extends Exception {
         /** Operation was throttled and not executed at all. This error code indicates that zookeeper server
          *  is under heavy load and can't process incoming requests at full speed; please retry with back off.
          */
-        THROTTLEDOP (-127);
+        THROTTLEDOP (-127),
+        /** Request to create ephemeral node was rejected because the total byte limit for the session was exceeded.
+        * This limit is manually set through the "zookeeper.ephemeralNodes.total.byte.limit" system property. */
+        TOTALEPHEMERALLIMITEXCEEDED(-128);
 
         private static final Map<Integer, Code> lookup = new HashMap<Integer, Code>();
 
@@ -441,14 +446,10 @@ public abstract class KeeperException extends Exception {
         /**
          * Get the Code value for a particular integer error code
          * @param code int error code
-         * @return Code value corresponding to specified int code, if null throws IllegalArgumentException
+         * @return Code value corresponding to specified int code, or null
          */
         public static Code get(int code) {
-            Code codeVal = lookup.get(code);
-            if (codeVal == null) {
-                throw new IllegalArgumentException("The current client version cannot lookup this code:" + code);
-            }
-            return codeVal;
+            return lookup.get(code);
         }
     }
 
@@ -510,10 +511,6 @@ public abstract class KeeperException extends Exception {
             return "Reconfig is disabled";
         case SESSIONCLOSEDREQUIRESASLAUTH:
             return "Session closed because client failed to authenticate";
-        case QUOTAEXCEEDED:
-            return "Quota has exceeded";
-        case THROTTLEDOP:
-            return "Op throttled due to high load";
         default:
             return "Unknown error " + code;
         }
@@ -980,4 +977,10 @@ public abstract class KeeperException extends Exception {
             super(Code.THROTTLEDOP);
         }
     }
+    public static class TotalEphemeralLimitExceeded extends KeeperException {
+        public TotalEphemeralLimitExceeded() {
+            super(Code.TOTALEPHEMERALLIMITEXCEEDED);
+        }
+    }
+
 }
