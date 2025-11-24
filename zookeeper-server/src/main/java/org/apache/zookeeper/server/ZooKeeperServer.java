@@ -161,7 +161,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         LOG.info("{} = {}", CLOSE_SESSION_TXN_ENABLED, closeSessionTxnEnabled);
 
         ephemeralNodesTotalByteLimit = Integer.getInteger(EPHEMERAL_NODES_TOTAL_BYTE_LIMIT_KEY, DEFAULT_EPHEMERAL_NODES_TOTAL_BYTE_LIMIT);
-        LOG.info("{} = {}",EPHEMERAL_NODES_TOTAL_BYTE_LIMIT_KEY, ephemeralNodesTotalByteLimit);
+        LOG.info("{} = {}", EPHEMERAL_NODES_TOTAL_BYTE_LIMIT_KEY, ephemeralNodesTotalByteLimit);
     }
 
     // @VisibleForTesting
@@ -185,7 +185,9 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                 ZooKeeperServer.closeSessionTxnEnabled);
     }
 
-    public static int getEphemeralNodesTotalByteLimit() {return ephemeralNodesTotalByteLimit;}
+    public static int getEphemeralNodesTotalByteLimit() {
+        return ephemeralNodesTotalByteLimit;
+    }
 
     protected ZooKeeperServerBean jmxServerBean;
     protected DataTreeBean jmxDataTreeBean;
