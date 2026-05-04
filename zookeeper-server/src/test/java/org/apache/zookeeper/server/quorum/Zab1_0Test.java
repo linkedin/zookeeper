@@ -822,6 +822,129 @@ public class Zab1_0Test extends ZKTestCase {
         });
     }
 
+    /**
+     * Test that leader election skips snapshot in loadData() when
+     * skipLeaderStartupSnapshot is enabled. This verifies the fix for
+     * ZOOKEEPER-4766: leader election time should not scale with tree size.
+     */
+    @Test
+    public void testLeaderSkipsSnapshotWhenConfigured() throws Exception {
+        Socket[] pair = getSocketPair();
+        Socket leaderSocket = pair[0];
+        Socket followerSocket = pair[1];
+        File tmpDir = File.createTempFile("test", "dir", testData);
+        tmpDir.delete();
+        tmpDir.mkdir();
+        LeadThread leadThread = null;
+        Leader leader = null;
+        try {
+            QuorumPeer peer = createQuorumPeer(tmpDir);
+            // Enable skip-snapshot
+            peer.setSkipLeaderStartupSnapshot(true);
+
+            leader = createLeader(tmpDir, peer);
+            peer.leader = leader;
+
+            // Pre-initialize the database (as QuorumPeer.start() does before election).
+            // This ensures zkDb.isInitialized()==true so loadData() won't call
+            // loadDataBase() which itself creates an initial snapshot.
+            leader.zk.getZKDatabase().loadDataBase();
+
+            File snapDir = new File(tmpDir, "version-2");
+            long lastModBefore = getLatestSnapshotModTime(snapDir);
+            Thread.sleep(50);
+
+            leadThread = new LeadThread(leader);
+            leadThread.start();
+
+            while (leader.cnxAcceptor == null || !leader.cnxAcceptor.isAlive()) {
+                Thread.sleep(20);
+            }
+
+            // The leader is now past loadData(). With skipSnapshot=true,
+            // the snapshot file should NOT have been rewritten.
+            long lastModAfter = getLatestSnapshotModTime(snapDir);
+            assertEquals("Snapshot should NOT be rewritten when skipLeaderStartupSnapshot=true",
+                    lastModBefore, lastModAfter);
+        } finally {
+            if (leader != null) {
+                leader.shutdown("end of test");
+            }
+            if (leadThread != null) {
+                leadThread.interrupt();
+                leadThread.join();
+            }
+            TestUtils.deleteFileRecursively(tmpDir);
+        }
+    }
+
+    /**
+     * Test that leader election DOES take snapshot when
+     * skipLeaderStartupSnapshot is disabled (default behavior).
+     */
+    @Test
+    public void testLeaderTakesSnapshotByDefault() throws Exception {
+        Socket[] pair = getSocketPair();
+        Socket leaderSocket = pair[0];
+        Socket followerSocket = pair[1];
+        File tmpDir = File.createTempFile("test", "dir", testData);
+        tmpDir.delete();
+        tmpDir.mkdir();
+        LeadThread leadThread = null;
+        Leader leader = null;
+        try {
+            QuorumPeer peer = createQuorumPeer(tmpDir);
+            // Explicitly disable (default)
+            peer.setSkipLeaderStartupSnapshot(false);
+
+            leader = createLeader(tmpDir, peer);
+            peer.leader = leader;
+
+            // Pre-initialize the database (as QuorumPeer.start() does before election)
+            leader.zk.getZKDatabase().loadDataBase();
+
+            File snapDir = new File(tmpDir, "version-2");
+            long lastModBefore = getLatestSnapshotModTime(snapDir);
+            Thread.sleep(50);
+
+            leadThread = new LeadThread(leader);
+            leadThread.start();
+
+            while (leader.cnxAcceptor == null || !leader.cnxAcceptor.isAlive()) {
+                Thread.sleep(20);
+            }
+
+            // With skipSnapshot=false (default), the snapshot should have been rewritten
+            long lastModAfter = getLatestSnapshotModTime(snapDir);
+            assertTrue("Snapshot should be rewritten when skipLeaderStartupSnapshot=false",
+                    lastModAfter > lastModBefore);
+        } finally {
+            if (leader != null) {
+                leader.shutdown("end of test");
+            }
+            if (leadThread != null) {
+                leadThread.interrupt();
+                leadThread.join();
+            }
+            TestUtils.deleteFileRecursively(tmpDir);
+        }
+    }
+
+    private static long getLatestSnapshotModTime(File dir) {
+        if (dir == null || !dir.exists()) {
+            return 0;
+        }
+        File[] snaps = dir.listFiles((d, name) -> name.startsWith("snapshot."));
+        if (snaps == null || snaps.length == 0) {
+            return 0;
+        }
+        long latest = 0;
+        for (File f : snaps) {
+            latest = Math.max(latest, f.lastModified());
+        }
+        return latest;
+    }
+
     @Test
     public void testNormalRun() throws Exception {
         testLeaderConversation(new LeaderConversation() {

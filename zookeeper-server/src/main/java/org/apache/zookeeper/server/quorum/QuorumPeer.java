@@ -721,6 +721,18 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     protected volatile int initLimit;
 
     /**
+     * Whether to skip the synchronous snapshot during leader startup.
+     * On large ensembles (15M+ znodes), the snapshot in loadData() takes
+     * 34-43s, blocking quorum formation and causing repeated election
+     * failures when it exceeds initLimit. Skipping it is safe — see
+     * ZOOKEEPER-1558 and ZOOKEEPER-4766.
+     */
+    public static final String SKIP_LEADER_STARTUP_SNAPSHOT =
+            "zookeeper.leaderElection.skipStartupSnapshot";
+    private boolean skipLeaderStartupSnapshot =
+            Boolean.getBoolean(SKIP_LEADER_STARTUP_SNAPSHOT);
+
+    /**
      * The number of ticks that can pass between sending a request and getting
      * an acknowledgment
      */
@@ -1817,6 +1829,14 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     public void setInitLimit(int initLimit) {
         LOG.info("initLimit set to {}", initLimit);
         this.initLimit = initLimit;
+    }
+
+    public boolean isSkipLeaderStartupSnapshot() {
+        return skipLeaderStartupSnapshot;
+    }
+
+    public void setSkipLeaderStartupSnapshot(boolean skip) {
+        this.skipLeaderStartupSnapshot = skip;
     }
 
     /**

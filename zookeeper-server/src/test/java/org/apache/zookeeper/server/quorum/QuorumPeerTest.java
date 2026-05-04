@@ -107,4 +107,20 @@ public class QuorumPeerTest {
         assertFalse(peer.isLeader(localPeerId));
     }
 
+    @Test
+    public void testSkipLeaderStartupSnapshotDefaultsToFalse() throws Exception {
+        QuorumPeer peer = new QuorumPeer();
+        assertFalse("skipLeaderStartupSnapshot should default to false",
+                peer.isSkipLeaderStartupSnapshot());
+    }
+
+    @Test
+    public void testSkipLeaderStartupSnapshotSetterGetter() throws Exception {
+        QuorumPeer peer = new QuorumPeer();
+        peer.setSkipLeaderStartupSnapshot(true);
+        assertTrue(peer.isSkipLeaderStartupSnapshot());
+        peer.setSkipLeaderStartupSnapshot(false);
+        assertFalse(peer.isSkipLeaderStartupSnapshot());
+    }
+
 }
