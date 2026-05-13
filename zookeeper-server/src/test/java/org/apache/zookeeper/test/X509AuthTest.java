@@ -46,6 +46,7 @@ import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZKTestCase;
+import org.apache.zookeeper.common.SpiffeAuthTestUtil;
 import org.apache.zookeeper.server.MockServerCnxn;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
@@ -131,6 +132,210 @@ public class X509AuthTest extends ZKTestCase {
     X509AuthenticationConfig.reset();
   }
 
+  // SPIFFE test fixtures
+  private static final String SPIFFE_V1_URI = "spiffe://prod.lipki/v1/wl/espresso-router";
+  private static final String SPIFFE_V2_URI = "spiffe://prod.lipki/v2/application/espresso-router/espresso-router";
+
+  @Test
+  public void testSpiffeV1FallsBackToDn() {
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_V1_URI);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
+  public void testSpiffeV2Auth() {
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_V2_URI);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("application/espresso-router/espresso-router",
+          cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
+  public void testSpiffeV2WorkloadAuth() {
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      String spiffeWorkloadUri = "spiffe://prod.lipki/v2/workload/foo-mp/bar-app/some-tag";
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", spiffeWorkloadUri);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("workload/foo-mp/bar-app/some-tag", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
+  public void testSpiffeNotConfiguredFallsBackToUrn() {
+    // SPIFFE regex NOT set — should fall through to URN-based SAN extraction
+    String urnSan = "urn:li:servicePrincipal(espresso-router;ei4;i001)";
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX, "^.*urn:li:.*$");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+        "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+    // SSL_X509_SPIFFE_SAN_MATCH_REGEX intentionally NOT set
+
+    try {
+      TestCertificate urnCert = new TestCertificate("CLIENT", urnSan);
+      X509AuthenticationProvider provider = createProvider(urnCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{urnCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("servicePrincipal(espresso-router", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
+      X509AuthenticationConfig.reset();
+    }
+  }
+
+  @Test
+  public void testSpiffeConfiguredButNoSpiffeSanFallsBackToUrn() {
+    // SPIFFE regex set, but cert has URN SAN (not SPIFFE) → SPIFFE returns empty → falls back to URN
+    String urnSan = "urn:li:servicePrincipal(espresso-router;ei4;i001)";
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX, "^.*urn:li:.*$");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+        "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_V2_MATCH_REGEX);
+
+    try {
+      TestCertificate urnCert = new TestCertificate("CLIENT", urnSan);
+      X509AuthenticationProvider provider = createProvider(urnCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{urnCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      // URN SAN doesn't match spiffe://, so falls through to URN extraction
+      assertEquals("servicePrincipal(espresso-router", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX);
+      X509AuthenticationConfig.reset();
+    }
+  }
+
+  @Test
+  public void testSpiffeV2UserIdentityRejected() {
+    // SPIFFE user identity (/v2/user/<ldap>) must NOT be mapped to a service principal.
+    // It should be silently rejected by the SPIFFE extractor, fall through to URN (no match),
+    // then fall back to Subject DN.
+    String spiffeUserUri = "spiffe://prod.lipki/v2/user/alice";
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate userCert = new TestCertificate("CLIENT", spiffeUserUri);
+      X509AuthenticationProvider provider = createProvider(userCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{userCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
+  public void testSpiffeV1UserIdentityRejected() {
+    // v1 user-identity now falls back to DN for two reasons: user-identity rejection AND v1 rejection.
+    String spiffeUserUri = "spiffe://prod.lipki/v1/user/alice";
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate userCert = new TestCertificate("CLIENT", spiffeUserUri);
+      X509AuthenticationProvider provider = createProvider(userCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{userCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
+  public void testSpiffeMultipleSpiffeSansFallsBackToDn() {
+    // Cert with >1 SPIFFE SAN — extractor throws, caught in getClientId, falls through to URN
+    // (not configured) then to Subject DN.
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate multiSanCert = new TestCertificate("CLIENT",
+          Arrays.asList(SPIFFE_V2_URI, "spiffe://prod.lipki/v2/application/another-service/another-service"));
+      X509AuthenticationProvider provider = createProvider(multiSanCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{multiSanCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
+  public void testSpiffePrefersSpiffeOverUrnWhenBothPresent() {
+    // Cert has BOTH a URN-format SAN and a SPIFFE SAN. SPIFFE must win.
+    String urnSan = "urn:li:servicePrincipal(legacy-app;ei4;i001)";
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX, "^.*urn:li:.*$");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+        "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_V2_MATCH_REGEX);
+
+    try {
+      TestCertificate mixedCert = new TestCertificate("CLIENT", Arrays.asList(urnSan, SPIFFE_V2_URI));
+      X509AuthenticationProvider provider = createProvider(mixedCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{mixedCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      // SPIFFE wins — path-after-/v2/, not the URN-derived legacy-app id.
+      assertEquals("application/espresso-router/espresso-router",
+          cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
   protected static class TestPublicKey implements PublicKey {
 
         private static final long serialVersionUID = 1L;
@@ -155,17 +360,21 @@ public class X509AuthTest extends ZKTestCase {
         private byte[] encoded;
         private X500Principal principal;
         private PublicKey publicKey;
-        private String subjectAlternativeName;
+        private List<String> subjectAlternativeNames;
 
         public TestCertificate(String name) {
           this(name, TEST_SAN_STR);
         }
 
         public TestCertificate(String name, String sanVal) {
+          this(name, Collections.singletonList(sanVal));
+        }
+
+        public TestCertificate(String name, List<String> sanVals) {
           encoded = name.getBytes();
           principal = new X500Principal("CN=" + name);
           publicKey = new TestPublicKey();
-          subjectAlternativeName = sanVal;
+          subjectAlternativeNames = sanVals;
         }
           @Override
         public boolean hasUnsupportedCriticalExtension() {
@@ -273,10 +482,14 @@ public class X509AuthTest extends ZKTestCase {
         }
         @Override
         public Collection<List<?>> getSubjectAlternativeNames() {
-            List<Object> subjectAlternativeNamePair = new ArrayList<>();
-            subjectAlternativeNamePair.add(6);
-            subjectAlternativeNamePair.add(subjectAlternativeName);
-            return Collections.singletonList(subjectAlternativeNamePair);
+            List<List<?>> result = new ArrayList<>();
+            for (String san : subjectAlternativeNames) {
+                List<Object> pair = new ArrayList<>();
+                pair.add(6);
+                pair.add(san);
+                result.add(pair);
+            }
+            return result;
         }
     }
 

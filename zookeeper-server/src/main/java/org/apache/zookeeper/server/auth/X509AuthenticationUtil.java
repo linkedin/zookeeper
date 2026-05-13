@@ -18,11 +18,13 @@
 
 package org.apache.zookeeper.server.auth;
 
+import java.net.URI;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -47,6 +49,19 @@ public class X509AuthenticationUtil extends X509Util {
   // Super user Auth Id scheme
   public static final String SUPERUSER_AUTH_SCHEME = "super";
   public static final String X509_SCHEME = "x509";
+
+  // Matches LISPIFFE user-identity paths of the form "/v<N>/user" or "/v<N>/user/<rest>".
+  // User-identity SPIFFE certs (issued to humans, not workloads) must NOT be promoted to a
+  // service principal, otherwise a user credential would be granted service-level ACL access.
+  // See LISPIFFE-ID spec: https://github.com/linkedin-multiproduct/gopki/blob/master/LISPIFFE-ID.md
+  private static final Pattern SPIFFE_USER_IDENTITY_PATH_PATTERN =
+      Pattern.compile("^/v\\d+/user(/.*)?$");
+
+  // Matches LISPIFFE v2 workload paths and captures the ILM UID (the path after "/v2/").
+  // The canonical ILM v2 principal is the full path-after-v2 (e.g. "application/foo-mp/bar-app");
+  // ACL matching downstream is segment-prefix on this UID. v1 SPIFFE URIs are deliberately not
+  // matched here — they are a deprecated design with app-name collision across MPs.
+  private static final Pattern SPIFFE_V2_PATH_PATTERN = Pattern.compile("^/v2/(.+)$");
 
   @Override
   protected String getConfigPrefix() {
@@ -135,13 +150,124 @@ public class X509AuthenticationUtil extends X509Util {
     if (clientCertIdType != null && clientCertIdType
         .equalsIgnoreCase(X509AuthenticationConfig.SUBJECT_ALTERNATIVE_NAME_SHORT)) {
       try {
+        Optional<String> spiffeId = X509AuthenticationUtil.matchAndExtractSpiffeSAN(clientCert);
+        if (spiffeId.isPresent()) {
+          LOG.debug("Extracted SPIFFE identity: {}", spiffeId.get());
+          return spiffeId.get();
+        }
+      } catch (Exception e) {
+        LOG.warn("Failed to extract SPIFFE identity from SAN. Falling through to URN-based extraction.", e);
+      }
+      try {
         return X509AuthenticationUtil.matchAndExtractSAN(clientCert);
       } catch (Exception ce) {
         LOG.warn("Failed to match and extract a client ID from SAN. Using Subject DN instead.", ce);
       }
     }
-    // return Subject DN by default
     return clientCert.getSubjectX500Principal().getName();
+  }
+
+  /**
+   * Attempt to extract a client identity from a LISPIFFE v2 URI SAN. Returns the ILM UID — the
+   * path segment after {@code /v2/} — e.g. {@code spiffe://prod.lipki/v2/application/foo-mp/bar-app}
+   * yields {@code application/foo-mp/bar-app}. ACL matching downstream is segment-prefix on this
+   * UID.
+   *
+   * <p>Returns {@link Optional#empty()} when SPIFFE extraction is disabled, no URI SAN matches the
+   * configured regex, the matched URI is a v1 SPIFFE identity (deprecated; app-name collides
+   * across MPs), or the matched URI is a user identity ({@code /v<N>/user/...}, which must never
+   * be promoted to a service principal). Caller falls through to URN/DN extraction.
+   *
+   * @throws IllegalArgumentException if multiple URI SANs match the SPIFFE regex
+   */
+  private static Optional<String> matchAndExtractSpiffeSAN(X509Certificate clientCert)
+      throws CertificateParsingException {
+    Pattern matchPattern = X509AuthenticationConfig.getInstance().getSpiffeSanMatchPattern();
+    if (matchPattern == null) {
+      return Optional.empty();
+    }
+
+    String spiffeUri = findSingleMatchingSan(clientCert, 6, matchPattern, "SPIFFE");
+    if (spiffeUri == null) {
+      return Optional.empty();
+    }
+
+    String path;
+    try {
+      // getRawPath() returns the literal (un-percent-decoded) path so the principal we accept is
+      // exactly what the CA validated in the SAN. getPath() would decode %2F → /, allowing a
+      // single-segment SAN like /v2/foo%2Fbar to be promoted to a multi-segment principal that
+      // could collide with an unrelated registered identity. Reject any path containing % to
+      // also block encoded "user" bypass (e.g. /v2/%75ser/alice).
+      path = URI.create(spiffeUri).getRawPath();
+    } catch (IllegalArgumentException e) {
+      LOG.debug("Malformed SPIFFE URI '{}'; falling through to URN/DN extraction.", spiffeUri);
+      return Optional.empty();
+    }
+    if (path == null) {
+      return Optional.empty();
+    }
+    if (path.indexOf('%') >= 0) {
+      LOG.debug("Rejecting SPIFFE URI with percent-encoded path '{}'; falling through.", spiffeUri);
+      return Optional.empty();
+    }
+    if (SPIFFE_USER_IDENTITY_PATH_PATTERN.matcher(path).matches()) {
+      LOG.debug("Rejecting SPIFFE user identity '{}' for service-principal extraction.", spiffeUri);
+      return Optional.empty();
+    }
+    Matcher v2Matcher = SPIFFE_V2_PATH_PATTERN.matcher(path);
+    if (!v2Matcher.matches()) {
+      LOG.debug("SPIFFE URI '{}' is not a v2 identity; falling through to URN/DN extraction.",
+          spiffeUri);
+      return Optional.empty();
+    }
+    return Optional.of(v2Matcher.group(1));
+  }
+
+  /**
+   * Returns the single SAN value of the given type whose value matches the regex, or null if
+   * there are zero matches. Throws if there are multiple matches (callers always want exactly one).
+   */
+  private static String findSingleMatchingSan(X509Certificate cert, int sanType, Pattern pattern,
+      String matchKind) throws CertificateParsingException {
+    String found = null;
+    Collection<List<?>> sans = cert.getSubjectAlternativeNames();
+    if (sans == null) {
+      return null;
+    }
+    for (List<?> san : sans) {
+      if (!Integer.valueOf(sanType).equals(san.get(0))) {
+        continue;
+      }
+      String value = san.get(1).toString();
+      if (!pattern.matcher(value).find()) {
+        continue;
+      }
+      if (found != null) {
+        String errStr = "Expected exactly 1 " + matchKind + " SAN but found more than 1. "
+            + "Please fix the match regex so exactly one match is found.";
+        LOG.error(errStr);
+        throw new IllegalArgumentException(errStr);
+      }
+      found = value;
+    }
+    return found;
+  }
+
+  /**
+   * Applies an extract regex to a SAN value and returns the captured group.
+   *
+   * @throws IllegalArgumentException if the regex does not match.
+   */
+  private static String applyExtractRegex(Pattern extractPattern, String value, int groupIndex) {
+    Matcher matcher = extractPattern.matcher(value);
+    if (!matcher.find()) {
+      String errStr = "Failed to extract identity from '" + value
+          + "' using regex '" + extractPattern.pattern() + "'";
+      LOG.error(errStr);
+      throw new IllegalArgumentException(errStr);
+    }
+    return matcher.group(groupIndex);
   }
 
   /**
@@ -204,18 +330,8 @@ public class X509AuthenticationUtil extends X509Util {
       throw new IllegalArgumentException(errStr);
     }
 
-    // Extract a substring from the found match using extractRegex
-    Pattern extractPattern = Pattern.compile(extractRegex);
-    Matcher matcher = extractPattern.matcher(matched.iterator().next().get(1).toString());
-    if (matcher.find()) {
-      // If extractMatcherGroupIndex is not given, return the 1st index by default
-      String result = matcher.group(extractMatcherGroupIndex);
-      LOG.debug("Returning extracted client ID: {} using Matcher group index: {}", result, extractMatcherGroupIndex);
-      return result;
-    }
-    String errStr = "Failed to find an extract substring to determine client ID. Please review the extract regex.";
-    LOG.error(errStr);
-    throw new IllegalArgumentException(errStr);
+    return applyExtractRegex(Pattern.compile(extractRegex),
+        matched.iterator().next().get(1).toString(), extractMatcherGroupIndex);
   }
 
   /**

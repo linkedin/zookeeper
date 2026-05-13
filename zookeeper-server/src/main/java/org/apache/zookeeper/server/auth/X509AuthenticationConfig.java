@@ -24,6 +24,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider;
 import org.slf4j.Logger;
@@ -83,12 +84,33 @@ public class X509AuthenticationConfig {
   public static final String SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX =
       SSL_X509_CONFIG_PREFIX + "clientCertIdSanExtractMatcherGroupIndex";
   public static final String SUBJECT_ALTERNATIVE_NAME_SHORT = "SAN";
+
+  /**
+   * Regex to identify SPIFFE URI SANs (type 6). When set, URI SANs (type 6) matching this regex
+   * are treated as SPIFFE identities; the principal is the path after {@code /v2/} (the ILM UID).
+   * v1 SPIFFE URIs and user-identity URIs ({@code /v<N>/user/...}) are structurally rejected and
+   * fall through to URN/DN extraction regardless of this regex.
+   * If not set, SPIFFE extraction is disabled.
+   *
+   * <p><b>Recommended:</b> constrain to a specific trust domain and require v2, e.g.
+   * {@code ^spiffe://prod\.lipki/v2/.*$}. A permissive regex like {@code ^spiffe://.*$} accepts
+   * SPIFFE URIs from any trust domain, relying on the upstream TLS trust manager alone to reject
+   * untrusted issuers; non-v2 URIs accepted by such a regex will still fall through.
+   *
+   * <p>ACL matching downstream is segment-prefix on the extracted UID; see
+   * {@code X509AuthenticationUtil#matchAndExtractSpiffeSAN}.
+   */
+  public static final String SSL_X509_SPIFFE_SAN_MATCH_REGEX =
+      SSL_X509_CONFIG_PREFIX + "spiffe.sanMatchRegex";
   private static final String DEFAULT_REGEX = ".*";
   private String clientCertIdType;
   private int clientCertIdSanMatchType = -1;
   private String clientCertIdSanMatchRegex;
   private String clientCertIdSanExtractRegex;
   private int clientCertIdSanExtractMatcherGroupIndex = -1;
+
+  private Pattern spiffeSanMatchPattern;
+  private boolean spiffeSanMatchPatternLoaded = false;
 
   // ZooKeeper server-side config properties for ZNode group ACL feature
 
@@ -224,6 +246,23 @@ public class X509AuthenticationConfig {
       LOG.error(errMsg);
       throw new IllegalArgumentException(errMsg);
     }
+  }
+
+  public void setSpiffeSanMatchRegex(String spiffeSanMatchRegex) {
+    LOG.debug("{} = {}", SSL_X509_SPIFFE_SAN_MATCH_REGEX, spiffeSanMatchRegex);
+    this.spiffeSanMatchPattern = spiffeSanMatchRegex == null ? null : Pattern.compile(spiffeSanMatchRegex);
+    this.spiffeSanMatchPatternLoaded = true;
+  }
+
+  /**
+   * Compiled SPIFFE SAN match pattern, or null if SPIFFE extraction is not configured.
+   * Loaded lazily from system properties on first access.
+   */
+  public Pattern getSpiffeSanMatchPattern() {
+    if (!spiffeSanMatchPatternLoaded) {
+      setSpiffeSanMatchRegex(System.getProperty(SSL_X509_SPIFFE_SAN_MATCH_REGEX));
+    }
+    return spiffeSanMatchPattern;
   }
 
   // Setters for X509 Znode Group Acl properties
@@ -482,4 +521,5 @@ public class X509AuthenticationConfig {
       instance = null;
     }
   }
+
 }
