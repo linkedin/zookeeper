@@ -76,7 +76,10 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
       CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-mp/workload",
       CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-mp/workload/different-mp",
       CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-legacy",
-      CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-legacy/urn:li:servicePrincipal(legacy;ei4;i001)"
+      CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-legacy/urn:li:servicePrincipal(legacy;ei4;i001)",
+      CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-mp-grant",
+      CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-mp-grant/application",
+      CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-mp-grant/application/helix-core"
   };
 
   private ZooKeeperServer zookeeperServer;
@@ -276,6 +279,54 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
           .anyMatch(id -> "x509".equals(id.getScheme()) && "helix-apps".equals(id.getId()));
       Assert.assertTrue(
           "Expected (x509, helix-apps) in authInfo; actual: " + cnxn.getAuthInfo(),
+          foundDomain);
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  /**
+   * End-to-end: a SPIFFE v2 client cert whose principal is a multi-segment ILM UID resolves to
+   * the correct {@code (x509, <domain>)} authInfo via the <em>segment-prefix walk-up</em> — the
+   * operator registered only the MP-level leaf, not the full app-level path. This mirrors the
+   * canonical LinkedIn ACL idiom (e.g. {@code acl-tool ... --spiffe "application/<mp>/*"}) and
+   * ensures the prefix-walk-up is reachable from the production authentication path.
+   */
+  @Test
+  public void testA4_SpiffeCertResolvesViaPrefixWalkUpToDomainAuthInfo() throws Exception {
+    String[] paths = {
+        CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH,
+        CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-mp-grant",
+        CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-mp-grant/application",
+        CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/helix-mp-grant/application/helix-core"
+    };
+    for (String path : paths) {
+      zookeeperClientConnection.create(path, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+    }
+
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      // Cert's path-after-/v2/ is "application/helix-core/helix-controller/ltx1-tag" (4 segments),
+      // but the operator only registered the 2-segment leaf "application/helix-core". The walk-up
+      // must hit that prefix and grant the helix-mp-grant domain.
+      X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
+          "spiffe://prod.lipki/v2/application/helix-core/helix-controller/ltx1-tag");
+
+      X509ZNodeGroupAclProvider provider = new X509ZNodeGroupAclProvider(
+          new SpiffeAuthTestUtil.AcceptAllTrustManager(), new SpiffeAuthTestUtil.NoopKeyManager());
+
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{cert};
+
+      KeeperException.Code result = provider.handleAuthentication(
+          new ServerAuthenticationProvider.ServerObjs(zookeeperServer, cnxn), null);
+
+      Assert.assertEquals(KeeperException.Code.OK, result);
+
+      boolean foundDomain = cnxn.getAuthInfo().stream()
+          .anyMatch(id -> "x509".equals(id.getScheme()) && "helix-mp-grant".equals(id.getId()));
+      Assert.assertTrue(
+          "Expected (x509, helix-mp-grant) in authInfo via prefix walk-up; actual: " + cnxn.getAuthInfo(),
           foundDomain);
     } finally {
       SpiffeAuthTestUtil.clearSpiffeSystemProperties();

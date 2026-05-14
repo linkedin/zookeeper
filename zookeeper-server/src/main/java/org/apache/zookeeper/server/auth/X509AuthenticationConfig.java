@@ -109,8 +109,8 @@ public class X509AuthenticationConfig {
   private String clientCertIdSanExtractRegex;
   private int clientCertIdSanExtractMatcherGroupIndex = -1;
 
-  private Pattern spiffeSanMatchPattern;
-  private boolean spiffeSanMatchPatternLoaded = false;
+  private volatile Pattern spiffeSanMatchPattern;
+  private volatile boolean spiffeSanMatchPatternLoaded = false;
 
   // ZooKeeper server-side config properties for ZNode group ACL feature
 
@@ -196,6 +196,7 @@ public class X509AuthenticationConfig {
   private final Object crossDomainAccessDomainsLock = new Object();
   private final Object znodeGroupAclSuperUserIdsLock = new Object();
   private final Object allowedClientIdAsAclDomainsLock = new Object();
+  private final Object spiffeSanMatchPatternLock = new Object();
 
   // Setters for X509 properties
 
@@ -256,11 +257,18 @@ public class X509AuthenticationConfig {
 
   /**
    * Compiled SPIFFE SAN match pattern, or null if SPIFFE extraction is not configured.
-   * Loaded lazily from system properties on first access.
+   * Loaded lazily from system properties on first access using double-checked locking against
+   * {@code spiffeSanMatchPatternLock}, matching the pattern used by other lazy-loaded fields in
+   * this class (e.g. {@link #getAllowedClientIdAsAclDomains()}).
    */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Pattern getSpiffeSanMatchPattern() {
     if (!spiffeSanMatchPatternLoaded) {
-      setSpiffeSanMatchRegex(System.getProperty(SSL_X509_SPIFFE_SAN_MATCH_REGEX));
+      synchronized (spiffeSanMatchPatternLock) {
+        if (!spiffeSanMatchPatternLoaded) {
+          setSpiffeSanMatchRegex(System.getProperty(SSL_X509_SPIFFE_SAN_MATCH_REGEX));
+        }
+      }
     }
     return spiffeSanMatchPattern;
   }
