@@ -49,14 +49,16 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
     }
 
     @Test
-    public void testRealCertWithSpiffeV1UriSanFallsBackToSubjectDn() throws Exception {
+    public void testRealCertWithSpiffeV1WlUriSanIsExtracted() throws Exception {
         SpiffeAuthTestUtil.setSpiffeSystemProperties();
+        // v1 workload path "/v1/wl/<app-name>"; the "wl/" type prefix is stripped, principal is
+        // just the app-name.
         X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
                 "spiffe://prod.lipki/v1/wl/espresso-router");
 
         String id = runAuth(cert);
 
-        assertEquals(cert.getSubjectX500Principal().getName(), id);
+        assertEquals("espresso-router", id);
     }
 
     @Test

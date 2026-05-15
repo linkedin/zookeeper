@@ -137,16 +137,18 @@ public class X509AuthTest extends ZKTestCase {
   private static final String SPIFFE_V2_URI = "spiffe://prod.lipki/v2/application/espresso-router/espresso-router";
 
   @Test
-  public void testSpiffeV1FallsBackToDn() {
+  public void testSpiffeV1WlAuth() {
     SpiffeAuthTestUtil.setSpiffeSystemProperties();
     try {
+      // SPIFFE_V1_URI = "spiffe://prod.lipki/v1/wl/espresso-router"; the "wl/" type prefix is
+      // stripped, principal is just the app-name.
       TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_V1_URI);
       X509AuthenticationProvider provider = createProvider(spiffeCert);
       MockServerCnxn cnxn = new MockServerCnxn();
       cnxn.clientChain = new X509Certificate[]{spiffeCert};
 
       assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
-      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+      assertEquals("espresso-router", cnxn.getAuthInfo().get(0).getId());
     } finally {
       SpiffeAuthTestUtil.clearSpiffeSystemProperties();
     }
@@ -226,7 +228,7 @@ public class X509AuthTest extends ZKTestCase {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
         "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
-    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_V2_MATCH_REGEX);
+    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_MATCH_REGEX);
 
     try {
       TestCertificate urnCert = new TestCertificate("CLIENT", urnSan);
@@ -315,7 +317,7 @@ public class X509AuthTest extends ZKTestCase {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
         "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
-    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_V2_MATCH_REGEX);
+    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_MATCH_REGEX);
 
     try {
       TestCertificate mixedCert = new TestCertificate("CLIENT", Arrays.asList(urnSan, SPIFFE_V2_URI));

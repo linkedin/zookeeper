@@ -57,11 +57,16 @@ public class X509AuthenticationUtil extends X509Util {
   private static final Pattern SPIFFE_USER_IDENTITY_PATH_PATTERN =
       Pattern.compile("^/v\\d+/user(/.*)?$");
 
-  // Matches LISPIFFE v2 workload paths and captures the ILM UID (the path after "/v2/").
+  // Matches LISPIFFE v2 paths and captures the ILM UID (the path after "/v2/").
   // The canonical ILM v2 principal is the full path-after-v2 (e.g. "application/foo-mp/bar-app");
-  // ACL matching downstream is segment-prefix on this UID. v1 SPIFFE URIs are deliberately not
-  // matched here — they are a deprecated design with app-name collision across MPs.
+  // ACL matching downstream is segment-prefix on this UID.
   private static final Pattern SPIFFE_V2_PATH_PATTERN = Pattern.compile("^/v2/(.+)$");
+
+  // Matches LISPIFFE v1 workload paths (only "/v1/wl/..."; not "/v1/wf/..." workflow) and
+  // captures the app-name. Per LISPIFFE-ID spec, the v1 workload unique-identity is
+  // "wl/<app-name>"; we strip the "wl/" type prefix and return just the app-name as the
+  // principal, matching how legacy authZ systems handled v1 identities.
+  private static final Pattern SPIFFE_V1_WL_PATH_PATTERN = Pattern.compile("^/v1/wl/(.+)$");
 
   @Override
   protected String getConfigPrefix() {
@@ -168,15 +173,20 @@ public class X509AuthenticationUtil extends X509Util {
   }
 
   /**
-   * Attempt to extract a client identity from a LISPIFFE v2 URI SAN. Returns the ILM UID — the
-   * path segment after {@code /v2/} — e.g. {@code spiffe://prod.lipki/v2/application/foo-mp/bar-app}
-   * yields {@code application/foo-mp/bar-app}. ACL matching downstream is segment-prefix on this
-   * UID.
+   * Attempt to extract a client identity from a LISPIFFE URI SAN. Supported forms:
+   * <ul>
+   *   <li><b>v2</b> ({@code spiffe://<td>/v2/<path>}): principal is the full path-after-{@code /v2/}
+   *       (the ILM UID), e.g. {@code spiffe://prod.lipki/v2/application/foo-mp/bar-app} →
+   *       {@code application/foo-mp/bar-app}. ACL matching downstream is segment-prefix on the UID.</li>
+   *   <li><b>v1 workload</b> ({@code spiffe://<td>/v1/wl/<app-name>}): principal is just the
+   *       {@code <app-name>} (the "wl/" type prefix is stripped, matching how legacy authZ
+   *       handled v1 identities).</li>
+   * </ul>
    *
    * <p>Returns {@link Optional#empty()} when SPIFFE extraction is disabled, no URI SAN matches the
-   * configured regex, the matched URI is a v1 SPIFFE identity (deprecated; app-name collides
-   * across MPs), or the matched URI is a user identity ({@code /v<N>/user/...}, which must never
-   * be promoted to a service principal). Caller falls through to URN/DN extraction.
+   * configured regex, the matched URI is a user identity ({@code /v<N>/user/...}, which must
+   * never be promoted to a service principal), or the matched URI is a non-{v1/wl, v2} path
+   * (e.g. v1 workflow {@code /v1/wf/...}). Caller falls through to URN/DN extraction.
    *
    * @throws IllegalArgumentException if multiple URI SANs match the SPIFFE regex
    */
@@ -216,12 +226,16 @@ public class X509AuthenticationUtil extends X509Util {
       return Optional.empty();
     }
     Matcher v2Matcher = SPIFFE_V2_PATH_PATTERN.matcher(path);
-    if (!v2Matcher.matches()) {
-      LOG.debug("SPIFFE URI '{}' is not a v2 identity; falling through to URN/DN extraction.",
-          spiffeUri);
-      return Optional.empty();
+    if (v2Matcher.matches()) {
+      return Optional.of(v2Matcher.group(1));
     }
-    return Optional.of(v2Matcher.group(1));
+    Matcher v1WlMatcher = SPIFFE_V1_WL_PATH_PATTERN.matcher(path);
+    if (v1WlMatcher.matches()) {
+      return Optional.of(v1WlMatcher.group(1));
+    }
+    LOG.debug("SPIFFE URI '{}' is not a v1/wl or v2 identity; falling through to URN/DN extraction.",
+        spiffeUri);
+    return Optional.empty();
   }
 
   /**

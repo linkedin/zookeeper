@@ -86,16 +86,20 @@ public class X509AuthenticationConfig {
   public static final String SUBJECT_ALTERNATIVE_NAME_SHORT = "SAN";
 
   /**
-   * Regex to identify SPIFFE URI SANs (type 6). When set, URI SANs (type 6) matching this regex
-   * are treated as SPIFFE identities; the principal is the path after {@code /v2/} (the ILM UID).
-   * v1 SPIFFE URIs and user-identity URIs ({@code /v<N>/user/...}) are structurally rejected and
-   * fall through to URN/DN extraction regardless of this regex.
-   * If not set, SPIFFE extraction is disabled.
+   * Regex to identify SPIFFE URI SANs (type 6). When set, URI SANs matching this regex are
+   * treated as SPIFFE identities. The extractor accepts both:
+   * <ul>
+   *   <li><b>v2</b> ({@code /v2/<path>}): principal is the full ILM UID (path-after-{@code /v2/})</li>
+   *   <li><b>v1 workload</b> ({@code /v1/wl/<app-name>}): principal is just {@code <app-name>}
+   *       (the {@code wl/} type prefix is stripped)</li>
+   * </ul>
+   * User-identity URIs ({@code /v<N>/user/...}) and other non-{v1/wl,v2} paths fall through to
+   * URN/DN extraction regardless of this regex. If not set, SPIFFE extraction is disabled.
    *
-   * <p><b>Recommended:</b> constrain to a specific trust domain and require v2, e.g.
-   * {@code ^spiffe://prod\.lipki/v2/.*$}. A permissive regex like {@code ^spiffe://.*$} accepts
+   * <p><b>Recommended:</b> constrain to a specific trust domain, e.g.
+   * {@code ^spiffe://prod\.lipki/v[12]/.*$}. A permissive regex like {@code ^spiffe://.*$} accepts
    * SPIFFE URIs from any trust domain, relying on the upstream TLS trust manager alone to reject
-   * untrusted issuers; non-v2 URIs accepted by such a regex will still fall through.
+   * untrusted issuers.
    *
    * <p>ACL matching downstream is segment-prefix on the extracted UID; see
    * {@code X509AuthenticationUtil#matchAndExtractSpiffeSAN}.

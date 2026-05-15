@@ -41,8 +41,8 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 public final class SpiffeAuthTestUtil {
 
   public static final long ONE_DAY_MILLIS = 24L * 60 * 60 * 1000;
-  /** Match regex that accepts only v2 SPIFFE URIs (any trust domain). */
-  public static final String SPIFFE_V2_MATCH_REGEX = "^spiffe://.*/v2/.*$";
+  /** Match regex that accepts SPIFFE v1 and v2 URIs (any trust domain). */
+  public static final String SPIFFE_MATCH_REGEX = "^spiffe://.*/v[12]/.*$";
 
   private SpiffeAuthTestUtil() {
   }
@@ -56,7 +56,7 @@ public final class SpiffeAuthTestUtil {
   /** Configures SAN+SPIFFE-v2 extraction in the X509AuthenticationConfig singleton. */
   public static void setSpiffeSystemProperties() {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
-    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SPIFFE_V2_MATCH_REGEX);
+    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SPIFFE_MATCH_REGEX);
     X509AuthenticationConfig.reset();
   }
 
