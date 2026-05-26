@@ -29,7 +29,9 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.NoSuchAlgorithmException;
 import java.security.Security;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -118,11 +120,23 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
     public void testCreateSSLContextWithoutCustomProtocol() throws Exception {
         SSLContext sslContext = x509Util.getDefaultSSLContext();
         assertEquals(X509Util.DEFAULT_PROTOCOL, sslContext.getProtocol());
+
+        // Check that TLSv1.3 is selected on JDKs that support it (OpenJDK 8u272 and later).
+        List<String> supported = Arrays.asList(SSLContext.getDefault().getSupportedSSLParameters().getProtocols());
+        if (supported.contains(X509Util.TLS_1_3)) {
+            assertEquals(X509Util.TLS_1_3, sslContext.getProtocol());
+            List<String> protos = Arrays.asList(sslContext.getDefaultSSLParameters().getProtocols());
+            assertTrue(protos.contains(X509Util.TLS_1_2));
+            assertTrue(protos.contains(X509Util.TLS_1_3));
+        } else {
+            assertEquals(X509Util.TLS_1_2, sslContext.getProtocol());
+            assertArrayEquals(new String[]{X509Util.TLS_1_2}, sslContext.getDefaultSSLParameters().getProtocols());
+        }
     }
 
     @Test(timeout = 5000)
     public void testCreateSSLContextWithCustomProtocol() throws Exception {
-        final String protocol = "TLSv1.1";
+        final String protocol = X509Util.TLS_1_1;
         System.setProperty(x509Util.getSslProtocolProperty(), protocol);
         SSLContext sslContext = x509Util.getDefaultSSLContext();
         assertEquals(protocol, sslContext.getProtocol());
@@ -531,7 +545,9 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
     }
 
     // This test makes sure that client-initiated TLS renegotiation does not
-    // succeed. We explicitly disable it at the top of X509Util.java.
+    // succeed when using TLSv1.2. We explicitly disable it at the top of X509Util.java.
+    // Force TLSv1.2 since the renegotiation feature is not supported in TLSv1.3, which
+    // would make this test invalid when the JDK picks TLSv1.3 by default.
     @Test(expected = SSLHandshakeException.class)
     public void testClientRenegotiationFails() throws Throwable {
         int port = PortAssignment.unique();
@@ -549,6 +565,7 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
                 @Override
                 public SSLSocket call() throws Exception {
                     SSLSocket sslSocket = (SSLSocket) listeningSocket.accept();
+                    sslSocket.setEnabledProtocols(new String[]{X509Util.TLS_1_2});
                     sslSocket.addHandshakeCompletedListener(new HandshakeCompletedListener() {
                         @Override
                         public void handshakeCompleted(HandshakeCompletedEvent handshakeCompletedEvent) {
@@ -589,46 +606,6 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
             handshakeCompleted.await(5, TimeUnit.SECONDS);
             assertEquals(1, handshakesCompleted.get());
         }
-    }
-
-    @Test
-    public void testGetDefaultCipherSuitesJava8() {
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("1.8");
-        // Java 8 default should have the CBC suites first
-        assertTrue(cipherSuites[0].contains("CBC"));
-    }
-
-    @Test
-    public void testGetDefaultCipherSuitesJava9() {
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("9");
-        // Java 9+ default should have the GCM suites first
-        assertTrue(cipherSuites[0].contains("GCM"));
-    }
-
-    @Test
-    public void testGetDefaultCipherSuitesJava10() {
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("10");
-        // Java 9+ default should have the GCM suites first
-        assertTrue(cipherSuites[0].contains("GCM"));
-    }
-
-    @Test
-    public void testGetDefaultCipherSuitesJava11() {
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("11");
-        // Java 9+ default should have the GCM suites first
-        assertTrue(cipherSuites[0].contains("GCM"));
-    }
-
-    @Test
-    public void testGetDefaultCipherSuitesUnknownVersion() {
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("notaversion");
-        // If version can't be parsed, use the more conservative Java 8 default
-        assertTrue(cipherSuites[0].contains("CBC"));
-    }
-
-    @Test(expected = NullPointerException.class)
-    public void testGetDefaultCipherSuitesNullVersion() {
-        X509Util.getDefaultCipherSuitesForJavaVersion(null);
     }
 
     // Warning: this will reset the x509Util

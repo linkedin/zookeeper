@@ -1453,19 +1453,19 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     (Java system properties: **zookeeper.ssl.protocol** and **zookeeper.ssl.quorum.protocol**)
     **New in 3.5.5:**
     Specifies to protocol to be used in client and quorum TLS negotiation.
-    Default: TLSv1.2
+    Default: TLSv1.3 when the running JDK supports it, TLSv1.2 otherwise.
 
 * *ssl.enabledProtocols* and *ssl.quorum.enabledProtocols* :
     (Java system properties: **zookeeper.ssl.enabledProtocols** and **zookeeper.ssl.quorum.enabledProtocols**)
     **New in 3.5.5:**
     Specifies the enabled protocols in client and quorum TLS negotiation.
-    Default: value of `protocol` property
+    Default: when unset, the JDK's default enabled protocols for the configured `protocol` are used. On a JDK that supports TLSv1.3 this is `TLSv1.3, TLSv1.2`; otherwise it is `TLSv1.2`.
 
 * *ssl.ciphersuites* and *ssl.quorum.ciphersuites* :
     (Java system properties: **zookeeper.ssl.ciphersuites** and **zookeeper.ssl.quorum.ciphersuites**)
     **New in 3.5.5:**
     Specifies the enabled cipher suites to be used in client and quorum TLS negotiation.
-    Default: Enabled cipher suites depend on the Java runtime version being used.    
+    Default: when unset, the JDK's default cipher suites are used. This adapts automatically to the JDK in use and avoids freezing a cipher list that may not match the running JDK.
 
 * *ssl.context.supplier.class* and *ssl.quorum.context.supplier.class* :
     (Java system properties: **zookeeper.ssl.context.supplier.class** and **zookeeper.ssl.quorum.context.supplier.class**)
