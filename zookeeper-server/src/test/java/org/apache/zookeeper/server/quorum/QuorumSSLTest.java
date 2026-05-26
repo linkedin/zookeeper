@@ -56,6 +56,7 @@ import javax.net.ssl.SSLServerSocketFactory;
 import org.apache.zookeeper.PortAssignment;
 import org.apache.zookeeper.client.ZKClientConfig;
 import org.apache.zookeeper.common.QuorumX509Util;
+import org.apache.zookeeper.common.X509Util;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.test.ClientBase;
 import org.bouncycastle.asn1.ocsp.OCSPResponse;
@@ -879,7 +880,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
 
     @Test
     public void testProtocolVersion() throws Exception {
-        System.setProperty(quorumX509Util.getSslProtocolProperty(), "TLSv1.2");
+        System.setProperty(quorumX509Util.getSslProtocolProperty(), X509Util.TLS_1_2);
 
         q1 = new MainThread(1, clientPortQp1, quorumConfiguration, SSL_QUORUM_ENABLED);
         q2 = new MainThread(2, clientPortQp2, quorumConfiguration, SSL_QUORUM_ENABLED);
@@ -890,7 +891,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
         assertTrue(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp1, CONNECTION_TIMEOUT));
         assertTrue(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp2, CONNECTION_TIMEOUT));
 
-        System.setProperty(quorumX509Util.getSslProtocolProperty(), "TLSv1.1");
+        System.setProperty(quorumX509Util.getSslProtocolProperty(), X509Util.TLS_1_1);
 
         // This server should fail to join the quorum as it is not using TLSv1.2
         q3 = new MainThread(3, clientPortQp3, quorumConfiguration, SSL_QUORUM_ENABLED);
