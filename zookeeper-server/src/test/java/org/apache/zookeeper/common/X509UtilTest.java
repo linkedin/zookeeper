@@ -21,6 +21,7 @@ package org.apache.zookeeper.common;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -140,6 +141,19 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
         System.setProperty(x509Util.getSslProtocolProperty(), protocol);
         SSLContext sslContext = x509Util.getDefaultSSLContext();
         assertEquals(protocol, sslContext.getProtocol());
+    }
+
+    // Regression guard for ZOOKEEPER-4912: when ssl.ciphersuites is unset,
+    // SSLContextAndOptions.getCipherSuites() returns null and the constructor
+    // must null-guard cipherSuitesAsList. A regression that re-wrapped null
+    // via Arrays.asList(null) would NPE before the SSLContext is returned.
+    @Test(timeout = 5000)
+    public void testCreateSSLContextWithoutCipherSuites() throws Exception {
+        System.clearProperty(x509Util.getCipherSuitesProperty());
+        x509Util.close();
+        x509Util = new ClientX509Util();
+        SSLContext sslContext = x509Util.getDefaultSSLContext();
+        assertNotNull(sslContext);
     }
 
     @Test(timeout = 5000)
