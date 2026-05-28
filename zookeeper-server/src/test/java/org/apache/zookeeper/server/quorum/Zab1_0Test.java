@@ -829,9 +829,6 @@ public class Zab1_0Test extends ZKTestCase {
      */
     @Test
     public void testLeaderSkipsSnapshotWhenConfigured() throws Exception {
-        Socket[] pair = getSocketPair();
-        Socket leaderSocket = pair[0];
-        Socket followerSocket = pair[1];
         File tmpDir = File.createTempFile("test", "dir", testData);
         tmpDir.delete();
         tmpDir.mkdir();
@@ -852,14 +849,13 @@ public class Zab1_0Test extends ZKTestCase {
 
             File snapDir = new File(tmpDir, "version-2");
             long lastModBefore = getLatestSnapshotModTime(snapDir);
-            Thread.sleep(50);
+            // 1100ms covers HFS+ 1s mtime granularity on macOS dev hosts
+            Thread.sleep(1100);
 
             leadThread = new LeadThread(leader);
             leadThread.start();
 
-            while (leader.cnxAcceptor == null || !leader.cnxAcceptor.isAlive()) {
-                Thread.sleep(20);
-            }
+            waitForCnxAcceptor(leader);
 
             // The leader is now past loadData(). With skipSnapshot=true,
             // the snapshot file should NOT have been rewritten.
@@ -884,9 +880,6 @@ public class Zab1_0Test extends ZKTestCase {
      */
     @Test
     public void testLeaderTakesSnapshotByDefault() throws Exception {
-        Socket[] pair = getSocketPair();
-        Socket leaderSocket = pair[0];
-        Socket followerSocket = pair[1];
         File tmpDir = File.createTempFile("test", "dir", testData);
         tmpDir.delete();
         tmpDir.mkdir();
@@ -905,14 +898,12 @@ public class Zab1_0Test extends ZKTestCase {
 
             File snapDir = new File(tmpDir, "version-2");
             long lastModBefore = getLatestSnapshotModTime(snapDir);
-            Thread.sleep(50);
+            Thread.sleep(1100);
 
             leadThread = new LeadThread(leader);
             leadThread.start();
 
-            while (leader.cnxAcceptor == null || !leader.cnxAcceptor.isAlive()) {
-                Thread.sleep(20);
-            }
+            waitForCnxAcceptor(leader);
 
             // With skipSnapshot=false (default), the snapshot should have been rewritten
             long lastModAfter = getLatestSnapshotModTime(snapDir);
@@ -943,6 +934,44 @@ public class Zab1_0Test extends ZKTestCase {
             latest = Math.max(latest, f.lastModified());
         }
         return latest;
+    }
+
+    /**
+     * Poll for cnxAcceptor liveness with a deadline. Without the bound, a leader
+     * thread that dies in loadData() (e.g., snapshot IOException) would hang the
+     * test until JUnit times out the whole suite — slow + opaque failure mode.
+     */
+    private static void waitForCnxAcceptor(Leader leader) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (leader.cnxAcceptor == null || !leader.cnxAcceptor.isAlive()) {
+            if (System.currentTimeMillis() > deadline) {
+                fail("Leader did not start cnxAcceptor within 10s; loadData() may have failed");
+            }
+            Thread.sleep(20);
+        }
+    }
+
+    /**
+     * Regression guard for the follower path: the skipLeaderStartupSnapshot flag is
+     * leader-path only (read at Leader.java:590). The follower codepath
+     * (Learner.syncWithLeader) must not branch on it. Re-runs the standard follower
+     * DIFF-sync conversation with the flag globally enabled; if a future refactor
+     * leaks the flag into Learner / Follower, this test will diverge from
+     * testNormalFollowerRunWithDiff and flag the regression.
+     */
+    @Test
+    public void testFollowerPathUnaffectedBySkipFlag() throws Exception {
+        String prior = System.getProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+        System.setProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT, "true");
+        try {
+            testNormalFollowerRunWithDiff();
+        } finally {
+            if (prior == null) {
+                System.clearProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+            } else {
+                System.setProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT, prior);
+            }
+        }
     }
 
     @Test

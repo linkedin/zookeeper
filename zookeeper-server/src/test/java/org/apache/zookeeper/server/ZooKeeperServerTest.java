@@ -171,8 +171,8 @@ public class ZooKeeperServerTest extends ZKTestCase {
             ZooKeeperServer zks = createServerWithInitializedDb(tmpDir);
             File snapDir = new File(tmpDir, "version-2");
             long lastModBefore = getLatestSnapshotModTime(snapDir);
-            // Ensure filesystem timestamp granularity doesn't hide the write
-            Thread.sleep(50);
+            // 1100ms covers HFS+ 1s mtime granularity on macOS dev hosts (APFS/ext4 have finer)
+            Thread.sleep(1100);
 
             zks.loadData(false);
 
@@ -194,7 +194,7 @@ public class ZooKeeperServerTest extends ZKTestCase {
             ZooKeeperServer zks = createServerWithInitializedDb(tmpDir);
             File snapDir = new File(tmpDir, "version-2");
             long lastModBefore = getLatestSnapshotModTime(snapDir);
-            Thread.sleep(50);
+            Thread.sleep(1100);
 
             zks.loadData(true);
 
@@ -216,12 +216,42 @@ public class ZooKeeperServerTest extends ZKTestCase {
             ZooKeeperServer zks = createServerWithInitializedDb(tmpDir);
             File snapDir = new File(tmpDir, "version-2");
             long lastModBefore = getLatestSnapshotModTime(snapDir);
-            Thread.sleep(50);
+            Thread.sleep(1100);
 
             zks.loadData();
 
             long lastModAfter = getLatestSnapshotModTime(snapDir);
             assertTrue("No-arg loadData() should take snapshot (backward compatible)",
+                    lastModAfter > lastModBefore);
+        } finally {
+            ClientBase.recursiveDelete(tmpDir);
+        }
+    }
+
+    /**
+     * Verifies the loadData() call resolves to the snapshot-taking path
+     * when the upgrade-safety gate fires. Leader.lead() composes
+     *   zk.loadData(skipFlag && !zk.shouldForceWriteInitialSnapshotAfterLeaderElection())
+     * so when shouldForceWriteInitialSnapshotAfterLeaderElection() returns true
+     * (fresh ensemble post-upgrade per ZOOKEEPER-2678), the composition collapses
+     * to loadData(false) and a snapshot is written regardless of the skip flag.
+     * This test exercises that resolved call and verifies a snapshot is taken.
+     */
+    @Test
+    public void testLoadDataTakesSnapshotWhenForceWriteRequested() throws Exception {
+        File tmpDir = ClientBase.createTmpDir();
+        try {
+            ZooKeeperServer zks = createServerWithInitializedDb(tmpDir);
+            File snapDir = new File(tmpDir, "version-2");
+            long lastModBefore = getLatestSnapshotModTime(snapDir);
+            Thread.sleep(1100);
+
+            // Equivalent to the Leader.lead() composition when shouldForceWrite=true:
+            //   loadData(skipFlag=true && !shouldForceWrite=true) == loadData(false)
+            zks.loadData(false);
+
+            long lastModAfter = getLatestSnapshotModTime(snapDir);
+            assertTrue("Snapshot must be taken when the force-write safety gate fires",
                     lastModAfter > lastModBefore);
         } finally {
             ClientBase.recursiveDelete(tmpDir);

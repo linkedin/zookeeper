@@ -553,7 +553,9 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
         if (skipSnapshot) {
             LOG.info("Skipping startup snapshot (periodic snapshot will persist state). "
-                     + "Dead sessions cleaned: {}", deadSessions.size());
+                     + "lastProcessedZxid: 0x{}, dead sessions cleaned: {}",
+                     Long.toHexString(zkDb.getDataTreeLastProcessedZxid()),
+                     deadSessions.size());
         } else {
             // Make a clean snapshot
             takeSnapshot();

@@ -729,7 +729,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
      */
     public static final String SKIP_LEADER_STARTUP_SNAPSHOT =
             "zookeeper.leaderElection.skipStartupSnapshot";
-    private boolean skipLeaderStartupSnapshot =
+    private volatile boolean skipLeaderStartupSnapshot =
             Boolean.getBoolean(SKIP_LEADER_STARTUP_SNAPSHOT);
 
     /**
