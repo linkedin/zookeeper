@@ -107,4 +107,31 @@ public class QuorumPeerTest {
         assertFalse(peer.isLeader(localPeerId));
     }
 
+    @Test
+    public void testSkipLeaderStartupSnapshotDefaultsToFalse() throws Exception {
+        // Guard against test-ordering pollution: another test or a Surefire forked-JVM
+        // default could leave the property set. Clear it for this default-value assertion
+        // and restore on exit.
+        String prior = System.getProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+        System.clearProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+        try {
+            QuorumPeer peer = new QuorumPeer();
+            assertFalse("skipLeaderStartupSnapshot should default to false",
+                    peer.isSkipLeaderStartupSnapshot());
+        } finally {
+            if (prior != null) {
+                System.setProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT, prior);
+            }
+        }
+    }
+
+    @Test
+    public void testSkipLeaderStartupSnapshotSetterGetter() throws Exception {
+        QuorumPeer peer = new QuorumPeer();
+        peer.setSkipLeaderStartupSnapshot(true);
+        assertTrue(peer.isSkipLeaderStartupSnapshot());
+        peer.setSkipLeaderStartupSnapshot(false);
+        assertFalse(peer.isSkipLeaderStartupSnapshot());
+    }
+
 }

@@ -492,6 +492,28 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
      *  Restore sessions and data
      */
     public void loadData() throws IOException, InterruptedException {
+        loadData(false);
+    }
+
+    /**
+     * Restore sessions and data, optionally skipping the startup snapshot.
+     *
+     * During leader election, the synchronous snapshot in loadData() blocks
+     * quorum formation — on large ensembles (15M+ znodes) it takes 34-43s,
+     * which can exceed initLimit and cause repeated election failures.
+     * Skipping the snapshot is safe because:
+     * - Dead session cleanup (killSession) is idempotent on recovery
+     * - Follower sync uses the in-memory DataTree, not the disk snapshot
+     * - SyncRequestProcessor takes periodic snapshots after quorum forms
+     * - This matches the approach in ZOOKEEPER-1558 (branch-3.4, 2013)
+     *
+     * @param skipSnapshot if true, skip the startup snapshot. The periodic
+     *        snapshot mechanism in SyncRequestProcessor will persist state
+     *        after quorum is established and transactions begin flowing.
+     * @see <a href="https://issues.apache.org/jira/browse/ZOOKEEPER-1558">ZOOKEEPER-1558</a>
+     * @see <a href="https://issues.apache.org/jira/browse/ZOOKEEPER-4766">ZOOKEEPER-4766</a>
+     */
+    public void loadData(boolean skipSnapshot) throws IOException, InterruptedException {
         /*
          * When a new leader starts executing Leader#lead, it
          * invokes this method. The database, however, has been
@@ -529,8 +551,15 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             killSession(session, zkDb.getDataTreeLastProcessedZxid());
         }
 
-        // Make a clean snapshot
-        takeSnapshot();
+        if (skipSnapshot) {
+            LOG.info("Skipping startup snapshot (periodic snapshot will persist state). "
+                     + "lastProcessedZxid: 0x{}, dead sessions cleaned: {}",
+                     Long.toHexString(zkDb.getDataTreeLastProcessedZxid()),
+                     deadSessions.size());
+        } else {
+            // Make a clean snapshot
+            takeSnapshot();
+        }
     }
 
     public void takeSnapshot() {
