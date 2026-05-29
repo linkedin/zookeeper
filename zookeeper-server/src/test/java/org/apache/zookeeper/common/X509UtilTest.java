@@ -147,13 +147,25 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
     // SSLContextAndOptions.getCipherSuites() returns null and the constructor
     // must null-guard cipherSuitesAsList. A regression that re-wrapped null
     // via Arrays.asList(null) would NPE before the SSLContext is returned.
+    // Exercises both ClientX509Util (zookeeper.ssl.* prefix) and
+    // QuorumX509Util (zookeeper.ssl.quorum.* prefix) so the guard catches a
+    // future change to either subclass's config prefix or defaults path.
     @Test(timeout = 5000)
     public void testCreateSSLContextWithoutCipherSuites() throws Exception {
-        System.clearProperty(x509Util.getCipherSuitesProperty());
-        x509Util.close();
-        x509Util = new ClientX509Util();
-        SSLContext sslContext = x509Util.getDefaultSSLContext();
-        assertNotNull(sslContext);
+        X509Util[] utils = {new ClientX509Util(), new QuorumX509Util()};
+        try {
+            for (X509Util util : utils) {
+                x509TestContext.setSystemProperties(util, KeyStoreFileType.JKS, KeyStoreFileType.JKS);
+                System.clearProperty(util.getCipherSuitesProperty());
+                SSLContext sslContext = util.getDefaultSSLContext();
+                assertNotNull("SSLContext null for " + util.getClass().getSimpleName(), sslContext);
+                x509TestContext.clearSystemProperties(util);
+            }
+        } finally {
+            for (X509Util util : utils) {
+                util.close();
+            }
+        }
     }
 
     @Test(timeout = 5000)

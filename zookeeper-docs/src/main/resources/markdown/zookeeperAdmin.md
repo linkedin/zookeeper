@@ -1454,6 +1454,7 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     **New in 3.5.5:**
     Specifies to protocol to be used in client and quorum TLS negotiation.
     Default: TLSv1.3 when the running JDK supports it, TLSv1.2 otherwise.
+    Setting only this property selects the `SSLContext` protocol but does not by itself restrict the enabled-protocol set — the JDK's default enabled list for the chosen context applies. To pin an ensemble to a single TLS protocol (e.g. TLSv1.2 only), set `ssl.enabledProtocols` (or `ssl.quorum.enabledProtocols`) explicitly.
 
 * *ssl.enabledProtocols* and *ssl.quorum.enabledProtocols* :
     (Java system properties: **zookeeper.ssl.enabledProtocols** and **zookeeper.ssl.quorum.enabledProtocols**)

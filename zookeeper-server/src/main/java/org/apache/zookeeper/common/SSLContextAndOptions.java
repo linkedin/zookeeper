@@ -173,6 +173,9 @@ public class SSLContextAndOptions {
             // Use JDK defaults for enabled protocols:
             //   Protocol TLSv1.3 -> enabled protocols TLSv1.3 and TLSv1.2
             //   Protocol TLSv1.2 -> enabled protocols TLSv1.2
+            // Note: setting only ssl.protocol selects the SSLContext protocol but does
+            // not by itself restrict the enabled-protocol set. To strictly pin to a
+            // single protocol, the operator must set ssl.enabledProtocols explicitly.
             return sslContext.getDefaultSSLParameters().getProtocols();
         }
         return enabledProtocolsInput.split(",");
