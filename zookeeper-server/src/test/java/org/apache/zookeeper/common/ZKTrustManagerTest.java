@@ -72,7 +72,7 @@ public class ZKTrustManagerTest extends ZKTestCase {
     public static void createKeyPair() throws Exception {
         Security.addProvider(new BouncyCastleProvider());
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", BouncyCastleProvider.PROVIDER_NAME);
-        keyPairGenerator.initialize(4096);
+        keyPairGenerator.initialize(2048);
         keyPair = keyPairGenerator.genKeyPair();
     }
 
