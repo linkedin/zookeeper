@@ -377,7 +377,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
 
     private KeyPair createKeyPair() throws NoSuchProviderException, NoSuchAlgorithmException {
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", BouncyCastleProvider.PROVIDER_NAME);
-        keyPairGenerator.initialize(2048);
+        keyPairGenerator.initialize(4096);
         KeyPair keyPair = keyPairGenerator.genKeyPair();
         return keyPair;
     }
