@@ -136,8 +136,6 @@ public:
 
         assertCanNotWrite(zh, "/test");
 
-        zookeeper_close(zh);
-
         stopPeer();
     }
 
@@ -162,8 +160,6 @@ public:
         assertCanRead(zh, "/");
 
         assertCanNotWrite(zh, "/testSSL");
-
-        zookeeper_close(zh);
 
         stopPeer();
     }
