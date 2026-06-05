@@ -125,10 +125,6 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
     private static final char[] PASSWORD = "testpass".toCharArray();
     private static final String HOSTNAME = "localhost";
 
-    // Timeout used for negative checks where a server is expected to never come up. The full
-    // CONNECTION_TIMEOUT would otherwise be spent idle-waiting on each of these assertions.
-    private static final int SERVER_NOT_UP_TIMEOUT = 5000;
-
     private QuorumX509Util quorumX509Util;
 
     private MainThread q1;
@@ -480,7 +476,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
         q3 = new MainThread(3, clientPortQp3, quorumConfiguration);
         q3.start();
 
-        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, SERVER_NOT_UP_TIMEOUT));
+        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, CONNECTION_TIMEOUT));
     }
 
 
@@ -504,7 +500,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
         q3 = new MainThread(3, clientPortQp3, quorumConfiguration);
         q3.start();
 
-        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, SERVER_NOT_UP_TIMEOUT));
+        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, CONNECTION_TIMEOUT));
     }
 
 
@@ -766,7 +762,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
         System.setProperty(quorumX509Util.getSslKeystoreLocationProperty(), revokedInCRLKeystorePath);
         q3.start();
 
-        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, SERVER_NOT_UP_TIMEOUT));
+        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, CONNECTION_TIMEOUT));
     }
 
     @Test
@@ -836,7 +832,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
             System.setProperty(quorumX509Util.getSslKeystoreLocationProperty(), revokedInOCSPKeystorePath);
             q3.start();
 
-            assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, SERVER_NOT_UP_TIMEOUT));
+            assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, CONNECTION_TIMEOUT));
         } finally {
             ocspServer.stop(0);
         }
@@ -879,7 +875,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
         q3 = new MainThread(3, clientPortQp3, quorumConfiguration, SSL_QUORUM_ENABLED);
         q3.start();
 
-        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, SERVER_NOT_UP_TIMEOUT));
+        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, CONNECTION_TIMEOUT));
     }
 
     @Test
@@ -901,7 +897,7 @@ public class QuorumSSLTest extends QuorumPeerTestBase {
         q3 = new MainThread(3, clientPortQp3, quorumConfiguration, SSL_QUORUM_ENABLED);
         q3.start();
 
-        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, SERVER_NOT_UP_TIMEOUT));
+        assertFalse(ClientBase.waitForServerUp("127.0.0.1:" + clientPortQp3, CONNECTION_TIMEOUT));
     }
 
 }
