@@ -65,8 +65,10 @@ public class X509AuthenticationUtil extends X509Util {
   // Matches LISPIFFE v1 workload paths (only "/v1/wl/..."; not "/v1/wf/..." workflow) and
   // captures the app-name. Per LISPIFFE-ID spec, the v1 workload unique-identity is
   // "wl/<app-name>"; we strip the "wl/" type prefix and return just the app-name as the
-  // principal, matching how legacy authZ systems handled v1 identities.
-  private static final Pattern SPIFFE_V1_WL_PATH_PATTERN = Pattern.compile("^/v1/wl/(.+)$");
+  // principal, matching how legacy authZ systems handled v1 identities. The app-name is a
+  // single path segment (no "/"); a multi-segment value after "wl/" does not match here and
+  // falls through to URN/DN extraction instead of being misinterpreted as a single app-name.
+  private static final Pattern SPIFFE_V1_WL_PATH_PATTERN = Pattern.compile("^/v1/wl/([^/]+)$");
 
   @Override
   protected String getConfigPrefix() {

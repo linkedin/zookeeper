@@ -155,6 +155,26 @@ public class X509AuthTest extends ZKTestCase {
   }
 
   @Test
+  public void testSpiffeV1WlMultiSegmentFallsBackToDn() {
+    // v1/wl app-name must be a single path segment. A multi-segment value after "wl/" (e.g.
+    // "a/b") must NOT be accepted as a single app-name principal; it should fall through to
+    // URN (not configured) then to Subject DN.
+    String spiffeMultiSegmentUri = "spiffe://prod.lipki/v1/wl/a/b";
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", spiffeMultiSegmentUri);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
   public void testSpiffeV2Auth() {
     SpiffeAuthTestUtil.setSpiffeSystemProperties();
     try {
@@ -239,6 +259,78 @@ public class X509AuthTest extends ZKTestCase {
       assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
       // URN SAN doesn't match spiffe://, so falls through to URN extraction
       assertEquals("servicePrincipal(espresso-router", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX);
+      X509AuthenticationConfig.reset();
+    }
+  }
+
+  @Test
+  public void testUrnMatchRegexTooBroadWithGrestinMetadataSanFallsBackToDn() {
+    // Real Grestin-issued service certs carry TWO urn:li: URIs in the same cert:
+    // servicePrincipal(...) and servicePrincipalMetadata(...). A loose match regex like
+    // "^.*urn:li:.*$" matches BOTH, which findSingleMatchingSan() rejects (requires exactly one
+    // match), causing a fall back to Subject DN instead of the intended service principal.
+    String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;None;i001)";
+    String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX, "^.*urn:li:.*$");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+        "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+
+    try {
+      TestCertificate grestinCert = new TestCertificate("CLIENT",
+          Arrays.asList(servicePrincipalSan, servicePrincipalMetadataSan));
+      X509AuthenticationProvider provider = createProvider(grestinCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{grestinCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      // Multiple SAN matches -> extractor throws -> falls back to Subject DN.
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
+      X509AuthenticationConfig.reset();
+    }
+  }
+
+  @Test
+  public void testUrnMatchRegexAnchoredToServicePrincipalExtractsCorrectlyWithGrestinMetadataSan() {
+    // Same two-SAN Grestin-style cert as above, but with a properly anchored match regex
+    // (matching only servicePrincipal, not servicePrincipalMetadata). This is the
+    // production-correct configuration and must yield exactly one match, extracting the
+    // service principal even with SPIFFE support also configured alongside it.
+    String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;None;i001)";
+    String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX,
+        "^.*urn:li:servicePrincipal\\(.*$");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+        "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_MATCH_REGEX);
+
+    try {
+      TestCertificate grestinCert = new TestCertificate("CLIENT",
+          Arrays.asList(servicePrincipalSan, servicePrincipalMetadataSan));
+      X509AuthenticationProvider provider = createProvider(grestinCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{grestinCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("servicePrincipal(zk-test-client", cnxn.getAuthInfo().get(0).getId());
     } finally {
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
