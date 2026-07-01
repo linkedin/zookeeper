@@ -34,6 +34,13 @@ FQDN=`hostname -f`
 FQDN=${1:-$FQDN}
 FQDN=${FQDN:-"zookeeper.apache.org"}
 
+# An X.509 CommonName is limited to 64 characters (ASN.1 upper bound). Hosts with
+# long fully-qualified names -- e.g. Kubernetes pods or CI runners -- otherwise make
+# `openssl req` fail with "string too long:maxsize=64", which leaves no certificates
+# generated, so the test server never opens its secure port and the SSL client tests
+# hang. Truncate the CN to stay within the limit.
+FQDN=${FQDN:0:64}
+
 # Generate the root key
 openssl genrsa -out rootkey.pem 2048
 

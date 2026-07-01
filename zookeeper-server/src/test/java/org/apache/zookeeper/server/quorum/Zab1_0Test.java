@@ -822,6 +822,158 @@ public class Zab1_0Test extends ZKTestCase {
         });
     }
 
+    /**
+     * Test that leader election skips snapshot in loadData() when
+     * skipLeaderStartupSnapshot is enabled. This verifies the fix for
+     * ZOOKEEPER-4766: leader election time should not scale with tree size.
+     */
+    @Test
+    public void testLeaderSkipsSnapshotWhenConfigured() throws Exception {
+        File tmpDir = File.createTempFile("test", "dir", testData);
+        tmpDir.delete();
+        tmpDir.mkdir();
+        LeadThread leadThread = null;
+        Leader leader = null;
+        try {
+            QuorumPeer peer = createQuorumPeer(tmpDir);
+            // Enable skip-snapshot
+            peer.setSkipLeaderStartupSnapshot(true);
+
+            leader = createLeader(tmpDir, peer);
+            peer.leader = leader;
+
+            // Pre-initialize the database (as QuorumPeer.start() does before election).
+            // This ensures zkDb.isInitialized()==true so loadData() won't call
+            // loadDataBase() which itself creates an initial snapshot.
+            leader.zk.getZKDatabase().loadDataBase();
+
+            File snapDir = new File(tmpDir, "version-2");
+            long lastModBefore = getLatestSnapshotModTime(snapDir);
+            // 1100ms covers HFS+ 1s mtime granularity on macOS dev hosts
+            Thread.sleep(1100);
+
+            leadThread = new LeadThread(leader);
+            leadThread.start();
+
+            waitForCnxAcceptor(leader);
+
+            // The leader is now past loadData(). With skipSnapshot=true,
+            // the snapshot file should NOT have been rewritten.
+            long lastModAfter = getLatestSnapshotModTime(snapDir);
+            assertEquals("Snapshot should NOT be rewritten when skipLeaderStartupSnapshot=true",
+                    lastModBefore, lastModAfter);
+        } finally {
+            if (leader != null) {
+                leader.shutdown("end of test");
+            }
+            if (leadThread != null) {
+                leadThread.interrupt();
+                leadThread.join();
+            }
+            TestUtils.deleteFileRecursively(tmpDir);
+        }
+    }
+
+    /**
+     * Test that leader election DOES take snapshot when
+     * skipLeaderStartupSnapshot is disabled (default behavior).
+     */
+    @Test
+    public void testLeaderTakesSnapshotByDefault() throws Exception {
+        File tmpDir = File.createTempFile("test", "dir", testData);
+        tmpDir.delete();
+        tmpDir.mkdir();
+        LeadThread leadThread = null;
+        Leader leader = null;
+        try {
+            QuorumPeer peer = createQuorumPeer(tmpDir);
+            // Explicitly disable (default)
+            peer.setSkipLeaderStartupSnapshot(false);
+
+            leader = createLeader(tmpDir, peer);
+            peer.leader = leader;
+
+            // Pre-initialize the database (as QuorumPeer.start() does before election)
+            leader.zk.getZKDatabase().loadDataBase();
+
+            File snapDir = new File(tmpDir, "version-2");
+            long lastModBefore = getLatestSnapshotModTime(snapDir);
+            Thread.sleep(1100);
+
+            leadThread = new LeadThread(leader);
+            leadThread.start();
+
+            waitForCnxAcceptor(leader);
+
+            // With skipSnapshot=false (default), the snapshot should have been rewritten
+            long lastModAfter = getLatestSnapshotModTime(snapDir);
+            assertTrue("Snapshot should be rewritten when skipLeaderStartupSnapshot=false",
+                    lastModAfter > lastModBefore);
+        } finally {
+            if (leader != null) {
+                leader.shutdown("end of test");
+            }
+            if (leadThread != null) {
+                leadThread.interrupt();
+                leadThread.join();
+            }
+            TestUtils.deleteFileRecursively(tmpDir);
+        }
+    }
+
+    private static long getLatestSnapshotModTime(File dir) {
+        if (dir == null || !dir.exists()) {
+            return 0;
+        }
+        File[] snaps = dir.listFiles((d, name) -> name.startsWith("snapshot."));
+        if (snaps == null || snaps.length == 0) {
+            return 0;
+        }
+        long latest = 0;
+        for (File f : snaps) {
+            latest = Math.max(latest, f.lastModified());
+        }
+        return latest;
+    }
+
+    /**
+     * Poll for cnxAcceptor liveness with a deadline. Without the bound, a leader
+     * thread that dies in loadData() (e.g., snapshot IOException) would hang the
+     * test until JUnit times out the whole suite — slow + opaque failure mode.
+     */
+    private static void waitForCnxAcceptor(Leader leader) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (leader.cnxAcceptor == null || !leader.cnxAcceptor.isAlive()) {
+            if (System.currentTimeMillis() > deadline) {
+                fail("Leader did not start cnxAcceptor within 10s; loadData() may have failed");
+            }
+            Thread.sleep(20);
+        }
+    }
+
+    /**
+     * Regression guard for the follower path: the skipLeaderStartupSnapshot flag is
+     * leader-path only (read at Leader.java:590). The follower codepath
+     * (Learner.syncWithLeader) must not branch on it. Re-runs the standard follower
+     * DIFF-sync conversation with the flag globally enabled; if a future refactor
+     * leaks the flag into Learner / Follower, this test will diverge from
+     * testNormalFollowerRunWithDiff and flag the regression.
+     */
+    @Test
+    public void testFollowerPathUnaffectedBySkipFlag() throws Exception {
+        String prior = System.getProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+        System.setProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT, "true");
+        try {
+            testNormalFollowerRunWithDiff();
+        } finally {
+            if (prior == null) {
+                System.clearProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+            } else {
+                System.setProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT, prior);
+            }
+        }
+    }
+
     @Test
     public void testNormalRun() throws Exception {
         testLeaderConversation(new LeaderConversation() {
