@@ -50,6 +50,11 @@ public class X509AuthenticationUtil extends X509Util {
   public static final String SUPERUSER_AUTH_SCHEME = "super";
   public static final String X509_SCHEME = "x509";
 
+  // Matches any SPIFFE URI, regardless of trust domain or version. SPIFFE detection is always
+  // active — not gated behind operator config — and relies entirely on the TLS trust manager to
+  // reject certificates from untrusted issuers before this code is ever reached.
+  private static final Pattern SPIFFE_URI_PATTERN = Pattern.compile("^spiffe://.*$");
+
   // Matches LISPIFFE user-identity paths of the form "/v<N>/user" or "/v<N>/user/<rest>".
   // User-identity SPIFFE certs (issued to humans, not workloads) must NOT be promoted to a
   // service principal, otherwise a user credential would be granted service-level ACL access.
@@ -153,18 +158,23 @@ public class X509AuthenticationUtil extends X509Util {
    *         The clientId string is intended to be an URI for client and map the client to certain domain.
    */
   public static String getClientId(X509Certificate clientCert) {
+    // SPIFFE identity extraction always runs, regardless of clientCertIdType configuration —
+    // it is not a feature flag. Any URI SAN beginning with "spiffe://" is treated as a
+    // candidate; trust in the issuing CA/trust-domain is established upstream by the TLS
+    // handshake's trust manager, not by this method.
+    try {
+      Optional<String> spiffeId = X509AuthenticationUtil.matchAndExtractSpiffeSAN(clientCert);
+      if (spiffeId.isPresent()) {
+        LOG.debug("Extracted SPIFFE identity: {}", spiffeId.get());
+        return spiffeId.get();
+      }
+    } catch (Exception e) {
+      LOG.warn("Failed to extract SPIFFE identity from SAN. Falling through to legacy extraction.", e);
+    }
+
     String clientCertIdType = X509AuthenticationConfig.getInstance().getClientCertIdType();
     if (clientCertIdType != null && clientCertIdType
         .equalsIgnoreCase(X509AuthenticationConfig.SUBJECT_ALTERNATIVE_NAME_SHORT)) {
-      try {
-        Optional<String> spiffeId = X509AuthenticationUtil.matchAndExtractSpiffeSAN(clientCert);
-        if (spiffeId.isPresent()) {
-          LOG.debug("Extracted SPIFFE identity: {}", spiffeId.get());
-          return spiffeId.get();
-        }
-      } catch (Exception e) {
-        LOG.warn("Failed to extract SPIFFE identity from SAN. Falling through to URN-based extraction.", e);
-      }
       try {
         return X509AuthenticationUtil.matchAndExtractSAN(clientCert);
       } catch (Exception ce) {
@@ -175,7 +185,9 @@ public class X509AuthenticationUtil extends X509Util {
   }
 
   /**
-   * Attempt to extract a client identity from a LISPIFFE URI SAN. Supported forms:
+   * Attempt to extract a client identity from a LISPIFFE URI SAN. Always active — not gated
+   * behind any operator configuration. Any URI SAN beginning with {@code spiffe://} is treated
+   * as a candidate. Supported forms:
    * <ul>
    *   <li><b>v2</b> ({@code spiffe://<td>/v2/<path>}): principal is the full path-after-{@code /v2/}
    *       (the ILM UID), e.g. {@code spiffe://prod.lipki/v2/application/foo-mp/bar-app} →
@@ -185,21 +197,16 @@ public class X509AuthenticationUtil extends X509Util {
    *       handled v1 identities).</li>
    * </ul>
    *
-   * <p>Returns {@link Optional#empty()} when SPIFFE extraction is disabled, no URI SAN matches the
-   * configured regex, the matched URI is a user identity ({@code /v<N>/user/...}, which must
-   * never be promoted to a service principal), or the matched URI is a non-{v1/wl, v2} path
-   * (e.g. v1 workflow {@code /v1/wf/...}). Caller falls through to URN/DN extraction.
+   * <p>Returns {@link Optional#empty()} when no URI SAN begins with {@code spiffe://}, the
+   * matched URI is a user identity ({@code /v<N>/user/...}, which must never be promoted to a
+   * service principal), or the matched URI is a non-{v1/wl, v2} path (e.g. v1 workflow
+   * {@code /v1/wf/...}). Caller falls through to URN/DN extraction.
    *
-   * @throws IllegalArgumentException if multiple URI SANs match the SPIFFE regex
+   * @throws IllegalArgumentException if multiple URI SANs begin with {@code spiffe://}
    */
   private static Optional<String> matchAndExtractSpiffeSAN(X509Certificate clientCert)
       throws CertificateParsingException {
-    Pattern matchPattern = X509AuthenticationConfig.getInstance().getSpiffeSanMatchPattern();
-    if (matchPattern == null) {
-      return Optional.empty();
-    }
-
-    String spiffeUri = findSingleMatchingSan(clientCert, 6, matchPattern, "SPIFFE");
+    String spiffeUri = findSingleMatchingSan(clientCert, 6, SPIFFE_URI_PATTERN, "SPIFFE");
     if (spiffeUri == null) {
       return Optional.empty();
     }

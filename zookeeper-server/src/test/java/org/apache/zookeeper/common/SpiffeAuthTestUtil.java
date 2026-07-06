@@ -35,14 +35,16 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 /**
  * Test fixtures for SPIFFE-based authentication: BouncyCastle bootstrap, system-property
- * setup/teardown for the {@code spiffe.sanMatchRegex} config, real X509 client cert builder
- * with URI SANs, and stub TLS managers. Shared across SPIFFE auth tests.
+ * setup/teardown for SAN-based extraction, real X509 client cert builder with URI SANs, and stub
+ * TLS managers. Shared across SPIFFE auth tests.
+ *
+ * <p>Note: SPIFFE identity extraction itself is always active (not gated behind any config), so
+ * {@link #setSpiffeSystemProperties()} only needs to configure {@code clientCertIdType=SAN},
+ * which some tests in this suite also exercise for legacy URN fallback behavior.
  */
 public final class SpiffeAuthTestUtil {
 
   public static final long ONE_DAY_MILLIS = 24L * 60 * 60 * 1000;
-  /** Match regex that accepts SPIFFE v1 and v2 URIs (any trust domain). */
-  public static final String SPIFFE_MATCH_REGEX = "^spiffe://.*/v[12]/.*$";
 
   private SpiffeAuthTestUtil() {
   }
@@ -53,16 +55,14 @@ public final class SpiffeAuthTestUtil {
     }
   }
 
-  /** Configures SAN+SPIFFE-v2 extraction in the X509AuthenticationConfig singleton. */
+  /** Configures SAN-based extraction in the X509AuthenticationConfig singleton. */
   public static void setSpiffeSystemProperties() {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
-    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SPIFFE_MATCH_REGEX);
     X509AuthenticationConfig.reset();
   }
 
   public static void clearSpiffeSystemProperties() {
     System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
-    System.clearProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX);
     X509AuthenticationConfig.reset();
   }
 

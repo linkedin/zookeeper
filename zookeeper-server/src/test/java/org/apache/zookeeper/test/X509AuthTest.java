@@ -19,6 +19,7 @@
 package org.apache.zookeeper.test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import com.google.common.annotations.VisibleForTesting;
 import java.math.BigInteger;
 import java.net.Socket;
@@ -137,6 +138,66 @@ public class X509AuthTest extends ZKTestCase {
   private static final String SPIFFE_V2_URI = "spiffe://prod.lipki/v2/application/espresso-router/espresso-router";
 
   @Test
+  public void testSpiffeV1ExtractedWithoutAnyClientCertIdTypeConfigured() {
+    // Core "not a feature flag" guarantee: SPIFFE detection runs regardless of
+    // clientCertIdType. No system properties are set at all here (not even
+    // clientCertIdType=SAN) — the cert's spiffe:// URI SAN must still be recognized and
+    // extracted without any operator configuration.
+    assertNull("Test must start with no clientCertIdType configured",
+        System.getProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE));
+    try {
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_V1_URI);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("espresso-router", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      X509AuthenticationConfig.reset();
+    }
+  }
+
+  @Test
+  public void testSpiffeV2ExtractedWithoutAnyClientCertIdTypeConfigured() {
+    // Same guarantee as above, for the v2 (full ILM UID) form.
+    assertNull("Test must start with no clientCertIdType configured",
+        System.getProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE));
+    try {
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_V2_URI);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("application/espresso-router/espresso-router",
+          cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      X509AuthenticationConfig.reset();
+    }
+  }
+
+  @Test
+  public void testSpiffeV2UserIdentityRejectedWithoutAnyClientCertIdTypeConfigured() {
+    // Rejection of user identities must also hold with zero configuration — a human's SPIFFE
+    // cert must never be promoted to a service principal, feature flag or not.
+    String spiffeUserUri = "spiffe://prod.lipki/v2/user/alice";
+    assertNull("Test must start with no clientCertIdType configured",
+        System.getProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE));
+    try {
+      TestCertificate userCert = new TestCertificate("CLIENT", spiffeUserUri);
+      X509AuthenticationProvider provider = createProvider(userCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{userCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      X509AuthenticationConfig.reset();
+    }
+  }
+
+  @Test
   public void testSpiffeV1WlAuth() {
     SpiffeAuthTestUtil.setSpiffeSystemProperties();
     try {
@@ -210,7 +271,8 @@ public class X509AuthTest extends ZKTestCase {
 
   @Test
   public void testSpiffeNotConfiguredFallsBackToUrn() {
-    // SPIFFE regex NOT set — should fall through to URN-based SAN extraction
+    // Cert has a URN SAN (not a spiffe:// URI), so the always-on SPIFFE check finds no match and
+    // falls through to legacy URN-based SAN extraction.
     String urnSan = "urn:li:servicePrincipal(espresso-router;ei4;i001)";
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
@@ -218,7 +280,7 @@ public class X509AuthTest extends ZKTestCase {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
         "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
-    // SSL_X509_SPIFFE_SAN_MATCH_REGEX intentionally NOT set
+    // SPIFFE detection is always on (not config-gated); it simply finds no spiffe:// SAN here.
 
     try {
       TestCertificate urnCert = new TestCertificate("CLIENT", urnSan);
@@ -240,7 +302,7 @@ public class X509AuthTest extends ZKTestCase {
 
   @Test
   public void testSpiffeConfiguredButNoSpiffeSanFallsBackToUrn() {
-    // SPIFFE regex set, but cert has URN SAN (not SPIFFE) → SPIFFE returns empty → falls back to URN
+    // Cert has a URN SAN (not SPIFFE) → the always-on SPIFFE check returns empty → falls back to URN
     String urnSan = "urn:li:servicePrincipal(espresso-router;ei4;i001)";
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
@@ -248,7 +310,6 @@ public class X509AuthTest extends ZKTestCase {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
         "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
-    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_MATCH_REGEX);
 
     try {
       TestCertificate urnCert = new TestCertificate("CLIENT", urnSan);
@@ -265,7 +326,6 @@ public class X509AuthTest extends ZKTestCase {
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
-      System.clearProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX);
       X509AuthenticationConfig.reset();
     }
   }
@@ -320,7 +380,7 @@ public class X509AuthTest extends ZKTestCase {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
         "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
-    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_MATCH_REGEX);
+    // SPIFFE detection is always on; this cert has no spiffe:// SAN, so it's unaffected.
 
     try {
       TestCertificate grestinCert = new TestCertificate("CLIENT",
@@ -337,7 +397,6 @@ public class X509AuthTest extends ZKTestCase {
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
-      System.clearProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX);
       X509AuthenticationConfig.reset();
     }
   }
@@ -409,7 +468,7 @@ public class X509AuthTest extends ZKTestCase {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
         "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
-    System.setProperty(X509AuthenticationConfig.SSL_X509_SPIFFE_SAN_MATCH_REGEX, SpiffeAuthTestUtil.SPIFFE_MATCH_REGEX);
+    // SPIFFE detection is always on and is tried first, so it wins regardless of URN config.
 
     try {
       TestCertificate mixedCert = new TestCertificate("CLIENT", Arrays.asList(urnSan, SPIFFE_V2_URI));

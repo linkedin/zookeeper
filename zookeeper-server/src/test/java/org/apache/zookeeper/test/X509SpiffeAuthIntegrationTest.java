@@ -19,11 +19,13 @@
 package org.apache.zookeeper.test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import java.security.cert.X509Certificate;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.common.SpiffeAuthTestUtil;
 import org.apache.zookeeper.server.MockServerCnxn;
+import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
 import org.junit.After;
 import org.junit.BeforeClass;
@@ -64,6 +66,21 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
     @Test
     public void testRealCertWithSpiffeV2UriSanIsExtracted() throws Exception {
         SpiffeAuthTestUtil.setSpiffeSystemProperties();
+        X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
+                "spiffe://prod.lipki/v2/application/espresso-router/espresso-router");
+
+        String id = runAuth(cert);
+
+        assertEquals("application/espresso-router/espresso-router", id);
+    }
+
+    @Test
+    public void testRealCertWithSpiffeV2UriSanIsExtractedWithoutAnyConfiguration() throws Exception {
+        // Core "not a feature flag" guarantee, exercised against a real BouncyCastle-signed
+        // cert (not the hand-rolled mock in X509AuthTest): SPIFFE detection must succeed even
+        // with zero system properties set — not even clientCertIdType=SAN.
+        assertNull("Test must start with no clientCertIdType configured",
+                System.getProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE));
         X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
                 "spiffe://prod.lipki/v2/application/espresso-router/espresso-router");
 
