@@ -64,6 +64,44 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
     }
 
     @Test
+    public void testRealCertWithSpiffeV1ApplicationUriSanIsExtracted() throws Exception {
+        SpiffeAuthTestUtil.setSpiffeSystemProperties();
+        // LISPIFFE-ID spec §2.A: v1 also supports "application/<...>"; unlike "wl/", the type
+        // prefix is retained in the extracted principal.
+        X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
+                "spiffe://prod.lipki/v1/application/foo-mp/bar-app");
+
+        String id = runAuth(cert);
+
+        assertEquals("application/foo-mp/bar-app", id);
+    }
+
+    @Test
+    public void testRealCertWithSpiffeV1AirflowUriSanIsExtracted() throws Exception {
+        SpiffeAuthTestUtil.setSpiffeSystemProperties();
+        // LISPIFFE-ID spec §2.A: v1 also supports "airflow/<....>" for Airflow DAG workloads.
+        X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
+                "spiffe://prod.lipki/v1/airflow/my-dag");
+
+        String id = runAuth(cert);
+
+        assertEquals("airflow/my-dag", id);
+    }
+
+    @Test
+    public void testRealCertWithSpiffeV1WorkflowUriSanFallsBackToSubjectDn() throws Exception {
+        SpiffeAuthTestUtil.setSpiffeSystemProperties();
+        // v1 Flyte workflow ("wf/") remains out of scope for ZK and must fall through, even
+        // though "application/" and "airflow/" are now recognized.
+        X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
+                "spiffe://prod.lipki/v1/wf/some-workflow");
+
+        String id = runAuth(cert);
+
+        assertEquals(cert.getSubjectX500Principal().getName(), id);
+    }
+
+    @Test
     public void testRealCertWithSpiffeV2UriSanIsExtracted() throws Exception {
         SpiffeAuthTestUtil.setSpiffeSystemProperties();
         X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(

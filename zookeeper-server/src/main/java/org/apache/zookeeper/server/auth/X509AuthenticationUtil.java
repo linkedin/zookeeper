@@ -67,13 +67,21 @@ public class X509AuthenticationUtil extends X509Util {
   // ACL matching downstream is segment-prefix on this UID.
   private static final Pattern SPIFFE_V2_PATH_PATTERN = Pattern.compile("^/v2/(.+)$");
 
-  // Matches LISPIFFE v1 workload paths (only "/v1/wl/..."; not "/v1/wf/..." workflow) and
-  // captures the app-name. Per LISPIFFE-ID spec, the v1 workload unique-identity is
-  // "wl/<app-name>"; we strip the "wl/" type prefix and return just the app-name as the
-  // principal, matching how legacy authZ systems handled v1 identities. The app-name is a
-  // single path segment (no "/"); a multi-segment value after "wl/" does not match here and
-  // falls through to URN/DN extraction instead of being misinterpreted as a single app-name.
+  // Matches the legacy LISPIFFE v1 "wl/<app-name>" workload form and captures the app-name.
+  // Per LISPIFFE-ID spec, the v1 workload unique-identity is "wl/<app-name>"; we strip the
+  // "wl/" type prefix and return just the app-name as the principal, matching how legacy authZ
+  // systems handled v1 identities. The app-name is a single path segment (no "/"); a
+  // multi-segment value after "wl/" does not match here and falls through to URN/DN extraction
+  // instead of being misinterpreted as a single app-name.
   private static final Pattern SPIFFE_V1_WL_PATH_PATTERN = Pattern.compile("^/v1/wl/([^/]+)$");
+
+  // Matches the other LISPIFFE v1 workload sub-types (LISPIFFE-ID spec §2.A: "application/<...>"
+  // and "airflow/<....>", alongside "wl/"). Unlike "wl/", these keep their type prefix in the
+  // extracted principal (e.g. "/v1/application/foo-mp/bar-app" -> "application/foo-mp/bar-app"),
+  // matching how v2 identities are handled. Deliberately excludes "wf/" (v1 Flyte workflow),
+  // which is out of scope for ZK per PR #142 review discussion.
+  private static final Pattern SPIFFE_V1_WORKLOAD_PATH_PATTERN =
+      Pattern.compile("^/v1/(application|airflow)/(.+)$");
 
   @Override
   protected String getConfigPrefix() {
@@ -192,15 +200,21 @@ public class X509AuthenticationUtil extends X509Util {
    *   <li><b>v2</b> ({@code spiffe://<td>/v2/<path>}): principal is the full path-after-{@code /v2/}
    *       (the ILM UID), e.g. {@code spiffe://prod.lipki/v2/application/foo-mp/bar-app} →
    *       {@code application/foo-mp/bar-app}. ACL matching downstream is segment-prefix on the UID.</li>
-   *   <li><b>v1 workload</b> ({@code spiffe://<td>/v1/wl/<app-name>}): principal is just the
-   *       {@code <app-name>} (the "wl/" type prefix is stripped, matching how legacy authZ
+   *   <li><b>v1 workload, {@code wl} form</b> ({@code spiffe://<td>/v1/wl/<app-name>}): principal is
+   *       just the {@code <app-name>} (the "wl/" type prefix is stripped, matching how legacy authZ
    *       handled v1 identities).</li>
+   *   <li><b>v1 workload, {@code application}/{@code airflow} forms</b>
+   *       ({@code spiffe://<td>/v1/application/<path>} or {@code spiffe://<td>/v1/airflow/<path>}):
+   *       principal is the full path including the type prefix, e.g.
+   *       {@code spiffe://<td>/v1/application/foo-mp/bar-app} → {@code application/foo-mp/bar-app}
+   *       (see LISPIFFE-ID spec §2.A).</li>
    * </ul>
    *
    * <p>Returns {@link Optional#empty()} when no URI SAN begins with {@code spiffe://}, the
    * matched URI is a user identity ({@code /v<N>/user/...}, which must never be promoted to a
-   * service principal), or the matched URI is a non-{v1/wl, v2} path (e.g. v1 workflow
-   * {@code /v1/wf/...}). Caller falls through to URN/DN extraction.
+   * service principal), or the matched URI is a non-{v1 wl/application/airflow, v2} path (e.g.
+   * v1 Flyte workflow {@code /v1/wf/...}, out of scope for ZK). Caller falls through to URN/DN
+   * extraction.
    *
    * @throws IllegalArgumentException if multiple URI SANs begin with {@code spiffe://}
    */
@@ -242,8 +256,12 @@ public class X509AuthenticationUtil extends X509Util {
     if (v1WlMatcher.matches()) {
       return Optional.of(v1WlMatcher.group(1));
     }
-    LOG.debug("SPIFFE URI '{}' is not a v1/wl or v2 identity; falling through to URN/DN extraction.",
-        spiffeUri);
+    Matcher v1WorkloadMatcher = SPIFFE_V1_WORKLOAD_PATH_PATTERN.matcher(path);
+    if (v1WorkloadMatcher.matches()) {
+      return Optional.of(v1WorkloadMatcher.group(1) + "/" + v1WorkloadMatcher.group(2));
+    }
+    LOG.debug("SPIFFE URI '{}' is not a v1/wl, v1/application, v1/airflow, or v2 identity; "
+        + "falling through to URN/DN extraction.", spiffeUri);
     return Optional.empty();
   }
 

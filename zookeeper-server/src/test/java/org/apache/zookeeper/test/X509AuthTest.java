@@ -236,6 +236,64 @@ public class X509AuthTest extends ZKTestCase {
   }
 
   @Test
+  public void testSpiffeV1ApplicationAuth() {
+    // LISPIFFE-ID spec §2.A: v1 also supports "application/<...>" as a workload sub-type
+    // alongside "wl/". Unlike "wl/", the type prefix is retained in the extracted principal.
+    String spiffeV1ApplicationUri = "spiffe://prod.lipki/v1/application/foo-mp/bar-app";
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", spiffeV1ApplicationUri);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("application/foo-mp/bar-app", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
+  public void testSpiffeV1AirflowAuth() {
+    // LISPIFFE-ID spec §2.A: v1 also supports "airflow/<....>" for Airflow DAG workloads.
+    // Same retained-prefix principal semantics as "application/".
+    String spiffeV1AirflowUri = "spiffe://prod.lipki/v1/airflow/my-dag";
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", spiffeV1AirflowUri);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("airflow/my-dag", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
+  public void testSpiffeV1WorkflowFallsBackToDn() {
+    // v1 Flyte workflow ("wf/") remains explicitly out of scope for ZK (per PR #142 review
+    // discussion) and must still fall through to URN/DN, not be swept up by the new
+    // application/airflow handling.
+    String spiffeV1WorkflowUri = "spiffe://prod.lipki/v1/wf/some-workflow";
+    SpiffeAuthTestUtil.setSpiffeSystemProperties();
+    try {
+      TestCertificate spiffeCert = new TestCertificate("CLIENT", spiffeV1WorkflowUri);
+      X509AuthenticationProvider provider = createProvider(spiffeCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+  }
+
+  @Test
   public void testSpiffeV2Auth() {
     SpiffeAuthTestUtil.setSpiffeSystemProperties();
     try {
