@@ -18,11 +18,13 @@
 
 package org.apache.zookeeper.server.auth;
 
+import java.net.URI;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -47,6 +49,39 @@ public class X509AuthenticationUtil extends X509Util {
   // Super user Auth Id scheme
   public static final String SUPERUSER_AUTH_SCHEME = "super";
   public static final String X509_SCHEME = "x509";
+
+  // Matches any SPIFFE URI, regardless of trust domain or version. SPIFFE detection is always
+  // active — not gated behind operator config — and relies entirely on the TLS trust manager to
+  // reject certificates from untrusted issuers before this code is ever reached.
+  private static final Pattern SPIFFE_URI_PATTERN = Pattern.compile("^spiffe://.*$");
+
+  // Matches LISPIFFE user-identity paths of the form "/v<N>/user" or "/v<N>/user/<rest>".
+  // User-identity SPIFFE certs (issued to humans, not workloads) must NOT be promoted to a
+  // service principal, otherwise a user credential would be granted service-level ACL access.
+  // See LISPIFFE-ID spec: https://github.com/linkedin-multiproduct/gopki/blob/master/LISPIFFE-ID.md
+  private static final Pattern SPIFFE_USER_IDENTITY_PATH_PATTERN =
+      Pattern.compile("^/v\\d+/user(/.*)?$");
+
+  // Matches LISPIFFE v2 paths and captures the ILM UID (the path after "/v2/").
+  // The canonical ILM v2 principal is the full path-after-v2 (e.g. "application/foo-mp/bar-app");
+  // ACL matching downstream is segment-prefix on this UID.
+  private static final Pattern SPIFFE_V2_PATH_PATTERN = Pattern.compile("^/v2/(.+)$");
+
+  // Matches the legacy LISPIFFE v1 "wl/<app-name>" workload form and captures the app-name.
+  // Per LISPIFFE-ID spec, the v1 workload unique-identity is "wl/<app-name>"; we strip the
+  // "wl/" type prefix and return just the app-name as the principal, matching how legacy authZ
+  // systems handled v1 identities. The app-name is a single path segment (no "/"); a
+  // multi-segment value after "wl/" does not match here and falls through to URN/DN extraction
+  // instead of being misinterpreted as a single app-name.
+  private static final Pattern SPIFFE_V1_WL_PATH_PATTERN = Pattern.compile("^/v1/wl/([^/]+)$");
+
+  // Matches the other LISPIFFE v1 workload sub-types (LISPIFFE-ID spec §2.A: "application/<...>"
+  // and "airflow/<....>", alongside "wl/"). Unlike "wl/", these keep their type prefix in the
+  // extracted principal (e.g. "/v1/application/foo-mp/bar-app" -> "application/foo-mp/bar-app"),
+  // matching how v2 identities are handled. Deliberately excludes "wf/" (v1 Flyte workflow),
+  // which is out of scope for ZK per PR #142 review discussion.
+  private static final Pattern SPIFFE_V1_WORKLOAD_PATH_PATTERN =
+      Pattern.compile("^/v1/(application|airflow)/(.+)$");
 
   @Override
   protected String getConfigPrefix() {
@@ -131,6 +166,20 @@ public class X509AuthenticationUtil extends X509Util {
    *         The clientId string is intended to be an URI for client and map the client to certain domain.
    */
   public static String getClientId(X509Certificate clientCert) {
+    // SPIFFE identity extraction always runs, regardless of clientCertIdType configuration —
+    // it is not a feature flag. Any URI SAN beginning with "spiffe://" is treated as a
+    // candidate; trust in the issuing CA/trust-domain is established upstream by the TLS
+    // handshake's trust manager, not by this method.
+    try {
+      Optional<String> spiffeId = X509AuthenticationUtil.matchAndExtractSpiffeSAN(clientCert);
+      if (spiffeId.isPresent()) {
+        LOG.debug("Extracted SPIFFE identity: {}", spiffeId.get());
+        return spiffeId.get();
+      }
+    } catch (Exception e) {
+      LOG.warn("Failed to extract SPIFFE identity from SAN. Falling through to legacy extraction.", e);
+    }
+
     String clientCertIdType = X509AuthenticationConfig.getInstance().getClientCertIdType();
     if (clientCertIdType != null && clientCertIdType
         .equalsIgnoreCase(X509AuthenticationConfig.SUBJECT_ALTERNATIVE_NAME_SHORT)) {
@@ -140,8 +189,126 @@ public class X509AuthenticationUtil extends X509Util {
         LOG.warn("Failed to match and extract a client ID from SAN. Using Subject DN instead.", ce);
       }
     }
-    // return Subject DN by default
     return clientCert.getSubjectX500Principal().getName();
+  }
+
+  /**
+   * Attempt to extract a client identity from a LISPIFFE URI SAN. Always active — not gated
+   * behind any operator configuration. Any URI SAN beginning with {@code spiffe://} is treated
+   * as a candidate. Supported forms:
+   * <ul>
+   *   <li><b>v2</b> ({@code spiffe://<td>/v2/<path>}): principal is the full path-after-{@code /v2/}
+   *       (the ILM UID), e.g. {@code spiffe://prod.lipki/v2/application/foo-mp/bar-app} →
+   *       {@code application/foo-mp/bar-app}. ACL matching downstream is segment-prefix on the UID.</li>
+   *   <li><b>v1 workload, {@code wl} form</b> ({@code spiffe://<td>/v1/wl/<app-name>}): principal is
+   *       just the {@code <app-name>} (the "wl/" type prefix is stripped, matching how legacy authZ
+   *       handled v1 identities).</li>
+   *   <li><b>v1 workload, {@code application}/{@code airflow} forms</b>
+   *       ({@code spiffe://<td>/v1/application/<path>} or {@code spiffe://<td>/v1/airflow/<path>}):
+   *       principal is the full path including the type prefix, e.g.
+   *       {@code spiffe://<td>/v1/application/foo-mp/bar-app} → {@code application/foo-mp/bar-app}
+   *       (see LISPIFFE-ID spec §2.A).</li>
+   * </ul>
+   *
+   * <p>Returns {@link Optional#empty()} when no URI SAN begins with {@code spiffe://}, the
+   * matched URI is a user identity ({@code /v<N>/user/...}, which must never be promoted to a
+   * service principal), or the matched URI is a non-{v1 wl/application/airflow, v2} path (e.g.
+   * v1 Flyte workflow {@code /v1/wf/...}, out of scope for ZK). Caller falls through to URN/DN
+   * extraction.
+   *
+   * @throws IllegalArgumentException if multiple URI SANs begin with {@code spiffe://}
+   */
+  private static Optional<String> matchAndExtractSpiffeSAN(X509Certificate clientCert)
+      throws CertificateParsingException {
+    String spiffeUri = findSingleMatchingSan(clientCert, 6, SPIFFE_URI_PATTERN, "SPIFFE");
+    if (spiffeUri == null) {
+      return Optional.empty();
+    }
+
+    String path;
+    try {
+      // getRawPath() returns the literal (un-percent-decoded) path so the principal we accept is
+      // exactly what the CA validated in the SAN. getPath() would decode %2F → /, allowing a
+      // single-segment SAN like /v2/foo%2Fbar to be promoted to a multi-segment principal that
+      // could collide with an unrelated registered identity. Reject any path containing % to
+      // also block encoded "user" bypass (e.g. /v2/%75ser/alice).
+      path = URI.create(spiffeUri).getRawPath();
+    } catch (IllegalArgumentException e) {
+      LOG.debug("Malformed SPIFFE URI '{}'; falling through to URN/DN extraction.", spiffeUri);
+      return Optional.empty();
+    }
+    if (path == null) {
+      return Optional.empty();
+    }
+    if (path.indexOf('%') >= 0) {
+      LOG.debug("Rejecting SPIFFE URI with percent-encoded path '{}'; falling through.", spiffeUri);
+      return Optional.empty();
+    }
+    if (SPIFFE_USER_IDENTITY_PATH_PATTERN.matcher(path).matches()) {
+      LOG.debug("Rejecting SPIFFE user identity '{}' for service-principal extraction.", spiffeUri);
+      return Optional.empty();
+    }
+    Matcher v2Matcher = SPIFFE_V2_PATH_PATTERN.matcher(path);
+    if (v2Matcher.matches()) {
+      return Optional.of(v2Matcher.group(1));
+    }
+    Matcher v1WlMatcher = SPIFFE_V1_WL_PATH_PATTERN.matcher(path);
+    if (v1WlMatcher.matches()) {
+      return Optional.of(v1WlMatcher.group(1));
+    }
+    Matcher v1WorkloadMatcher = SPIFFE_V1_WORKLOAD_PATH_PATTERN.matcher(path);
+    if (v1WorkloadMatcher.matches()) {
+      return Optional.of(v1WorkloadMatcher.group(1) + "/" + v1WorkloadMatcher.group(2));
+    }
+    LOG.debug("SPIFFE URI '{}' is not a v1/wl, v1/application, v1/airflow, or v2 identity; "
+        + "falling through to URN/DN extraction.", spiffeUri);
+    return Optional.empty();
+  }
+
+  /**
+   * Returns the single SAN value of the given type whose value matches the regex, or null if
+   * there are zero matches. Throws if there are multiple matches (callers always want exactly one).
+   */
+  private static String findSingleMatchingSan(X509Certificate cert, int sanType, Pattern pattern,
+      String matchKind) throws CertificateParsingException {
+    String found = null;
+    Collection<List<?>> sans = cert.getSubjectAlternativeNames();
+    if (sans == null) {
+      return null;
+    }
+    for (List<?> san : sans) {
+      if (!Integer.valueOf(sanType).equals(san.get(0))) {
+        continue;
+      }
+      String value = san.get(1).toString();
+      if (!pattern.matcher(value).find()) {
+        continue;
+      }
+      if (found != null) {
+        String errStr = "Expected exactly 1 " + matchKind + " SAN but found more than 1. "
+            + "Please fix the match regex so exactly one match is found.";
+        LOG.error(errStr);
+        throw new IllegalArgumentException(errStr);
+      }
+      found = value;
+    }
+    return found;
+  }
+
+  /**
+   * Applies an extract regex to a SAN value and returns the captured group.
+   *
+   * @throws IllegalArgumentException if the regex does not match.
+   */
+  private static String applyExtractRegex(Pattern extractPattern, String value, int groupIndex) {
+    Matcher matcher = extractPattern.matcher(value);
+    if (!matcher.find()) {
+      String errStr = "Failed to extract identity from '" + value
+          + "' using regex '" + extractPattern.pattern() + "'";
+      LOG.error(errStr);
+      throw new IllegalArgumentException(errStr);
+    }
+    return matcher.group(groupIndex);
   }
 
   /**
@@ -204,18 +371,8 @@ public class X509AuthenticationUtil extends X509Util {
       throw new IllegalArgumentException(errStr);
     }
 
-    // Extract a substring from the found match using extractRegex
-    Pattern extractPattern = Pattern.compile(extractRegex);
-    Matcher matcher = extractPattern.matcher(matched.iterator().next().get(1).toString());
-    if (matcher.find()) {
-      // If extractMatcherGroupIndex is not given, return the 1st index by default
-      String result = matcher.group(extractMatcherGroupIndex);
-      LOG.debug("Returning extracted client ID: {} using Matcher group index: {}", result, extractMatcherGroupIndex);
-      return result;
-    }
-    String errStr = "Failed to find an extract substring to determine client ID. Please review the extract regex.";
-    LOG.error(errStr);
-    throw new IllegalArgumentException(errStr);
+    return applyExtractRegex(Pattern.compile(extractRegex),
+        matched.iterator().next().get(1).toString(), extractMatcherGroupIndex);
   }
 
   /**
