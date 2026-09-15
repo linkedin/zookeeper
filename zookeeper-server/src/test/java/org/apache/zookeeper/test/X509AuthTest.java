@@ -204,14 +204,11 @@ public class X509AuthTest extends ZKTestCase {
 
   @Test
   public void testUrnServicePrincipalAutoExtractedWithoutConfig() {
-    // A pre-SPIFFE Grestin cert carrying only "urn:li:servicePrincipal(<name>;...)" -- with NO
-    // clientCertIdType/clientCertIdSanExtractRegex configured at all -- must still resolve to
-    // the bare <name>, automatically, matching the SPIFFE v1/wl equivalent's bare principal.
-    String servicePrincipalSan = "urn:li:servicePrincipal(kafka;ei4;i001)";
-    TestCertificate grestinCert = new TestCertificate("CLIENT", servicePrincipalSan);
-    X509AuthenticationProvider provider = createProvider(grestinCert);
+    String servicePrincipalSan = "urn:li:servicePrincipal(kafka;region1;instance1)";
+    TestCertificate serviceCert = new TestCertificate("CLIENT", servicePrincipalSan);
+    X509AuthenticationProvider provider = createProvider(serviceCert);
     MockServerCnxn cnxn = new MockServerCnxn();
-    cnxn.clientChain = new X509Certificate[]{grestinCert};
+    cnxn.clientChain = new X509Certificate[]{serviceCert};
 
     assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
     assertEquals("kafka", cnxn.getAuthInfo().get(0).getId());
@@ -219,18 +216,13 @@ public class X509AuthTest extends ZKTestCase {
 
   @Test
   public void testUrnServicePrincipalAutoExtractionSkipsSiblingMetadataSan() {
-    // Same two-SAN Grestin-style cert used in the dual-SAN tests above (servicePrincipal +
-    // servicePrincipalMetadata), but with NO config set. Unlike a hand-authored match regex
-    // (which can accidentally match both SANs, see testUrnMatchRegexTooBroad... above), the
-    // built-in pattern is anchored to literal "servicePrincipal(" so it matches exactly one SAN
-    // and is unaffected by the sibling metadata SAN.
-    String servicePrincipalSan = "urn:li:servicePrincipal(kafka;ei4;i001)";
+    String servicePrincipalSan = "urn:li:servicePrincipal(kafka;region1;instance1)";
     String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
-    TestCertificate grestinCert = new TestCertificate("CLIENT",
+    TestCertificate serviceCert = new TestCertificate("CLIENT",
         Arrays.asList(servicePrincipalSan, servicePrincipalMetadataSan));
-    X509AuthenticationProvider provider = createProvider(grestinCert);
+    X509AuthenticationProvider provider = createProvider(serviceCert);
     MockServerCnxn cnxn = new MockServerCnxn();
-    cnxn.clientChain = new X509Certificate[]{grestinCert};
+    cnxn.clientChain = new X509Certificate[]{serviceCert};
 
     assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
     assertEquals("kafka", cnxn.getAuthInfo().get(0).getId());
@@ -238,12 +230,8 @@ public class X509AuthTest extends ZKTestCase {
 
   @Test
   public void testUrnServicePrincipalAutoExtractionDoesNotOverrideConfiguredSanExtraction() {
-    // Backward compatibility: a cluster that already has clientCertIdType=SAN configured (e.g.
-    // with a hand-authored extractRegex that intentionally keeps the "servicePrincipal(" prefix,
-    // as in testUrnMatchRegexAnchoredToServicePrincipalExtractsCorrectlyWithGrestinMetadataSan
-    // above) must keep getting its configured result. The new automatic fallback must only run
-    // when clientCertIdType=SAN was never configured, or its extraction failed.
-    String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;None;i001)";
+    // Automatic URN extraction must not override an explicitly configured identity format.
+    String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;region1;instance1)";
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX,
@@ -253,14 +241,12 @@ public class X509AuthTest extends ZKTestCase {
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
 
     try {
-      TestCertificate grestinCert = new TestCertificate("CLIENT", servicePrincipalSan);
-      X509AuthenticationProvider provider = createProvider(grestinCert);
+      TestCertificate serviceCert = new TestCertificate("CLIENT", servicePrincipalSan);
+      X509AuthenticationProvider provider = createProvider(serviceCert);
       MockServerCnxn cnxn = new MockServerCnxn();
-      cnxn.clientChain = new X509Certificate[]{grestinCert};
+      cnxn.clientChain = new X509Certificate[]{serviceCert};
 
       assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
-      // Configured extraction still wins -- keeps the "servicePrincipal(" prefix, unchanged from
-      // pre-existing behavior. NOT "zk-test-client".
       assertEquals("servicePrincipal(zk-test-client", cnxn.getAuthInfo().get(0).getId());
     } finally {
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
@@ -274,8 +260,6 @@ public class X509AuthTest extends ZKTestCase {
 
   @Test
   public void testUrnServicePrincipalAutoExtractionSkippedWhenNoMatchingSan() {
-    // Sanity check: a cert with no urn:li:servicePrincipal(...) SAN at all (default TEST_SAN_STR)
-    // and no config set must fall all the way through to Subject DN, unchanged from before.
     TestCertificate certWithoutUrnSan = new TestCertificate("CLIENT");
     X509AuthenticationProvider provider = createProvider(certWithoutUrnSan);
     MockServerCnxn cnxn = new MockServerCnxn();

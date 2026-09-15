@@ -83,13 +83,7 @@ public class X509AuthenticationUtil extends X509Util {
   private static final Pattern SPIFFE_V1_WORKLOAD_PATH_PATTERN =
       Pattern.compile("^/v1/(application|airflow)/(.+)$");
 
-  // Matches LinkedIn's legacy Grestin-issued "urn:li:servicePrincipal(<name>;<fabric>;<instance>)"
-  // URI SAN and captures just <name>. Recognized automatically -- not gated behind
-  // clientCertIdType/clientCertIdSanExtractRegex config -- so a pre-SPIFFE cert resolves to the
-  // same bare principal as its SPIFFE v1/wl equivalent (see SPIFFE_V1_WL_PATH_PATTERN), without
-  // requiring every cluster to hand-author a matching extract regex. Anchored to literal
-  // "servicePrincipal(" (not e.g. "[a-z]+Principal(") so a sibling SAN on the same cert, such as
-  // "urn:li:servicePrincipalMetadata(...)", is never mistaken for the identity SAN.
+  // Require "(" immediately after "servicePrincipal" so metadata SANs do not match.
   private static final Pattern URN_SERVICE_PRINCIPAL_PATTERN =
       Pattern.compile("^urn:li:servicePrincipal\\(([^;)]+)");
 
@@ -193,11 +187,8 @@ public class X509AuthenticationUtil extends X509Util {
     String clientCertIdType = X509AuthenticationConfig.getInstance().getClientCertIdType();
     if (clientCertIdType != null && clientCertIdType
         .equalsIgnoreCase(X509AuthenticationConfig.SUBJECT_ALTERNATIVE_NAME_SHORT)) {
-      // clientCertIdType=SAN is an explicit operator configuration (match/extract regex tuned
-      // to their own SAN layout); on failure it has always fallen straight to Subject DN, and
-      // that contract is preserved as-is here -- the automatic urn:li:servicePrincipal(...)
-      // fallback below intentionally does NOT get a second try after a configured failure, to
-      // avoid silently changing the resolved identity for clusters that already tuned this.
+      // Preserve configured extraction and its Subject DN fallback; do not retry with
+      // automatic URN extraction if the configured regex fails.
       try {
         return X509AuthenticationUtil.matchAndExtractSAN(clientCert);
       } catch (Exception ce) {
@@ -206,12 +197,8 @@ public class X509AuthenticationUtil extends X509Util {
       }
     }
 
-    // DEPEND-89163 follow-up: recognize LinkedIn's legacy urn:li:servicePrincipal(<name>;...) SAN
-    // automatically, so a pre-SPIFFE Grestin cert resolves to the same bare principal as its
-    // SPIFFE v1/wl equivalent, without requiring a per-cluster clientCertIdSanExtractRegex. Only
-    // reached when clientCertIdType=SAN was never configured -- this preserves existing behavior
-    // for clusters that already rely on a configured extractRegex (e.g. one that intentionally
-    // keeps the "servicePrincipal(" prefix, or that falls back to DN on a misconfigured regex).
+    // Without configured SAN extraction, normalize service-principal URNs to the same
+    // bare application name used by SPIFFE v1/wl identities.
     try {
       Optional<String> urnServicePrincipalId =
           X509AuthenticationUtil.matchAndExtractUrnServicePrincipalSAN(clientCert);
@@ -300,19 +287,11 @@ public class X509AuthenticationUtil extends X509Util {
   }
 
   /**
-   * Attempt to extract a client identity from a legacy Grestin-issued
-   * {@code urn:li:servicePrincipal(<name>;...)} URI SAN. Recognized automatically -- not gated
-   * behind any operator configuration -- so a pre-SPIFFE cert already carrying this SAN
-   * resolves to the same bare {@code <name>} principal as its SPIFFE v1/wl equivalent (see
-   * {@link #matchAndExtractSpiffeSAN}), without requiring a per-cluster
-   * {@code clientCertIdSanExtractRegex}.
+   * Extract the application name from a {@code urn:li:servicePrincipal(<name>;...)} URI SAN.
    *
-   * <p>Returns {@link Optional#empty()} when no URI SAN begins with literal
-   * {@code urn:li:servicePrincipal(} -- notably, a sibling SAN such as
-   * {@code urn:li:servicePrincipalMetadata(...)} does not match, since the pattern requires
-   * {@code (} to immediately follow {@code servicePrincipal}. Caller falls through to Subject DN.
+   * @return the extracted name, or {@link Optional#empty()} if no matching SAN is present
    *
-   * @throws IllegalArgumentException if multiple URI SANs begin with {@code urn:li:servicePrincipal(}
+   * @throws IllegalArgumentException if multiple service-principal SANs match
    */
   private static Optional<String> matchAndExtractUrnServicePrincipalSAN(X509Certificate clientCert)
       throws CertificateParsingException {
