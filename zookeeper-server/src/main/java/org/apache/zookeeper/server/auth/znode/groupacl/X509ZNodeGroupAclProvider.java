@@ -30,6 +30,7 @@ import org.apache.zookeeper.common.ZKConfig;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.ZooKeeperServer;
+import org.apache.zookeeper.server.auth.LegacyServicePrincipalMatcher;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
@@ -98,6 +99,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     try {
       X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
     } catch (KeeperException.AuthFailedException e) {
+      cnxn.setX509ClientIdentity(null);
       return KeeperException.Code.AUTHFAILED;
     } catch (Exception e) {
       // Failed to extract clientId from certificate
@@ -122,7 +124,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   public boolean matches(ServerObjs serverObjs, MatchValues matchValues) {
     // Not checking for super user here because the check is already covered
     // in checkAcl() in ZookeeperServer.class
-    return matchValues.getId().equals(matchValues.getAclExpr());
+    return matchValues.getId().equals(matchValues.getAclExpr())
+        || LegacyServicePrincipalMatcher.matchesAuthenticatedClient(
+            serverObjs == null ? null : serverObjs.getCnxn(), matchValues.getId(), matchValues.getAclExpr());
   }
 
   @Override
@@ -171,12 +175,14 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
           helper.setDomainAuthUpdater((cnxn, ignoredMap) -> {
             try {
               ClientIdentity identity = X509AuthenticationUtil.getClientId(cnxn, trustManager);
+              cnxn.setX509ClientIdentity(identity);
               assignAuthInfo(cnxn, identity.getId(),
                   helper.getDomains(identity.getCertificateType(), identity.getId()));
             } catch (UnsupportedOperationException unsupportedEx) {
               LOG.info("Cannot update AuthInfo for session 0x{} since the operation is not supported.",
                   Long.toHexString(cnxn.getSessionId()));
             } catch (KeeperException.AuthFailedException authEx) {
+              cnxn.setX509ClientIdentity(null);
               LOG.error("Failed to authenticate session 0x{} for AuthInfo update. Revoking all of its ZNodeGroupAcl AuthInfo.",
                   Long.toHexString(cnxn.getSessionId()), authEx);
               try {

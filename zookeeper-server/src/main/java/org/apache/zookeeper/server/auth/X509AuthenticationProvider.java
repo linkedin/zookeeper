@@ -28,6 +28,7 @@ import org.apache.zookeeper.common.X509Exception.TrustManagerException;
 import org.apache.zookeeper.common.ZKConfig;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.ServerCnxn;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,10 +92,13 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         try {
             clientCert = X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
         } catch (KeeperException.AuthFailedException e) {
+            cnxn.setX509ClientIdentity(null);
             return KeeperException.Code.AUTHFAILED;
         }
 
-        String clientId = X509AuthenticationUtil.getClientId(clientCert).getId();
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(clientCert);
+        cnxn.setX509ClientIdentity(identity);
+        String clientId = identity.getId();
 
         if (clientId.equals(System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER))) {
             cnxn.addAuthInfo(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));
@@ -116,6 +120,12 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         }
 
         return id.equals(aclExpr);
+    }
+
+    @Override
+    public boolean matches(ServerCnxn cnxn, String id, String aclExpr) {
+        return matches(id, aclExpr)
+            || LegacyServicePrincipalMatcher.matchesAuthenticatedClient(cnxn, id, aclExpr);
     }
 
     @Override

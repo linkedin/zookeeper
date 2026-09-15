@@ -63,6 +63,14 @@ public interface AuthenticationProvider {
     boolean matches(String id, String aclExpr);
 
     /**
+     * Connection-aware matching for providers that need authenticated connection context.
+     * Existing providers retain their string-only matching behavior.
+     */
+    default boolean matches(ServerCnxn cnxn, String id, String aclExpr) {
+        return matches(id, aclExpr);
+    }
+
+    /**
      * This method is used to check if the authentication done by this provider
      * should be used to identify the creator of a node. Some ids such as hosts
      * and ip addresses are rather transient and in general don't really

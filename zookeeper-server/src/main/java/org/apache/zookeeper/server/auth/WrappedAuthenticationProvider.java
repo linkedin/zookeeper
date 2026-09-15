@@ -55,11 +55,12 @@ class WrappedAuthenticationProvider extends ServerAuthenticationProvider {
     /**
      * {@inheritDoc}
      *
-     * forwards to older method {@link #matches(String, String)}
+     * forwards connection context while preserving legacy providers' default behavior
      */
     @Override
     public boolean matches(ServerObjs serverObjs, MatchValues matchValues) {
-        return implementation.matches(matchValues.getId(), matchValues.getAclExpr());
+        ServerCnxn cnxn = serverObjs == null ? null : serverObjs.getCnxn();
+        return implementation.matches(cnxn, matchValues.getId(), matchValues.getAclExpr());
     }
 
     @Override
