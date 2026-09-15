@@ -49,6 +49,9 @@ import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.server.MockServerCnxn;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.CertificateType;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -203,7 +206,7 @@ public class X509AuthTest extends ZKTestCase {
   }
 
   @Test
-  public void testUrnServicePrincipalAutoExtractedWithoutConfig() {
+  public void testUrnWithoutSanConfigurationKeepsSubjectDn() {
     String servicePrincipalSan = "urn:li:servicePrincipal(kafka;region1;instance1)";
     TestCertificate serviceCert = new TestCertificate("CLIENT", servicePrincipalSan);
     X509AuthenticationProvider provider = createProvider(serviceCert);
@@ -211,11 +214,14 @@ public class X509AuthTest extends ZKTestCase {
     cnxn.clientChain = new X509Certificate[]{serviceCert};
 
     assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
-    assertEquals("kafka", cnxn.getAuthInfo().get(0).getId());
+    assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    ClientIdentity identity = X509AuthenticationUtil.getClientId(serviceCert);
+    assertEquals(CertificateType.SUBJECT_DN, identity.getCertificateType());
+    assertEquals("CN=CLIENT", identity.getId());
   }
 
   @Test
-  public void testUrnServicePrincipalAutoExtractionSkipsSiblingMetadataSan() {
+  public void testUrnWithMetadataWithoutSanConfigurationKeepsSubjectDn() {
     String servicePrincipalSan = "urn:li:servicePrincipal(kafka;region1;instance1)";
     String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
     TestCertificate serviceCert = new TestCertificate("CLIENT",
@@ -225,12 +231,13 @@ public class X509AuthTest extends ZKTestCase {
     cnxn.clientChain = new X509Certificate[]{serviceCert};
 
     assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
-    assertEquals("kafka", cnxn.getAuthInfo().get(0).getId());
+    assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    assertEquals(CertificateType.SUBJECT_DN,
+        X509AuthenticationUtil.getClientId(serviceCert).getCertificateType());
   }
 
   @Test
-  public void testUrnServicePrincipalAutoExtractionDoesNotOverrideConfiguredSanExtraction() {
-    // Automatic URN extraction must not override an explicitly configured identity format.
+  public void testClientIdentityPreservesConfiguredSanExtraction() {
     String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;region1;instance1)";
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
     System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
@@ -248,6 +255,9 @@ public class X509AuthTest extends ZKTestCase {
 
       assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
       assertEquals("servicePrincipal(zk-test-client", cnxn.getAuthInfo().get(0).getId());
+      ClientIdentity identity = X509AuthenticationUtil.getClientId(serviceCert);
+      assertEquals(CertificateType.LEGACY_SAN, identity.getCertificateType());
+      assertEquals("servicePrincipal(zk-test-client", identity.getId());
     } finally {
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
       System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
@@ -259,7 +269,7 @@ public class X509AuthTest extends ZKTestCase {
   }
 
   @Test
-  public void testUrnServicePrincipalAutoExtractionSkippedWhenNoMatchingSan() {
+  public void testClientIdentityPreservesSubjectDn() {
     TestCertificate certWithoutUrnSan = new TestCertificate("CLIENT");
     X509AuthenticationProvider provider = createProvider(certWithoutUrnSan);
     MockServerCnxn cnxn = new MockServerCnxn();
@@ -267,6 +277,8 @@ public class X509AuthTest extends ZKTestCase {
 
     assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
     assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    assertEquals(CertificateType.SUBJECT_DN,
+        X509AuthenticationUtil.getClientId(certWithoutUrnSan).getCertificateType());
   }
 
   protected static class TestPublicKey implements PublicKey {

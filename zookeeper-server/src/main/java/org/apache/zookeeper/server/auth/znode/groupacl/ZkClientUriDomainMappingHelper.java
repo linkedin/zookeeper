@@ -26,6 +26,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.ZooDefs;
@@ -34,6 +36,7 @@ import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.CertificateType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,6 +77,10 @@ import org.slf4j.LoggerFactory;
 public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHelper {
 
   private static final Logger LOG = LoggerFactory.getLogger(ZkClientUriDomainMappingHelper.class);
+
+  // Accept the legacy truncated name, a closed principal, or a complete service-principal URN.
+  private static final Pattern LEGACY_SERVICE_PRINCIPAL_PATTERN =
+      Pattern.compile("^(?:urn:li:)?servicePrincipal\\(([^();/]+)(?:\\)|;[^()/]*\\))?$");
 
   private final ZooKeeperServer zks;
   private final String rootPath;
@@ -199,6 +206,15 @@ public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHel
    */
   @Override
   public Set<String> getDomains(String clientUri) {
+    return getDomains(null, clientUri);
+  }
+
+  /**
+   * After exact lookup, only SPIFFE v1/wl identities may match the application name in
+   * a legacy service-principal znode. Other types retain the existing exact/prefix lookup.
+   */
+  @Override
+  public Set<String> getDomains(CertificateType certificateType, String clientUri) {
     if (clientUri == null) {
       return Collections.emptySet();
     }
@@ -209,6 +225,16 @@ public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHel
     Set<String> exact = map.get(clientUri);
     if (exact != null) {
       return exact;
+    }
+    if (certificateType == CertificateType.SPIFFE_V1_WL) {
+      Set<String> domains = new HashSet<>();
+      for (Map.Entry<String, Set<String>> entry : map.entrySet()) {
+        Matcher matcher = LEGACY_SERVICE_PRINCIPAL_PATTERN.matcher(entry.getKey());
+        if (matcher.matches() && clientUri.equals(matcher.group(1))) {
+          domains.addAll(entry.getValue());
+        }
+      }
+      return domains.isEmpty() ? Collections.emptySet() : domains;
     }
     if (clientUri.indexOf('/') < 0) {
       return Collections.emptySet();

@@ -27,6 +27,9 @@ import org.apache.zookeeper.common.SpiffeAuthTestUtil;
 import org.apache.zookeeper.server.MockServerCnxn;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.CertificateType;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -50,6 +53,55 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
     @After
     public void tearDown() {
         SpiffeAuthTestUtil.clearSpiffeSystemProperties();
+    }
+
+    @Test
+    public void testCertificateTypesPreserveOriginalClientIds() throws Exception {
+        String[] paths = {
+                "/v1/wl/kafka",
+                "/v1/application/example-mp/kafka",
+                "/v1/airflow/example-dag",
+                "/v2/application/example-mp/kafka",
+                "/v2/kafka",
+                "/v2/group/kafka",
+                "/v1/user/kafka",
+                "/v2/user/kafka",
+                "/v1/wl/kafka/extra",
+                "/v2/%75ser/kafka"
+        };
+        CertificateType[] types = {
+                CertificateType.SPIFFE_V1_WL,
+                CertificateType.SPIFFE_V1_WORKLOAD,
+                CertificateType.SPIFFE_V1_WORKLOAD,
+                CertificateType.SPIFFE_V2,
+                CertificateType.SPIFFE_V2,
+                CertificateType.SPIFFE_V2,
+                CertificateType.SUBJECT_DN,
+                CertificateType.SUBJECT_DN,
+                CertificateType.SUBJECT_DN,
+                CertificateType.SUBJECT_DN
+        };
+        String[] ids = {
+                "kafka",
+                "application/example-mp/kafka",
+                "airflow/example-dag",
+                "application/example-mp/kafka",
+                "kafka",
+                "group/kafka",
+                "CN=test-client",
+                "CN=test-client",
+                "CN=test-client",
+                "CN=test-client"
+        };
+        for (int i = 0; i < paths.length; i++) {
+            X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
+                    "spiffe://example.org" + paths[i]);
+            ClientIdentity identity = X509AuthenticationUtil.getClientId(cert);
+
+            assertEquals(paths[i], types[i], identity.getCertificateType());
+            assertEquals(paths[i], ids[i], identity.getId());
+            assertEquals(paths[i], ids[i], runAuth(cert));
+        }
     }
 
     @Test
@@ -242,6 +294,8 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
             String id = runAuth(cert);
 
             assertEquals("servicePrincipal(espresso-router", id);
+            assertEquals(CertificateType.LEGACY_SAN,
+                    X509AuthenticationUtil.getClientId(cert).getCertificateType());
         } finally {
             System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
             System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
@@ -283,6 +337,8 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
 
             // SPIFFE wins — path-after-/v2/, not the URN-derived legacy-app id.
             assertEquals("application/espresso-router/espresso-router", id);
+            assertEquals(CertificateType.SPIFFE_V2,
+                    X509AuthenticationUtil.getClientId(cert).getCertificateType());
         } finally {
             System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
             System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);

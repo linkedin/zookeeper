@@ -33,6 +33,7 @@ import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -169,8 +170,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
           // into the lambda is ignored — kept in the interface signature for backward compat.
           helper.setDomainAuthUpdater((cnxn, ignoredMap) -> {
             try {
-              String clientId = X509AuthenticationUtil.getClientId(cnxn, trustManager);
-              assignAuthInfo(cnxn, clientId, helper.getDomains(clientId));
+              ClientIdentity identity = X509AuthenticationUtil.getClientId(cnxn, trustManager);
+              assignAuthInfo(cnxn, identity.getId(),
+                  helper.getDomains(identity.getCertificateType(), identity.getId()));
             } catch (UnsupportedOperationException unsupportedEx) {
               LOG.info("Cannot update AuthInfo for session 0x{} since the operation is not supported.",
                   Long.toHexString(cnxn.getSessionId()));

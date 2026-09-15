@@ -94,7 +94,7 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
             return KeeperException.Code.AUTHFAILED;
         }
 
-        String clientId = X509AuthenticationUtil.getClientId(clientCert);
+        String clientId = X509AuthenticationUtil.getClientId(clientCert).getId();
 
         if (clientId.equals(System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER))) {
             cnxn.addAuthInfo(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));

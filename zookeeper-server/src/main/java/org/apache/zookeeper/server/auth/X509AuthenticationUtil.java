@@ -24,6 +24,7 @@ import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,6 +50,32 @@ public class X509AuthenticationUtil extends X509Util {
   // Super user Auth Id scheme
   public static final String SUPERUSER_AUTH_SCHEME = "super";
   public static final String X509_SCHEME = "x509";
+
+  public enum CertificateType {
+    SPIFFE_V1_WL,
+    SPIFFE_V1_WORKLOAD,
+    SPIFFE_V2,
+    LEGACY_SAN,
+    SUBJECT_DN
+  }
+
+  public static final class ClientIdentity {
+    private final CertificateType certificateType;
+    private final String id;
+
+    private ClientIdentity(CertificateType certificateType, String id) {
+      this.certificateType = Objects.requireNonNull(certificateType);
+      this.id = Objects.requireNonNull(id);
+    }
+
+    public CertificateType getCertificateType() {
+      return certificateType;
+    }
+
+    public String getId() {
+      return id;
+    }
+  }
 
   // Matches any SPIFFE URI, regardless of trust domain or version. SPIFFE detection is always
   // active — not gated behind operator config — and relies entirely on the TLS trust manager to
@@ -82,10 +109,6 @@ public class X509AuthenticationUtil extends X509Util {
   // which is out of scope for ZK per PR #142 review discussion.
   private static final Pattern SPIFFE_V1_WORKLOAD_PATH_PATTERN =
       Pattern.compile("^/v1/(application|airflow)/(.+)$");
-
-  // Require "(" immediately after "servicePrincipal" so metadata SANs do not match.
-  private static final Pattern URN_SERVICE_PRINCIPAL_PATTERN =
-      Pattern.compile("^urn:li:servicePrincipal\\(([^;)]+)");
 
   @Override
   protected String getConfigPrefix() {
@@ -164,20 +187,20 @@ public class X509AuthenticationUtil extends X509Util {
    *
    * @param clientCert Authenticated X509Certificate associated with the
    *                   remote host.
-   * @return Identifier string to be associated with the client.
+   * @return Certificate type and client identifier to be associated with the client.
    *         The clientId can be any string matched and extracted using regex from Subject Distinguished Name or
    *         Subject Alternative Name from x509 certificate.
    *         The clientId string is intended to be an URI for client and map the client to certain domain.
    */
-  public static String getClientId(X509Certificate clientCert) {
+  public static ClientIdentity getClientId(X509Certificate clientCert) {
     // SPIFFE identity extraction always runs, regardless of clientCertIdType configuration —
     // it is not a feature flag. Any URI SAN beginning with "spiffe://" is treated as a
     // candidate; trust in the issuing CA/trust-domain is established upstream by the TLS
     // handshake's trust manager, not by this method.
     try {
-      Optional<String> spiffeId = X509AuthenticationUtil.matchAndExtractSpiffeSAN(clientCert);
+      Optional<ClientIdentity> spiffeId = X509AuthenticationUtil.matchAndExtractSpiffeSAN(clientCert);
       if (spiffeId.isPresent()) {
-        LOG.debug("Extracted SPIFFE identity: {}", spiffeId.get());
+        LOG.debug("Extracted SPIFFE identity: {}", spiffeId.get().getId());
         return spiffeId.get();
       }
     } catch (Exception e) {
@@ -187,30 +210,14 @@ public class X509AuthenticationUtil extends X509Util {
     String clientCertIdType = X509AuthenticationConfig.getInstance().getClientCertIdType();
     if (clientCertIdType != null && clientCertIdType
         .equalsIgnoreCase(X509AuthenticationConfig.SUBJECT_ALTERNATIVE_NAME_SHORT)) {
-      // Preserve configured extraction and its Subject DN fallback; do not retry with
-      // automatic URN extraction if the configured regex fails.
       try {
-        return X509AuthenticationUtil.matchAndExtractSAN(clientCert);
+        return new ClientIdentity(CertificateType.LEGACY_SAN,
+            X509AuthenticationUtil.matchAndExtractSAN(clientCert));
       } catch (Exception ce) {
         LOG.warn("Failed to match and extract a client ID from SAN. Using Subject DN instead.", ce);
-        return clientCert.getSubjectX500Principal().getName();
       }
     }
-
-    // Without configured SAN extraction, normalize service-principal URNs to the same
-    // bare application name used by SPIFFE v1/wl identities.
-    try {
-      Optional<String> urnServicePrincipalId =
-          X509AuthenticationUtil.matchAndExtractUrnServicePrincipalSAN(clientCert);
-      if (urnServicePrincipalId.isPresent()) {
-        LOG.debug("Extracted URN service-principal identity: {}", urnServicePrincipalId.get());
-        return urnServicePrincipalId.get();
-      }
-    } catch (Exception e) {
-      LOG.warn("Failed to extract URN service-principal identity from SAN. Using Subject DN instead.", e);
-    }
-
-    return clientCert.getSubjectX500Principal().getName();
+    return new ClientIdentity(CertificateType.SUBJECT_DN, clientCert.getSubjectX500Principal().getName());
   }
 
   /**
@@ -239,7 +246,7 @@ public class X509AuthenticationUtil extends X509Util {
    *
    * @throws IllegalArgumentException if multiple URI SANs begin with {@code spiffe://}
    */
-  private static Optional<String> matchAndExtractSpiffeSAN(X509Certificate clientCert)
+  private static Optional<ClientIdentity> matchAndExtractSpiffeSAN(X509Certificate clientCert)
       throws CertificateParsingException {
     String spiffeUri = findSingleMatchingSan(clientCert, 6, SPIFFE_URI_PATTERN, "SPIFFE");
     if (spiffeUri == null) {
@@ -271,38 +278,19 @@ public class X509AuthenticationUtil extends X509Util {
     }
     Matcher v2Matcher = SPIFFE_V2_PATH_PATTERN.matcher(path);
     if (v2Matcher.matches()) {
-      return Optional.of(v2Matcher.group(1));
+      return Optional.of(new ClientIdentity(CertificateType.SPIFFE_V2, v2Matcher.group(1)));
     }
     Matcher v1WlMatcher = SPIFFE_V1_WL_PATH_PATTERN.matcher(path);
     if (v1WlMatcher.matches()) {
-      return Optional.of(v1WlMatcher.group(1));
+      return Optional.of(new ClientIdentity(CertificateType.SPIFFE_V1_WL, v1WlMatcher.group(1)));
     }
     Matcher v1WorkloadMatcher = SPIFFE_V1_WORKLOAD_PATH_PATTERN.matcher(path);
     if (v1WorkloadMatcher.matches()) {
-      return Optional.of(v1WorkloadMatcher.group(1) + "/" + v1WorkloadMatcher.group(2));
+      return Optional.of(new ClientIdentity(CertificateType.SPIFFE_V1_WORKLOAD,
+          v1WorkloadMatcher.group(1) + "/" + v1WorkloadMatcher.group(2)));
     }
     LOG.debug("SPIFFE URI '{}' is not a v1/wl, v1/application, v1/airflow, or v2 identity; "
         + "falling through to URN/DN extraction.", spiffeUri);
-    return Optional.empty();
-  }
-
-  /**
-   * Extract the application name from a {@code urn:li:servicePrincipal(<name>;...)} URI SAN.
-   *
-   * @return the extracted name, or {@link Optional#empty()} if no matching SAN is present
-   *
-   * @throws IllegalArgumentException if multiple service-principal SANs match
-   */
-  private static Optional<String> matchAndExtractUrnServicePrincipalSAN(X509Certificate clientCert)
-      throws CertificateParsingException {
-    String urn = findSingleMatchingSan(clientCert, 6, URN_SERVICE_PRINCIPAL_PATTERN, "URN service principal");
-    if (urn == null) {
-      return Optional.empty();
-    }
-    Matcher matcher = URN_SERVICE_PRINCIPAL_PATTERN.matcher(urn);
-    if (matcher.find()) {
-      return Optional.of(matcher.group(1));
-    }
     return Optional.empty();
   }
 
@@ -356,13 +344,13 @@ public class X509AuthenticationUtil extends X509Util {
    * Extract the authenticated client Id from the specified server connection object.
    * @param cnxn Server connection object that contains the certificate.
    * @param trustManager X509 TrustManager for authentication.
-   * @return Identifier string to be associated with the client.
+   * @return Certificate type and client identifier to be associated with the client.
    *         The clientId can be any string matched and extracted using regex from Subject Distinguished Name or
    *         Subject Alternative Name from x509 certificate.
    *         The clientId string is intended to be an URI for client and map the client to certain domain.
    * @throws KeeperException.AuthFailedException Failed to authenticate the client certificate
    */
-  public static String getClientId(ServerCnxn cnxn, X509TrustManager trustManager)
+  public static ClientIdentity getClientId(ServerCnxn cnxn, X509TrustManager trustManager)
       throws KeeperException.AuthFailedException {
     X509Certificate clientCert = X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
     return X509AuthenticationUtil.getClientId(clientCert);
