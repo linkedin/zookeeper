@@ -205,8 +205,9 @@ public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHel
   }
 
   /**
-   * After exact lookup, only SPIFFE v1/wl identities may match the application name in
-   * a legacy service-principal znode. Other types retain the existing exact/prefix lookup.
+   * After exact and segment-prefix lookup miss, SPIFFE v1/wl and v1/v2 application identities
+   * may match the application name in a legacy service-principal znode. Application paths must
+   * contain both MP and app segments, with an optional tag; other principal kinds are not aliases.
    */
   @Override
   public Set<String> getDomains(CertificateType certificateType, String clientUri) {
@@ -221,29 +222,33 @@ public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHel
     if (exact != null) {
       return exact;
     }
-    if (certificateType == CertificateType.SPIFFE_V1_WL) {
-      Set<String> domains = new HashSet<>();
-      for (Map.Entry<String, Set<String>> entry : map.entrySet()) {
-        if (LegacyServicePrincipalMatcher.matches(certificateType, clientUri, entry.getKey())) {
-          domains.addAll(entry.getValue());
+    Set<String> result = new HashSet<>();
+    if (clientUri.indexOf('/') >= 0) {
+      boolean prefixMatched = false;
+      String[] segments = clientUri.split("/");
+      StringBuilder prefix = new StringBuilder(clientUri.length());
+      for (int n = 1; n < segments.length; n++) {
+        if (n > 1) {
+          prefix.append('/');
+        }
+        prefix.append(segments[n - 1]);
+        Set<String> match = map.get(prefix.toString());
+        if (match != null) {
+          prefixMatched = true;
+          result.addAll(match);
         }
       }
-      return domains.isEmpty() ? Collections.emptySet() : domains;
-    }
-    if (clientUri.indexOf('/') < 0) {
-      return Collections.emptySet();
-    }
-    String[] segments = clientUri.split("/");
-    Set<String> result = new HashSet<>();
-    StringBuilder prefix = new StringBuilder(clientUri.length());
-    for (int n = 1; n < segments.length; n++) {
-      if (n > 1) {
-        prefix.append('/');
+      if (prefixMatched) {
+        return result.isEmpty() ? Collections.emptySet() : result;
       }
-      prefix.append(segments[n - 1]);
-      Set<String> match = map.get(prefix.toString());
-      if (match != null) {
-        result.addAll(match);
+    }
+    if (certificateType == CertificateType.SPIFFE_V1_WL
+        || certificateType == CertificateType.SPIFFE_V1_WORKLOAD
+        || certificateType == CertificateType.SPIFFE_V2) {
+      for (Map.Entry<String, Set<String>> entry : map.entrySet()) {
+        if (LegacyServicePrincipalMatcher.matches(certificateType, clientUri, entry.getKey())) {
+          result.addAll(entry.getValue());
+        }
       }
     }
     return result.isEmpty() ? Collections.emptySet() : result;

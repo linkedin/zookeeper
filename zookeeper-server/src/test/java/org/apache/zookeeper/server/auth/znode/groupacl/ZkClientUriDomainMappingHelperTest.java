@@ -341,7 +341,7 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
   }
 
   @Test
-  public void testA5_SpiffeWorkloadUsesLegacyMappingAndObservesUpdates() throws Exception {
+  public void testA5_SpiffeApplicationsUseLegacyMappingAndObserveUpdates() throws Exception {
     for (String path : new String[] {
         CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH,
         CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/broker-access",
@@ -349,27 +349,32 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
     }) {
       zookeeperClientConnection.create(path, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
     }
-    X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
-        "spiffe://example.org/v1/wl/kafka");
     X509ZNodeGroupAclProvider provider = new X509ZNodeGroupAclProvider(
         new SpiffeAuthTestUtil.AcceptAllTrustManager(), new SpiffeAuthTestUtil.NoopKeyManager());
-    MockServerCnxn cnxn = new MockServerCnxn();
-    cnxn.clientChain = new X509Certificate[]{cert};
-    ServerAuthenticationProvider.ServerObjs serverObjs =
-        new ServerAuthenticationProvider.ServerObjs(zookeeperServer, cnxn);
-
-    Assert.assertEquals(KeeperException.Code.OK, provider.handleAuthentication(serverObjs, null));
-    Assert.assertTrue(cnxn.getAuthInfo().contains(new Id("x509", "broker-access")));
-
     String mappingPath = CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/broker-access/servicePrincipal(kafka";
-    zookeeperClientConnection.delete(mappingPath, -1);
-    Assert.assertEquals(KeeperException.Code.OK, provider.handleAuthentication(serverObjs, null));
-    Assert.assertFalse(cnxn.getAuthInfo().contains(new Id("x509", "broker-access")));
-    Assert.assertTrue(cnxn.getAuthInfo().contains(new Id("x509", "kafka")));
+    for (String path : Arrays.asList(
+        "/v1/wl/kafka", "/v1/application/example-mp/kafka",
+        "/v2/application/example-mp/kafka", "/v2/application/example-mp/kafka/cluster-a")) {
+      X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans("spiffe://example.org" + path);
+      String clientId = path.equals("/v1/wl/kafka") ? "kafka" : path.substring("/v1/".length());
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{cert};
+      ServerAuthenticationProvider.ServerObjs serverObjs =
+          new ServerAuthenticationProvider.ServerObjs(zookeeperServer, cnxn);
 
-    zookeeperClientConnection.create(mappingPath, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-    Assert.assertEquals(KeeperException.Code.OK, provider.handleAuthentication(serverObjs, null));
-    Assert.assertTrue(cnxn.getAuthInfo().contains(new Id("x509", "broker-access")));
+      Assert.assertEquals(KeeperException.Code.OK, provider.handleAuthentication(serverObjs, null));
+      Assert.assertTrue(cnxn.getAuthInfo().contains(new Id("x509", "broker-access")));
+      Assert.assertEquals(clientId, cnxn.getX509ClientIdentity().getId());
+
+      zookeeperClientConnection.delete(mappingPath, -1);
+      Assert.assertEquals(KeeperException.Code.OK, provider.handleAuthentication(serverObjs, null));
+      Assert.assertFalse(cnxn.getAuthInfo().contains(new Id("x509", "broker-access")));
+      Assert.assertTrue(cnxn.getAuthInfo().contains(new Id("x509", clientId)));
+
+      zookeeperClientConnection.create(mappingPath, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+      Assert.assertEquals(KeeperException.Code.OK, provider.handleAuthentication(serverObjs, null));
+      Assert.assertTrue(cnxn.getAuthInfo().contains(new Id("x509", "broker-access")));
+    }
   }
 
   @Test
@@ -499,6 +504,13 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
 
     Assert.assertEquals(new HashSet<>(Arrays.asList("truncated-domain", "closed-domain", "urn-domain")),
         helper.getDomains(CertificateType.SPIFFE_V1_WL, "kafka"));
+    for (CertificateType type : Arrays.asList(
+        CertificateType.SPIFFE_V1_WORKLOAD, CertificateType.SPIFFE_V2)) {
+      for (String clientId : Arrays.asList("application/example-mp/kafka", "application/example-mp/kafka/cluster-a")) {
+        Assert.assertEquals(new HashSet<>(Arrays.asList("truncated-domain", "closed-domain", "urn-domain")),
+            helper.getDomains(type, clientId));
+      }
+    }
     Assert.assertEquals(Collections.singleton("truncated-domain"),
         helper.getDomains(CertificateType.LEGACY_SAN, "servicePrincipal(kafka"));
     Assert.assertEquals(Collections.singleton("urn-domain"),
@@ -525,10 +537,17 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
     Map<String, Set<String>> mapping = new HashMap<>();
     mapping.put("kafka", Collections.singleton("explicit-domain"));
     mapping.put("servicePrincipal(kafka", Collections.singleton("legacy-domain"));
+    mapping.put("application/example-mp", Collections.singleton("prefix-domain"));
+    mapping.put("application/example-mp/kafka", Collections.singleton("exact-domain"));
     setMapping(helper, mapping);
 
     Assert.assertEquals(Collections.singleton("explicit-domain"),
         helper.getDomains(CertificateType.SPIFFE_V1_WL, "kafka"));
+    for (CertificateType type : Arrays.asList(
+        CertificateType.SPIFFE_V1_WORKLOAD, CertificateType.SPIFFE_V2)) {
+      Assert.assertEquals(Collections.singleton("exact-domain"),
+          helper.getDomains(type, "application/example-mp/kafka"));
+    }
   }
 
   @Test
@@ -543,10 +562,63 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
         CertificateType.SPIFFE_V1_WORKLOAD, CertificateType.SPIFFE_V2)) {
       Assert.assertEquals(Collections.singleton("path-domain"),
           helper.getDomains(type, "application/example-mp/kafka"));
-      Assert.assertEquals(Collections.emptySet(),
+      Assert.assertEquals(Collections.singleton("legacy-domain"),
           helper.getDomains(type, "application/unrelated-mp/kafka"));
       Assert.assertEquals(Collections.emptySet(), helper.getDomains(type, "group/kafka"));
     }
+    mapping.put("application/example-mp/kafka", Collections.singleton("app-domain"));
+    for (CertificateType type : Arrays.asList(
+        CertificateType.SPIFFE_V1_WORKLOAD, CertificateType.SPIFFE_V2)) {
+      Assert.assertEquals(new HashSet<>(Arrays.asList("path-domain", "app-domain")),
+          helper.getDomains(type, "application/example-mp/kafka/cluster-a"));
+    }
+  }
+
+  @Test
+  public void testD_EmptyPrefixMappingDoesNotFallBackToLegacy() {
+    ZkClientUriDomainMappingHelper helper = new ZkClientUriDomainMappingHelper(zookeeperServer);
+    Map<String, Set<String>> mapping = new HashMap<>();
+    mapping.put("servicePrincipal(kafka", Collections.singleton("legacy-domain"));
+    mapping.put("application/example-mp", Collections.emptySet());
+    setMapping(helper, mapping);
+
+    for (CertificateType type : Arrays.asList(
+        CertificateType.SPIFFE_V1_WORKLOAD, CertificateType.SPIFFE_V2)) {
+      Assert.assertEquals(Collections.emptySet(), helper.getDomains(type, "application/example-mp/kafka"));
+    }
+  }
+
+  @Test
+  public void testD_ApplicationAliasesRequireCompleteApplicationPath() {
+    ZkClientUriDomainMappingHelper helper = new ZkClientUriDomainMappingHelper(zookeeperServer);
+    setMapping(helper, Collections.singletonMap("servicePrincipal(kafka", Collections.singleton("broker-access")));
+
+    for (CertificateType type : Arrays.asList(
+        CertificateType.SPIFFE_V1_WORKLOAD, CertificateType.SPIFFE_V2)) {
+      for (String clientId : Arrays.asList(
+          "application", "application/kafka", "application/kafka/", "application//kafka",
+          "application/example-mp/kafka/", "application/example-mp/kafka//cluster-a",
+          "application/example-mp/kafka/tag/extra", "application/kafka/other",
+          "application/example-mp/other/kafka", "application/example-mp/kafka-extra",
+          "application/example-mp/Kafka", "application/example-mp/%6bafka",
+          "Application/example-mp/kafka", "workload/example-mp/kafka",
+          "airflow/kafka", "group/kafka", "user/kafka", "group/application/example-mp/kafka")) {
+        Assert.assertEquals(type + ": " + clientId, Collections.emptySet(), helper.getDomains(type, clientId));
+      }
+    }
+  }
+
+  @Test
+  public void testD_ApplicationAliasesRequireSpiffeCertificateType() {
+    ZkClientUriDomainMappingHelper helper = new ZkClientUriDomainMappingHelper(zookeeperServer);
+    setMapping(helper, Collections.singletonMap("servicePrincipal(kafka", Collections.singleton("broker-access")));
+
+    for (CertificateType type : Arrays.asList(
+        CertificateType.SPIFFE_V1_WL, CertificateType.LEGACY_SAN, CertificateType.SUBJECT_DN)) {
+      Assert.assertEquals(type.name(), Collections.emptySet(),
+          helper.getDomains(type, "application/example-mp/kafka"));
+    }
+    Assert.assertEquals(Collections.emptySet(), helper.getDomains("application/example-mp/kafka"));
   }
 
   @Test
@@ -571,6 +643,10 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
     setMapping(helper, mapping);
 
     Assert.assertEquals(Collections.emptySet(), helper.getDomains(CertificateType.SPIFFE_V1_WL, "kafka"));
+    for (CertificateType type : Arrays.asList(
+        CertificateType.SPIFFE_V1_WORKLOAD, CertificateType.SPIFFE_V2)) {
+      Assert.assertEquals(Collections.emptySet(), helper.getDomains(type, "application/example-mp/kafka"));
+    }
     Assert.assertEquals(Collections.singleton("unrelated-domain"),
         helper.getDomains(CertificateType.LEGACY_SAN, "userPrincipal(kafka"));
     Assert.assertEquals(Collections.singleton("unrelated-domain"),

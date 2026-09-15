@@ -30,26 +30,37 @@ import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 public final class LegacyServicePrincipalMatcher {
     private static final Pattern LEGACY_SERVICE_PRINCIPAL_PATTERN =
         Pattern.compile("^(?:urn:li:)?servicePrincipal\\(([^();/]+)(?:\\)|;[^()/]*\\))?$");
+    private static final Pattern SPIFFE_APPLICATION_PATTERN =
+        Pattern.compile("^application/[^/]+/([^/]+)(?:/[^/]+)?$");
 
     private LegacyServicePrincipalMatcher() {
     }
 
     public static boolean matches(CertificateType certificateType, String clientId, String legacyPrincipal) {
-        return certificateType == CertificateType.SPIFFE_V1_WL
-            && clientId != null && clientId.equals(getApplicationName(legacyPrincipal));
+        String applicationName = getApplicationName(legacyPrincipal);
+        if (applicationName == null || clientId == null) {
+            return false;
+        }
+        if (certificateType == CertificateType.SPIFFE_V1_WL) {
+            return applicationName.equals(clientId);
+        }
+        if (certificateType == CertificateType.SPIFFE_V1_WORKLOAD || certificateType == CertificateType.SPIFFE_V2) {
+            Matcher matcher = SPIFFE_APPLICATION_PATTERN.matcher(clientId);
+            return matcher.matches() && applicationName.equals(matcher.group(1));
+        }
+        return false;
     }
 
     public static boolean matchesAuthenticatedClient(ServerCnxn cnxn, String authenticatedId, String aclId) {
-        boolean workloadToLegacy = authenticatedId != null && authenticatedId.equals(getApplicationName(aclId));
-        boolean legacyToWorkload = aclId != null && aclId.equals(getApplicationName(authenticatedId));
-        if (cnxn == null || (!workloadToLegacy && !legacyToWorkload)) {
+        if (cnxn == null) {
             return false;
         }
         // Bind the candidate AuthInfo ID to the authenticated certificate identity, not a mapped domain.
         ClientIdentity identity = cnxn.getX509ClientIdentity();
         return identity != null && identity.getId().equals(authenticatedId)
-            && ((identity.getCertificateType() == CertificateType.SPIFFE_V1_WL && workloadToLegacy)
-                || (identity.getCertificateType() == CertificateType.LEGACY_SAN && legacyToWorkload));
+            && (matches(identity.getCertificateType(), authenticatedId, aclId)
+                || (identity.getCertificateType() == CertificateType.LEGACY_SAN
+                    && aclId != null && aclId.equals(getApplicationName(authenticatedId))));
     }
 
     private static String getApplicationName(String legacyPrincipal) {
