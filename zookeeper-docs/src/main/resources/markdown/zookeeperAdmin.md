@@ -1368,6 +1368,29 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     authenticated client with that principal will be able to bypass
     ACL checking and have full privileges to all znodes.
 
+* *ssl.x509.legacySuperUserCompatibilityEnabled* :
+    (Java system property: **zookeeper.ssl.x509.legacySuperUserCompatibilityEnabled**)
+    **Default: false.** When enabled, both **X509AuthenticationProvider** and
+    **X509ZNodeGroupAclProvider** can match an authenticated SPIFFE v1/wl identity,
+    or a v1/v2 **application/\<mp\>/\<app\>[/\<tag\>]** identity, against an
+    existing legacy service-principal superuser ID by application name. Exact
+    configured client-ID matches take precedence and do not require this option.
+    Supported legacy forms include **servicePrincipal(kafka**,
+    **servicePrincipal(kafka)**, and **urn:li:servicePrincipal(kafka;region1;instance1)**.
+    The existing superuser settings remain **zookeeper.X509AuthenticationProvider.superUser**
+    and **zookeeper.X509ZNodeGroupAclProvider.superUserId**, respectively.
+    The original certificate-derived identity is preserved; the **super** AuthInfo
+    marker uses the matched configured ID so explicit superusers remain distinct
+    from cross-domain components during ACL preparation.
+    This option does not enable reverse legacy-to-SPIFFE superuser aliases or
+    compatibility for user, group, airflow, arbitrary v2, or Subject DN identities.
+    **Warning:** legacy application names do not distinguish products or tags;
+    enable this option only when all eligible trusted identities with that app
+    name should have full superuser privileges. It does not change certificate
+    trust validation or existing cross-domain grants. Treat it as a startup
+    setting and restart servers or reconnect clients when changing it; it is not
+    an immediate revocation mechanism for already authenticated connections.
+
 * *zookeeper.superUser* :
     (Java system property: **zookeeper.superUser**)
     Similar to **zookeeper.X509AuthenticationProvider.superUser**

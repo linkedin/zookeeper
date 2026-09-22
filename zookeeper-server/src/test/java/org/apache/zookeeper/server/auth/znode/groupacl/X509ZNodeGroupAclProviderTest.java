@@ -20,6 +20,8 @@ package org.apache.zookeeper.server.auth.znode.groupacl;
 
 import java.net.InetSocketAddress;
 import java.security.cert.X509Certificate;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,9 +33,12 @@ import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.ZKUtil;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.common.SpiffeAuthTestUtil;
+import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.MockServerCnxn;
 import org.apache.zookeeper.server.NIOServerCnxnFactory;
+import org.apache.zookeeper.server.PrepRequestProcessor;
 import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
@@ -72,6 +77,8 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
   private static final Map<String, String> SYSTEM_PROPERTIES = new HashMap<>();
     static {
       SYSTEM_PROPERTIES.put(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, "SuperUser,SuperUser2");
+      SYSTEM_PROPERTIES.put(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "false");
+      SYSTEM_PROPERTIES.put(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL, "false");
       SYSTEM_PROPERTIES.put("zookeeper.ssl.keyManager", "org.apache.zookeeper.test.X509AuthTest.TestKeyManager");
       SYSTEM_PROPERTIES.put("zookeeper.ssl.trustManager", "org.apache.zookeeper.test.X509AuthTest.TestTrustManager");
       SYSTEM_PROPERTIES.put(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, X509AuthenticationConfig.SUBJECT_ALTERNATIVE_NAME_SHORT);
@@ -196,6 +203,102 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     Assert.assertEquals(1, authInfo.size());
     Assert.assertEquals("super", authInfo.get(0).getScheme());
     Assert.assertEquals("SuperUser2", authInfo.get(0).getId());
+  }
+
+  @Test
+  public void testSpiffeSuperUserCompatibilityRequiresOptIn() throws Exception {
+    String configuredId = "servicePrincipal(kafka";
+    System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, configuredId);
+    for (String path : Arrays.asList(
+        "/v1/wl/kafka", "/v1/application/example-mp/kafka", "/v2/application/example-mp/kafka/blue")) {
+      String clientId = path.equals("/v1/wl/kafka") ? "kafka" : path.substring("/v1/".length());
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED);
+      MockServerCnxn normal = authenticateSpiffe(path);
+      Assert.assertEquals(Collections.singletonList(new Id("x509", clientId)), normal.getAuthInfo());
+
+      System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
+      MockServerCnxn superUser = authenticateSpiffe(path);
+      Assert.assertEquals(clientId, superUser.getX509ClientIdentity().getId());
+      Assert.assertEquals(Collections.singletonList(new Id("super", configuredId)), superUser.getAuthInfo());
+      zks.checkACL(superUser, Collections.singletonList(new ACL(ZooDefs.Perms.READ, new Id("x509", "unrelated"))),
+          ZooDefs.Perms.ADMIN, superUser.getAuthInfo(), "/protected", null);
+    }
+  }
+
+  @Test
+  public void testExactSuperUserIdWinsBeforeCompatibleMarkers() throws Exception {
+    String legacyId = "servicePrincipal(zookeeper";
+    System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, legacyId + ",zookeeper");
+    for (String enabled : Arrays.asList("false", "true")) {
+      System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, enabled);
+      Assert.assertEquals(Collections.singletonList(new Id("super", "zookeeper")),
+          authenticateSpiffe("/v1/wl/zookeeper").getAuthInfo());
+    }
+    System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
+    for (String configuredIds : Arrays.asList(legacyId + ")," + legacyId, legacyId + "," + legacyId + ")")) {
+      System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, configuredIds);
+      Assert.assertEquals(Collections.singletonList(new Id("super", legacyId)),
+          authenticateSpiffe("/v1/wl/zookeeper").getAuthInfo());
+    }
+  }
+
+  @Test
+  public void testSuperUserCompatibilityRejectsOtherIdentityTypes() throws Exception {
+    System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
+    System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, "servicePrincipal(kafka");
+    for (String path : Arrays.asList(
+        "/v2/kafka", "/v2/user/kafka", "/v2/group/kafka", "/v1/airflow/kafka",
+        "/v2/workload/example-mp/kafka", "/v2/application/kafka",
+        "/v2/application//kafka", "/v2/application/example-mp/other/kafka")) {
+      Assert.assertFalse(authenticateSpiffe(path).getAuthInfo().stream()
+          .anyMatch(id -> id.getScheme().equals("super")));
+    }
+    for (String configuredId : Arrays.asList(
+        "servicePrincipal(other", "servicePrincipal(Kafka", "userPrincipal(kafka",
+        "groupPrincipal(kafka", "servicePrincipalMetadata(kafka)")) {
+      System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, configuredId);
+      Assert.assertFalse(authenticateSpiffe("/v2/application/example-mp/kafka").getAuthInfo().stream()
+          .anyMatch(id -> id.getScheme().equals("super")));
+    }
+    System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, "kafka");
+    X509AuthenticationConfig.reset();
+    X509AuthTest.TestCertificate legacyCert = new X509AuthTest.TestCertificate("CLIENT", "servicePrincipal(kafka");
+    MockServerCnxn legacy = new MockServerCnxn();
+    legacy.clientChain = new X509Certificate[]{legacyCert};
+    Assert.assertEquals(KeeperException.Code.OK, createProvider(legacyCert).handleAuthentication(
+        new ServerAuthenticationProvider.ServerObjs(zks, legacy), null));
+    Assert.assertEquals(Collections.singletonList(new Id("x509", "servicePrincipal(kafka")), legacy.getAuthInfo());
+  }
+
+  @Test
+  public void testCompatibleSuperUserRetainsExplicitAclPolicy() throws Exception {
+    String configuredId = "servicePrincipal(kafka";
+    System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, configuredId);
+    System.setProperty(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL, "true");
+    admin.create(CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/CrossDomain/" + configuredId,
+        null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+    List<ACL> requested = Collections.singletonList(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+
+    MockServerCnxn crossDomain = authenticateSpiffe("/v2/application/example-mp/kafka");
+    Assert.assertEquals(Collections.singletonList(new Id("super", "CrossDomain")), crossDomain.getAuthInfo());
+    Assert.assertEquals(Collections.singletonList(new ACL(ZooDefs.Perms.ALL, new Id("x509", "CrossDomain"))),
+        PrepRequestProcessor.fixupACL("/created", crossDomain.getAuthInfo(), requested));
+
+    System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
+    MockServerCnxn explicitSuperUser = authenticateSpiffe("/v2/application/example-mp/kafka");
+    Assert.assertEquals(Collections.singletonList(new Id("super", configuredId)), explicitSuperUser.getAuthInfo());
+    Assert.assertEquals("application/example-mp/kafka", explicitSuperUser.getX509ClientIdentity().getId());
+    Assert.assertEquals(requested, PrepRequestProcessor.fixupACL("/created", explicitSuperUser.getAuthInfo(), requested));
+  }
+
+  @Test
+  public void testSuperUserCompatibilityDoesNotUseMappedDomainAsIdentity() throws Exception {
+    System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
+    System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, "servicePrincipal(DomainX");
+    admin.create(CLIENT_URI_DOMAIN_MAPPING_ROOT_PATH + "/DomainX/servicePrincipal(kafka",
+        null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+    MockServerCnxn cnxn = authenticateSpiffe("/v2/application/example-mp/kafka");
+    Assert.assertEquals(Collections.singletonList(new Id("x509", "DomainX")), cnxn.getAuthInfo());
   }
 
   @Test
@@ -352,6 +455,19 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
         new X509AuthTest.TestKeyManager());
   }
 
+  private MockServerCnxn authenticateSpiffe(String path) throws Exception {
+    SpiffeAuthTestUtil.registerBouncyCastle();
+    X509AuthenticationConfig.reset();
+    X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans("spiffe://example.org" + path);
+    X509ZNodeGroupAclProvider provider = new X509ZNodeGroupAclProvider(
+        new SpiffeAuthTestUtil.AcceptAllTrustManager(), new SpiffeAuthTestUtil.NoopKeyManager());
+    MockServerCnxn cnxn = new MockServerCnxn();
+    cnxn.clientChain = new X509Certificate[]{cert};
+    Assert.assertEquals(KeeperException.Code.OK,
+        provider.handleAuthentication(new ServerAuthenticationProvider.ServerObjs(zks, cnxn), null));
+    return cnxn;
+  }
+
   /**
    * Special ServerCnxnFactory which Exposes the client list for testing auto-refresh AuthInfo.
    */
@@ -374,4 +490,3 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
     }
   }
 }
-

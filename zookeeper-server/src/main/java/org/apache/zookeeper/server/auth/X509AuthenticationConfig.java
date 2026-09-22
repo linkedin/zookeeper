@@ -56,7 +56,7 @@ public class X509AuthenticationConfig {
     return instance;
   }
 
-  // The following System Property keys are used to extract clientId from the client cert.
+  // Shared X509 authentication settings.
 
   /**
    * Config prefix for x509-related config properties.
@@ -64,6 +64,12 @@ public class X509AuthenticationConfig {
    * and {@link org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider}
    */
   public static final String SSL_X509_CONFIG_PREFIX = "zookeeper.ssl.x509.";
+  /**
+   * Opt-in matching of SPIFFE application names against legacy service-principal superuser IDs.
+   * Disabled by default; applies to both providers and does not distinguish products or tags.
+   */
+  public static final String SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED =
+      SSL_X509_CONFIG_PREFIX + "legacySuperUserCompatibilityEnabled";
   /**
    * Determines which field in the x509 certificate to be used for client Id:
    * SAN (subject alternative name) or SDN (subject domain name) (default)
@@ -271,6 +277,10 @@ public class X509AuthenticationConfig {
   }
 
   // Getters for X509 properties
+
+  public boolean isLegacySuperUserCompatibilityEnabled() {
+    return Boolean.parseBoolean(System.getProperty(SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "false"));
+  }
 
   public String getClientCertIdType() {
     if (clientCertIdType == null) {

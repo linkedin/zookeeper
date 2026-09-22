@@ -18,6 +18,8 @@
 
 package org.apache.zookeeper.server.auth;
 
+import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.zookeeper.server.ServerCnxn;
@@ -25,7 +27,7 @@ import org.apache.zookeeper.server.auth.X509AuthenticationUtil.CertificateType;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 
 /**
- * Compatibility matching shared by direct X509 ACLs and URI-domain mappings.
+ * Compatibility matching shared by X509 ACLs, URI-domain mappings and opt-in superuser selection.
  */
 public final class LegacyServicePrincipalMatcher {
     private static final Pattern LEGACY_SERVICE_PRINCIPAL_PATTERN =
@@ -34,6 +36,23 @@ public final class LegacyServicePrincipalMatcher {
         Pattern.compile("^application/[^/]+/([^/]+)(?:/[^/]+)?$");
 
     private LegacyServicePrincipalMatcher() {
+    }
+
+    /**
+     * Return the configured ID so ACL preparation continues to recognize an explicit superuser.
+     * Exact matches take precedence; otherwise choose a stable marker among compatible IDs.
+     */
+    public static Optional<String> findMatchingSuperUserId(ClientIdentity identity, Set<String> configuredIds) {
+        if (configuredIds.contains(identity.getId())) {
+            return Optional.of(identity.getId());
+        }
+        if (!X509AuthenticationConfig.getInstance().isLegacySuperUserCompatibilityEnabled()) {
+            return Optional.empty();
+        }
+        return configuredIds.stream()
+            .filter(id -> matches(identity.getCertificateType(), identity.getId(), id))
+            .sorted()
+            .findFirst();
     }
 
     public static boolean matches(CertificateType certificateType, String clientId, String legacyPrincipal) {

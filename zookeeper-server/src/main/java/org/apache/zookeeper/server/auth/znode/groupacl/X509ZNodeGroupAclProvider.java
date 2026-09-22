@@ -21,6 +21,7 @@ package org.apache.zookeeper.server.auth.znode.groupacl;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.net.ssl.X509KeyManager;
@@ -176,7 +177,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
             try {
               ClientIdentity identity = X509AuthenticationUtil.getClientId(cnxn, trustManager);
               cnxn.setX509ClientIdentity(identity);
-              assignAuthInfo(cnxn, identity.getId(),
+              assignAuthInfo(cnxn, identity,
                   helper.getDomains(identity.getCertificateType(), identity.getId()));
             } catch (UnsupportedOperationException unsupportedEx) {
               LOG.info("Cannot update AuthInfo for session 0x{} since the operation is not supported.",
@@ -214,17 +215,14 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
    * concurrency control is required to prevent inconsistent update.
    *
    * @param cnxn Client connection to be updated
-   * @param clientId ClientId to be potentially used as the AuthInfo Id if the client is super user.
-   *                 The clientId can be any string matched and extracted using regex from Subject Distinguished
-   *                 Name or Subject Alternative Name from x509 certificate.
-   *                 The clientId string is intended to be an URI for client and map the client to certain domain.
-   *                 The user can use the properties defined in X509AuthenticationUtil to extract a desired string as
-   *                 clientId.
+   * @param identity Authenticated certificate type and original client ID.
    * @param domains Domains to be used as the AuthInfo Id.
    */
-  private void assignAuthInfo(ServerCnxn cnxn, String clientId, Set<String> domains) {
+  private void assignAuthInfo(ServerCnxn cnxn, ClientIdentity identity, Set<String> domains) {
+    String clientId = identity.getId();
     Set<String> superUserDomainNames = X509AuthenticationConfig.getInstance().getZnodeGroupAclCrossDomainAccessDomains();
     Set<String> superUsers = X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserIds();
+    Optional<String> superUserId = LegacyServicePrincipalMatcher.findMatchingSuperUserId(identity, superUsers);
 
     Set<Id> newAuthIds = new HashSet<>();
 
@@ -233,8 +231,8 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
         superUserDomainNames.stream().filter(domains::contains).collect(Collectors.toList());
 
     // Check if user belongs to super user id group
-    if (superUsers.contains(clientId)) {
-      newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));
+    if (superUserId.isPresent()) {
+      newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, superUserId.get()));
     } else if (!commonSuperUserDomains.isEmpty()) {
       // For cross domain components, add (super:domainName) in authInfo
       // "super" scheme gives access to all znodes without checking znode ACL vs authorized domain name

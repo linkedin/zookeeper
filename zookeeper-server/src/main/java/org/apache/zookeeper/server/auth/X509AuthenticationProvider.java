@@ -19,6 +19,8 @@
 package org.apache.zookeeper.server.auth;
 
 import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.Optional;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
@@ -100,9 +102,12 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         cnxn.setX509ClientIdentity(identity);
         String clientId = identity.getId();
 
-        if (clientId.equals(System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER))) {
-            cnxn.addAuthInfo(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));
-            LOG.info("Authenticated Id '{}' as super user", clientId);
+        String configuredSuperUser = System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER);
+        Optional<String> superUserId = LegacyServicePrincipalMatcher.findMatchingSuperUserId(identity,
+            configuredSuperUser == null ? Collections.emptySet() : Collections.singleton(configuredSuperUser));
+        if (superUserId.isPresent()) {
+            cnxn.addAuthInfo(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, superUserId.get()));
+            LOG.info("Authenticated Id '{}' as configured super user '{}'", clientId, superUserId.get());
         }
 
         Id authInfo = new Id(getScheme(), clientId);
