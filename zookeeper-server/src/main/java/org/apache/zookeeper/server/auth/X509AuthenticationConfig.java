@@ -65,7 +65,7 @@ public class X509AuthenticationConfig {
    */
   public static final String SSL_X509_CONFIG_PREFIX = "zookeeper.ssl.x509.";
   /**
-   * Opt-in matching of SPIFFE application names against legacy service-principal superuser IDs.
+   * Opt-in matching of SPIFFE application names against legacy bare-app or service-principal superuser IDs.
    * Disabled by default; applies to both providers and does not distinguish products or tags.
    */
   public static final String SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED =

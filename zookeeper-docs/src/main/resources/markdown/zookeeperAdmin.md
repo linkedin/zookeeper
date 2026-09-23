@@ -1373,9 +1373,9 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     **Default: false.** When enabled, both **X509AuthenticationProvider** and
     **X509ZNodeGroupAclProvider** can match an authenticated SPIFFE v1/wl identity,
     or a v1/v2 **application/\<mp\>/\<app\>[/\<tag\>]** identity, against an
-    existing legacy service-principal superuser ID by application name. Exact
+    existing legacy bare-app or service-principal superuser ID by application name. Exact
     configured client-ID matches take precedence and do not require this option.
-    Supported legacy forms include **servicePrincipal(kafka**,
+    Supported legacy forms include **kafka**, **servicePrincipal(kafka**,
     **servicePrincipal(kafka)**, and **urn:li:servicePrincipal(kafka;region1;instance1)**.
     The existing superuser settings remain **zookeeper.X509AuthenticationProvider.superUser**
     and **zookeeper.X509ZNodeGroupAclProvider.superUserId**, respectively.
@@ -1390,6 +1390,20 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     trust validation or existing cross-domain grants. Treat it as a startup
     setting and restart servers or reconnect clients when changing it; it is not
     an immediate revocation mechanism for already authenticated connections.
+
+    URI-domain and direct ACL compatibility does not require this option.
+    That compatibility is one-way: eligible SPIFFE application identities may
+    match bare application names or formatted legacy service principals, but
+    legacy clients do not acquire reverse aliases.
+    Original client IDs, exact matches and existing mapped-domain grants remain
+    unchanged. Bare names are compared literally and must match
+    `^[A-Za-z0-9][A-Za-z0-9._-]*$`: an ASCII letter or digit followed by letters,
+    digits, dots, underscores or hyphens. DN/URN-shaped targets are not treated
+    as bare names, and a full application-path target is not shortened.
+    This restriction affects only the new bare-name fallback; existing
+    service-principal parsing and exact legacy SAN/DN matches are unchanged.
+    A bare ACL ID can also name a domain, so this deliberately permits an eligible
+    SPIFFE app to use a same-named bare domain ACL.
 
 * *zookeeper.superUser* :
     (Java system property: **zookeeper.superUser**)

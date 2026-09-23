@@ -32,6 +32,7 @@ import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 public final class LegacyServicePrincipalMatcher {
     private static final Pattern LEGACY_SERVICE_PRINCIPAL_PATTERN =
         Pattern.compile("^(?:urn:li:)?servicePrincipal\\(([^();/]+)(?:\\)|;[^()/]*\\))?$");
+    private static final Pattern BARE_APPLICATION_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]*$");
     private static final Pattern SPIFFE_APPLICATION_PATTERN =
         Pattern.compile("^application/[^/]+/([^/]+)(?:/[^/]+)?$");
 
@@ -55,8 +56,8 @@ public final class LegacyServicePrincipalMatcher {
             .findFirst();
     }
 
-    public static boolean matches(CertificateType certificateType, String clientId, String legacyPrincipal) {
-        String applicationName = getApplicationName(legacyPrincipal);
+    public static boolean matches(CertificateType certificateType, String clientId, String legacyId) {
+        String applicationName = getApplicationName(legacyId);
         if (applicationName == null || clientId == null) {
             return false;
         }
@@ -77,16 +78,17 @@ public final class LegacyServicePrincipalMatcher {
         // Bind the candidate AuthInfo ID to the authenticated certificate identity, not a mapped domain.
         ClientIdentity identity = cnxn.getX509ClientIdentity();
         return identity != null && identity.getId().equals(authenticatedId)
-            && (matches(identity.getCertificateType(), authenticatedId, aclId)
-                || (identity.getCertificateType() == CertificateType.LEGACY_SAN
-                    && aclId != null && aclId.equals(getApplicationName(authenticatedId))));
+            && matches(identity.getCertificateType(), authenticatedId, aclId);
     }
 
-    private static String getApplicationName(String legacyPrincipal) {
-        if (legacyPrincipal == null) {
+    private static String getApplicationName(String legacyId) {
+        if (legacyId == null) {
             return null;
         }
-        Matcher matcher = LEGACY_SERVICE_PRINCIPAL_PATTERN.matcher(legacyPrincipal);
-        return matcher.matches() ? matcher.group(1) : null;
+        Matcher matcher = LEGACY_SERVICE_PRINCIPAL_PATTERN.matcher(legacyId);
+        if (matcher.matches()) {
+            return matcher.group(1);
+        }
+        return BARE_APPLICATION_PATTERN.matcher(legacyId).matches() ? legacyId : null;
     }
 }
