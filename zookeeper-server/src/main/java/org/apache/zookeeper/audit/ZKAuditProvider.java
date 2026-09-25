@@ -90,8 +90,19 @@ public class ZKAuditProvider {
         if (!isAuditEnabled()) {
             return;
         }
+        log(user, operation, znode, acl, createMode, session, ip, result,
+                dataLength, errorCode, outcome, cxid, zxid, multiIndex, isEnhancedAuditEnabled());
+    }
+
+    static void log(String user, String operation, String znode, String acl,
+                    String createMode, String session, String ip, Result result,
+                    Integer dataLength, Integer errorCode, Outcome outcome,
+                    Integer cxid, Long zxid, Integer multiIndex, boolean enhanced) {
+        if (!isAuditEnabled()) {
+            return;
+        }
         logAuditEvent(createLogEvent(user, operation, znode, acl, createMode, session, ip, result,
-                dataLength, errorCode, outcome, cxid, zxid, multiIndex));
+                dataLength, errorCode, outcome, cxid, zxid, multiIndex, enhanced));
     }
 
     /**
@@ -101,7 +112,7 @@ public class ZKAuditProvider {
         AuditEvent event = new AuditEvent(result);
         event.addEntry(FieldName.USER, user);
         event.addEntry(FieldName.OPERATION, operation);
-        addMetadata(event, null, null, null, null, null, null);
+        addMetadata(event, null, null, null, null, null, null, isEnhancedAuditEnabled());
         return event;
     }
 
@@ -118,6 +129,14 @@ public class ZKAuditProvider {
                                      String createMode, String session, String ip, Result result,
                                      Integer dataLength, Integer errorCode, Outcome outcome,
                                      Integer cxid, Long zxid, Integer multiIndex) {
+        return createLogEvent(user, operation, znode, acl, createMode, session, ip, result,
+                dataLength, errorCode, outcome, cxid, zxid, multiIndex, isEnhancedAuditEnabled());
+    }
+
+    private static AuditEvent createLogEvent(String user, String operation, String znode, String acl,
+                                             String createMode, String session, String ip, Result result,
+                                             Integer dataLength, Integer errorCode, Outcome outcome,
+                                             Integer cxid, Long zxid, Integer multiIndex, boolean enhanced) {
         AuditEvent event = new AuditEvent(result);
         event.addEntry(FieldName.SESSION, session);
         event.addEntry(FieldName.USER, user);
@@ -126,13 +145,13 @@ public class ZKAuditProvider {
         event.addEntry(FieldName.ZNODE, znode);
         event.addEntry(FieldName.ZNODE_TYPE, createMode);
         event.addEntry(FieldName.ACL, acl);
-        addMetadata(event, dataLength, errorCode, outcome, cxid, zxid, multiIndex);
+        addMetadata(event, dataLength, errorCode, outcome, cxid, zxid, multiIndex, enhanced);
         return event;
     }
 
     private static void addMetadata(AuditEvent event, Integer dataLength, Integer errorCode, Outcome outcome,
-                                    Integer cxid, Long zxid, Integer multiIndex) {
-        if (isEnhancedAuditEnabled()) {
+                                    Integer cxid, Long zxid, Integer multiIndex, boolean enhanced) {
+        if (enhanced) {
             event.addEntry(FieldName.SCHEMA_VERSION, AuditConstants.SCHEMA_VERSION);
             event.addEntry(FieldName.DATA_LENGTH, valueOf(dataLength));
             event.addEntry(FieldName.ERROR_CODE, valueOf(errorCode));

@@ -383,7 +383,7 @@ public final class AuditHelper {
         }
         ZKAuditProvider.log(getUsers(request, enhanced), operation, path, metadata.acl, metadata.createMode,
                 request.cnxn.getSessionIdHex(), request.cnxn.getHostAddress(), result,
-                metadata.dataLength, error, outcome, request.cxid, zxid, index);
+                metadata.dataLength, error, outcome, request.cxid, zxid, index, enhanced);
     }
 
     private static void auditError(int type, Exception e) {

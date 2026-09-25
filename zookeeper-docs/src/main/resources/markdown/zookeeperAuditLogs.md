@@ -210,8 +210,12 @@ Consumers should recognize v2 per record using `schema_version=2`, tolerate
 unknown additive fields, and accept omitted optional fields. Do not apply v2
 unescaping to legacy records. Prepare consumers for mixed legacy/v2 output before
 enabling the property on servers, then roll it out gradually. Roll back emission
-by removing the enhanced property or setting it to `false` on restart. The
-enhanced gate is checked when emitting events; the base audit enablement retains
+by removing the enhanced property or setting it to `false` on restart. Each
+audited request captures the enhanced mode before metadata extraction, and uses
+that same decision for user/ACL sanitization, schema construction and every
+parent/member record of a multi. An in-flight request keeps its captured mode if
+the property changes; a subsequent request captures the new value. Direct
+provider logging captures its mode per event. The base audit enablement retains
 its startup behavior. No wire, persistence, authentication, ACL, quota or payload
 limit changes are required.
 
