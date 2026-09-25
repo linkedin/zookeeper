@@ -105,6 +105,19 @@ public class ZKAuditProvider {
                 dataLength, errorCode, outcome, cxid, zxid, multiIndex, enhanced));
     }
 
+    static void logConnection(String user, String operation, String authScheme,
+                              String session, String ip, Result result,
+                              Integer errorCode, Integer cxid, boolean enhanced) {
+        if (!isAuditEnabled() || !enhanced) {
+            return;
+        }
+        AuditEvent event = createLogEvent(user, operation, null, null, null, session, ip, result,
+                null, errorCode, result == Result.FAILURE ? Outcome.FAILED : Outcome.UNKNOWN,
+                cxid, null, null, enhanced);
+        event.addEntry(FieldName.AUTH_SCHEME, authScheme);
+        logAuditEvent(event);
+    }
+
     /**
      * A helper api for creating an AuditEvent object.
      */
