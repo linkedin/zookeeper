@@ -19,7 +19,11 @@
 package org.apache.zookeeper.server.admin;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Collections;
@@ -34,8 +38,11 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.zookeeper.Environment;
 import org.apache.zookeeper.Environment.Entry;
+import org.apache.zookeeper.Quotas;
 import org.apache.zookeeper.Version;
+import org.apache.zookeeper.common.PathUtils;
 import org.apache.zookeeper.server.DataTree;
+import org.apache.zookeeper.server.DataTree.QuotaStats;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ServerMetrics;
 import org.apache.zookeeper.server.ZooKeeperServer;
@@ -142,6 +149,7 @@ public class Commands {
         registerCommand(new LeaderCommand());
         registerCommand(new MonitorCommand());
         registerCommand(new ObserverCnxnStatResetCommand());
+        registerCommand(new QuotaStatsCommand());
         registerCommand(new RuokCommand());
         registerCommand(new SetTraceMaskCommand());
         registerCommand(new SrvrCommand());
@@ -476,6 +484,81 @@ public class Commands {
                 follower.resetObserverConnectionStats();
             }
             return response;
+        }
+
+    }
+
+    /**
+     * Samples the existing quota metadata for one explicitly allowlisted namespace.
+     */
+    public static class QuotaStatsCommand extends CommandBase {
+
+        private static final String ALLOWED_NAMESPACES = "zookeeper.quotaStats.allowedNamespaces";
+        private static final JsonFactory JSON = new JsonFactory();
+
+        public QuotaStatsCommand() {
+            super(Collections.singletonList("quota_stats"));
+        }
+
+        @Override
+        public CommandResponse run(ZooKeeperServer zkServer, Map<String, String> kwargs) {
+            String path = kwargs == null ? null : kwargs.get("path");
+            if (!isValidNamespacePath(path)) {
+                return new CommandResponse(getPrimaryName(), "quota_stats requires a valid namespace path");
+            }
+            final boolean allowed;
+            try {
+                allowed = isAllowed(path, System.getProperty(ALLOWED_NAMESPACES, "[]"));
+            } catch (IOException | IllegalArgumentException | SecurityException e) {
+                return new CommandResponse(getPrimaryName(), "Invalid " + ALLOWED_NAMESPACES
+                                           + ": expected a JSON array of valid namespace paths");
+            }
+            if (!allowed) {
+                return new CommandResponse(getPrimaryName(), "Path is not allowlisted for quota_stats");
+            }
+
+            QuotaStats stats = zkServer.getZKDatabase().getDataTree().getQuotaStats(path);
+            CommandResponse response = initializeResponse();
+            response.put("schema_version", 1);
+            response.put("path", path);
+            response.put("count_used", stats.getCountUsed());
+            response.put("bytes_used", stats.getBytesUsed());
+            response.put("count_limit", stats.getCountLimit());
+            response.put("bytes_limit", stats.getBytesLimit());
+            response.put("available", stats.isAvailable());
+            response.put("reason", stats.getReason());
+            return response;
+        }
+
+        private static boolean isValidNamespacePath(String path) {
+            try {
+                PathUtils.validatePath(path);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+            return !"/".equals(path)
+                   && !Quotas.procZookeeper.equals(path)
+                   && !path.startsWith(Quotas.procZookeeper + "/");
+        }
+
+        private static boolean isAllowed(String path, String configuration) throws IOException {
+            boolean allowed = false;
+            try (JsonParser parser = JSON.createParser(configuration)) {
+                if (parser.nextToken() != JsonToken.START_ARRAY) {
+                    throw new IllegalArgumentException();
+                }
+                JsonToken token;
+                while ((token = parser.nextToken()) != JsonToken.END_ARRAY) {
+                    if (token != JsonToken.VALUE_STRING || !isValidNamespacePath(parser.getText())) {
+                        throw new IllegalArgumentException();
+                    }
+                    allowed |= path.equals(parser.getText());
+                }
+                if (parser.nextToken() != null) {
+                    throw new IllegalArgumentException();
+                }
+            }
+            return allowed;
         }
 
     }
