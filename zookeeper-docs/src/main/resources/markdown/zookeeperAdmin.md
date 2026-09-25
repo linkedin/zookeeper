@@ -1875,6 +1875,14 @@ options are used to configure the [AdminServer](#sc_adminserver).
     The URL for listing and issuing commands relative to the
     root URL.  Defaults to "/commands".
 
+* *zookeeper.quotaStats.allowedNamespaces* :
+    (Java system property)
+    A JSON array of exact namespace paths that may be queried by
+    [quota_stats](#sc_quota_stats). Defaults to `[]`, which denies every
+    namespace. Keep this list empty until the namespaces and operational
+    access have been explicitly approved. This is a metadata-disclosure
+    allowlist, not a quota limit or an authentication mechanism.
+
 ### Metrics Providers
 
 **New in 3.6.0:** The following options are used to configure metrics.
@@ -2326,6 +2334,12 @@ Available commands include:
     Reset all observer connection statistics. Companion command to *observers*.
     No new fields returned.
 
+* *quota_stats* :
+    Read only the existing quota usage and limit metadata for one explicitly
+    allowlisted namespace. Requires a `path` parameter. See
+    [bounded quota telemetry](#sc_quota_stats) for configuration, schema,
+    unavailable results and sampling limitations.
+
 * *ruok* :
     No-op command, check if the server is running.
     A response does not necessarily indicate that the
@@ -2390,6 +2404,92 @@ Available commands include:
     voting member.
     Peers can be in one of these phases: ELECTION, DISCOVERY, SYNCHRONIZATION, BROADCAST.
     Returns fields "voting" and "zabstate".
+
+<a name="sc_quota_stats"></a>
+
+##### Bounded quota telemetry
+
+`quota_stats?path=/example-quota` runs through the existing AdminServer
+command URL, for example `/commands/quota_stats?path=/example-quota`.
+`/example-quota` is illustrative, not an approved namespace. Use the existing
+protected administrative access path; this command adds no authentication,
+ACL policy, transport listener or four-letter command.
+
+The JVM property `zookeeper.quotaStats.allowedNamespaces` must contain one
+complete JSON array of strings, for example `["/example-quota"]`. An unset
+property means `[]` and rejects all requests. The command reads the property
+once per request and validates the entire array before reading quota metadata;
+an invalid later entry cannot be hidden by an earlier match. Non-array JSON,
+non-string entries, malformed JSON, trailing JSON values, invalid paths and
+unreadable configuration produce a normal command error rather than permissive
+fallback. Duplicate valid entries have no additional effect.
+
+Both configured and requested paths must pass ZooKeeper's existing znode path
+validation. Root `/`, `/zookeeper` and its descendants are excluded;
+`/zookeeper-client` is not excluded by that reserved-path rule. Paths are
+matched exactly, with no trimming, normalization, ancestor inheritance,
+prefix matching or wildcard expansion. A literal `*` in a valid znode name is
+just a character, not a pattern. A child namespace needs its own explicit
+allowlist entry and its own quota metadata. Encode the `path` query parameter
+normally when its characters require URL encoding.
+
+Invalid/missing paths, invalid configuration and disallowed paths return only
+the usual `command` and non-null `error` fields. An uninitialized or stopped
+server is rejected by the existing command-framework availability guard.
+Successful requests, including unavailable quota samples, have this schema:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `command` | string | `quota_stats` |
+| `error` | null | Request/configuration validation succeeded |
+| `schema_version` | integer | `1` |
+| `path` | string | The exact requested, allowlisted namespace |
+| `count_used` | integer or null | Existing quota-stat node count, including the namespace itself |
+| `bytes_used` | integer or null | Existing quota-stat total znode payload bytes, not path, ACL, packet or JVM-memory bytes |
+| `count_limit` | integer or null | Existing quota count limit; native `-1` is reported as null |
+| `bytes_limit` | integer or null | Existing quota byte limit; native `-1` is reported as null |
+| `available` | boolean | Both exact metadata records are present and valid in this sample |
+| `reason` | string or null | Unavailability reason below, or null when available |
+
+Counts use the native signed 32-bit integer range; byte values use signed
+64-bit integers. Metadata must use the native `count=<int>,bytes=<long>`
+format with exact field names/order and decimal digits. Usage must be
+non-negative; limits must be at least `-1`. Null/empty payloads, malformed
+records and numeric overflow are invalid, not zero usage. An available
+sample can have one or both limits null (unset/unlimited in native quota
+metadata); null is not approved infinite headroom. Zero limits remain zero.
+The command computes no utilization ratios or headroom, and clients must
+not divide by zero or treat unknown values as an approved budget.
+
+An unavailable sample sets **all four numeric fields to null** and uses one
+of these reasons:
+
+| `reason` | Meaning |
+| --- | --- |
+| `namespace_missing` | The namespace does not exist when sampling starts, even if orphan quota metadata remains |
+| `quota_missing` | Both exact quota metadata nodes are absent; an ancestor's quota is not substituted |
+| `quota_incomplete` | Exactly one of the stat/limit nodes is absent |
+| `invalid_quota_stats` | The stat record is null, malformed, negative or out of range |
+| `invalid_quota_limits` | The limit record is null, malformed or out of range |
+| `quota_changed` | Removal/replacement of the namespace or a sampled metadata node was detected during sampling |
+
+The only payloads read are the exact
+`/zookeeper/quota<path>/zookeeper_stats` and
+`/zookeeper/quota<path>/zookeeper_limits` records. Namespace existence and
+node-identity checks use a bounded number of direct lookups. The command
+does not walk the live subtree, search ancestor quotas, create watches,
+repair accounting, alter enforcement or register per-path metrics.
+
+**This is not an atomic or historical snapshot.** Stat and limit records are
+sampled independently with no tree-wide lock; they can reflect different
+instants and existing quota-accounting lag. Identity rechecks detect some
+removals/replacements, not every concurrent change. `available=true` is a
+metadata-availability statement, not a freshness, consistency or safety
+guarantee. Missing or invalid data must remain unknown.
+
+Continue using `monitor/mntr` for existing response-size, session/connection,
+latency and queue metrics, and `watch_summary/wchs` for watch totals.
+`quota_stats` does not duplicate those metrics or introduce namespace labels.
 
 
 <a name="sc_dataFileManagement"></a>
