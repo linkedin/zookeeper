@@ -129,6 +129,17 @@ retained, valid built-in digest identities use the provider's username extractio
 (not the digest), and other identities are `[redacted]`. This also applies to
 failed ACL attempts, where identities might be malformed or contain credentials.
 Unknown custom identity representations are not printed as ACL identities.
+
+For server-generated v2 records, the `user` field also uses a conservative
+provider policy rather than trusting a custom provider's default `getUserName`.
+Only the concrete built-in digest, IP, SASL and X509 providers are trusted, and
+their identity syntax must validate before their username extraction is used.
+Digest credentials are reduced to usernames; X509 identities are distinguished
+names, not certificate bodies. Unknown or malformed identities, custom providers
+and provider subclasses are represented as `[redacted]`. Merely overriding
+`getUserName` does not opt a custom provider into this trust policy. Legacy user
+extraction is unchanged when enhanced logging is off.
+
 Custom callers of the logging APIs must supply sanitized user and ACL metadata;
 the string-based APIs cannot infer credentials from arbitrary strings.
 
