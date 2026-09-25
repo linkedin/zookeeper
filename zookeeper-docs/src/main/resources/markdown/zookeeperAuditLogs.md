@@ -306,9 +306,15 @@ default locale. Custom `AuditLogger` implementations receive raw event values;
 
 ### Mixed versions, rollout, rollback and coverage
 
-Consumers should recognize v2 per record using `schema_version=2`, tolerate
-unknown additive fields, and accept omitted optional fields. Do not apply v2
-unescaping to legacy records. Prepare consumers for mixed legacy/v2 output before
+Consumers should recognize v2 per record using `schema_version=2` and accept
+omitted optional fields. Consumers designed for forward compatibility should
+tolerate unknown additive fields, but the implemented local JOBS consumer is
+pinned to the current v2 schema and strict: its parser rejects unknown fields
+as `unknown_field`, and local staging quarantines those records. Update and
+validate that consumer before enabling additive producer fields, even when
+the producer retains `schema_version=2`.
+
+Do not apply v2 unescaping to legacy records. Prepare consumers for mixed legacy/v2 output before
 enabling the property on servers, then roll it out gradually. Roll back emission
 by removing the enhanced property or setting it to `false` on restart. Each
 audited request captures the enhanced mode before metadata extraction, and uses
