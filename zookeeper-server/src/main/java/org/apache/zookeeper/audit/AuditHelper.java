@@ -18,23 +18,34 @@
 package org.apache.zookeeper.audit;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.Locale;
 import org.apache.jute.Record;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.MultiOperationRecord;
 import org.apache.zookeeper.Op;
 import org.apache.zookeeper.ZKUtil;
-import org.apache.zookeeper.ZooDefs;
+import org.apache.zookeeper.ZooDefs.OpCode;
+import org.apache.zookeeper.audit.AuditEvent.Outcome;
 import org.apache.zookeeper.audit.AuditEvent.Result;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.proto.CreateRequest;
+import org.apache.zookeeper.proto.CreateTTLRequest;
 import org.apache.zookeeper.proto.DeleteRequest;
 import org.apache.zookeeper.proto.SetACLRequest;
 import org.apache.zookeeper.proto.SetDataRequest;
 import org.apache.zookeeper.server.ByteBufferInputStream;
 import org.apache.zookeeper.server.DataTree.ProcessTxnResult;
 import org.apache.zookeeper.server.Request;
+import org.apache.zookeeper.server.ServerMetrics;
+import org.apache.zookeeper.server.auth.AuthenticationProvider;
+import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
+import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.util.AuthUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,174 +64,295 @@ public final class AuditHelper {
      *
      * @param request   user request
      * @param txnResult ProcessTxnResult
-     * @param failedTxn whether audit is being done failed transaction for normal transaction
+     * @param failedTxn whether the transaction was rejected before applying the requested operation
      */
     public static void addAuditLog(Request request, ProcessTxnResult txnResult, boolean failedTxn) {
         if (!ZKAuditProvider.isAuditEnabled()) {
             return;
         }
-        String op = null;
-        //For failed transaction rc.path is null
-        String path = txnResult.path;
-        String acls = null;
-        String createMode = null;
         try {
-            switch (request.type) {
-                case ZooDefs.OpCode.create:
-                case ZooDefs.OpCode.create2:
-                case ZooDefs.OpCode.createContainer:
-                    op = AuditConstants.OP_CREATE;
-                    if (failedTxn) {
-                        CreateRequest createRequest = new CreateRequest();
-                        deserialize(request, createRequest);
-                        path = createRequest.getPath();
-                        createMode =
-                                getCreateMode(createRequest);
-                    } else {
-                        createMode = getCreateMode(request);
-                    }
-                    break;
-                case ZooDefs.OpCode.delete:
-                case ZooDefs.OpCode.deleteContainer:
-                    op = AuditConstants.OP_DELETE;
-                    if (failedTxn) {
-                        DeleteRequest deleteRequest = new DeleteRequest();
-                        deserialize(request, deleteRequest);
-                        path = deleteRequest.getPath();
-                    }
-                    break;
-                case ZooDefs.OpCode.setData:
-                    op = AuditConstants.OP_SETDATA;
-                    if (failedTxn) {
-                        SetDataRequest setDataRequest = new SetDataRequest();
-                        deserialize(request, setDataRequest);
-                        path = setDataRequest.getPath();
-                    }
-                    break;
-                case ZooDefs.OpCode.setACL:
-                    op = AuditConstants.OP_SETACL;
-                    if (failedTxn) {
-                        SetACLRequest setACLRequest = new SetACLRequest();
-                        deserialize(request, setACLRequest);
-                        path = setACLRequest.getPath();
-                        acls = ZKUtil.aclToString(setACLRequest.getAcl());
-                    } else {
-                        acls = getACLs(request);
-                    }
-                    break;
-                case ZooDefs.OpCode.multi:
-                    if (failedTxn) {
-                        op = AuditConstants.OP_MULTI_OP;
-                    } else {
-                        logMultiOperation(request, txnResult);
-                        //operation si already logged
-                        return;
-                    }
-                    break;
-                case ZooDefs.OpCode.reconfig:
-                    op = AuditConstants.OP_RECONFIG;
-                    break;
-                default:
-                    //Not an audit log operation
-                    return;
+            if (request.type == OpCode.multi) {
+                logMultiOperation(request, txnResult, failedTxn);
+                return;
             }
-            Result result = getResult(txnResult, failedTxn);
-            log(request, path, op, acls, createMode, result);
-        } catch (Throwable e) {
-            LOG.error("Failed to audit log request {}", request.type, e);
+            String operation = operationFor(request.type);
+            if (operation == null) {
+                return;
+            }
+            Integer error = errorCode(request, txnResult, failedTxn);
+            Outcome outcome = outcome(txnResult, failedTxn, error);
+            RequestMetadata metadata = new RequestMetadata();
+            boolean enhanced = ZKAuditProvider.isEnhancedAuditEnabled();
+            if (isCreate(request.type) || request.type == OpCode.setACL
+                    || (request.type != OpCode.reconfig && (enhanced || outcome != Outcome.COMMITTED))) {
+                try {
+                    metadata = metadata(request.type, readRequestRecord(request), enhanced);
+                } catch (IOException e) {
+                    auditError(request.type, e);
+                }
+            }
+            String path = txnResult == null ? null : txnResult.path;
+            if (outcome != Outcome.COMMITTED || path == null) {
+                path = metadata.path == null ? path : metadata.path;
+            }
+            log(request, txnResult, path, operation, metadata, result(outcome), error, outcome, null);
+        } catch (RuntimeException e) {
+            auditError(request.type, e);
         }
     }
 
-    private static void deserialize(Request request, Record record) throws IOException {
-        request.request.rewind();
-        ByteBufferInputStream.byteBuffer2Record(request.request.slice(), record);
-    }
-
-    private static Result getResult(ProcessTxnResult rc, boolean failedTxn) {
-        if (failedTxn) {
-            return Result.FAILURE;
-        } else {
-            return rc.err == KeeperException.Code.OK.intValue() ? Result.SUCCESS : Result.FAILURE;
+    private static Record readRequestRecord(Request request) throws IOException {
+        Record record;
+        switch (request.type) {
+            case OpCode.create:
+            case OpCode.create2:
+            case OpCode.createContainer:
+                record = new CreateRequest();
+                break;
+            case OpCode.createTTL:
+                record = new CreateTTLRequest();
+                break;
+            case OpCode.delete:
+            case OpCode.deleteContainer:
+                record = new DeleteRequest();
+                break;
+            case OpCode.setData:
+                record = new SetDataRequest();
+                break;
+            case OpCode.setACL:
+                record = new SetACLRequest();
+                break;
+            case OpCode.multi:
+                record = new MultiOperationRecord();
+                break;
+            default:
+                throw new IOException("Unsupported audit request type: " + request.type);
         }
+        if (request.request == null) {
+            throw new IOException("Audit request record is unavailable");
+        }
+        ByteBuffer buffer = request.request.duplicate();
+        buffer.rewind();
+        ByteBufferInputStream.byteBuffer2Record(buffer, record);
+        return record;
     }
 
-    private static void logMultiOperation(Request request, ProcessTxnResult rc) throws IOException, KeeperException {
-        Map<String, String> createModes = AuditHelper.getCreateModes(request);
-        boolean multiFailed = false;
-        for (ProcessTxnResult subTxnResult : rc.multiResult) {
-            switch (subTxnResult.type) {
-                case ZooDefs.OpCode.create:
-                case ZooDefs.OpCode.create2:
-                case ZooDefs.OpCode.createTTL:
-                case ZooDefs.OpCode.createContainer:
-                    log(request, subTxnResult.path, AuditConstants.OP_CREATE, null,
-                            createModes.get(subTxnResult.path), Result.SUCCESS);
-                    break;
-                case ZooDefs.OpCode.delete:
-                case ZooDefs.OpCode.deleteContainer:
-                    log(request, subTxnResult.path, AuditConstants.OP_DELETE, null,
-                            null, Result.SUCCESS);
-                    break;
-                case ZooDefs.OpCode.setData:
-                    log(request, subTxnResult.path, AuditConstants.OP_SETDATA, null,
-                            null, Result.SUCCESS);
-                    break;
-                case ZooDefs.OpCode.error:
-                    multiFailed = true;
-                    break;
-                default:
-                    // Do nothing, it ok, we do not log all multi operations
+    private static void logMultiOperation(Request request, ProcessTxnResult rc, boolean failedTxn) {
+        boolean enhanced = ZKAuditProvider.isEnhancedAuditEnabled();
+        Integer error = errorCode(request, rc, failedTxn);
+        boolean failed = failedTxn || (error != null && error != Code.OK.intValue());
+        int failureIndex = -1;
+        if (rc != null && rc.multiResult != null) {
+            for (int index = 0; index < rc.multiResult.size(); index++) {
+                ProcessTxnResult subResult = rc.multiResult.get(index);
+                if (subResult != null && (subResult.type == OpCode.error || subResult.err != Code.OK.intValue())) {
+                    failed = true;
+                    if (failureIndex < 0 && subResult.err != Code.OK.intValue()) {
+                        failureIndex = index;
+                    }
+                    if (error == null || error == Code.OK.intValue()) {
+                        error = subResult.err;
+                    }
+                }
             }
         }
-        if (multiFailed) {
-            log(request, rc.path, AuditConstants.OP_MULTI_OP, null,
-                    null, Result.FAILURE);
+        // Emit the failed parent before decoding so malformed metadata cannot hide the failure.
+        if (failed) {
+            log(request, rc, rc == null ? null : rc.path, AuditConstants.OP_MULTI_OP,
+                    new RequestMetadata(), Result.FAILURE, error, Outcome.FAILED, null);
+            if (!enhanced) {
+                return;
+            }
         }
-    }
-
-    private static void log(Request request, String path, String op, String acls, String createMode, Result result) {
-        log(request.getUsers(), op, path, acls, createMode,
-                request.cnxn.getSessionIdHex(), request.cnxn.getHostAddress(), result);
-    }
-
-    private static void log(String user, String operation, String znode, String acl,
-                            String createMode, String session, String ip, Result result) {
-        ZKAuditProvider.log(user, operation, znode, acl, createMode, session, ip, result);
-    }
-
-    private static String getACLs(Request request) throws IOException {
-        SetACLRequest setACLRequest = new SetACLRequest();
-        deserialize(request, setACLRequest);
-        return ZKUtil.aclToString(setACLRequest.getAcl());
-    }
-
-    private static String getCreateMode(Request request) throws IOException, KeeperException {
-        CreateRequest createRequest = new CreateRequest();
-        deserialize(request, createRequest);
-        return getCreateMode(createRequest);
-    }
-
-    private static String getCreateMode(CreateRequest createRequest) throws KeeperException {
-        return CreateMode.fromFlag(createRequest.getFlags()).toString().toLowerCase();
-    }
-
-    private static Map<String, String> getCreateModes(Request request)
-            throws IOException, KeeperException {
-        Map<String, String> createModes = new HashMap<>();
-        if (!ZKAuditProvider.isAuditEnabled()) {
-            return createModes;
+        MultiOperationRecord multiRequest;
+        try {
+            multiRequest = (MultiOperationRecord) readRequestRecord(request);
+        } catch (IOException e) {
+            auditError(request.type, e);
+            return;
         }
-        MultiOperationRecord multiRequest = new MultiOperationRecord();
-        deserialize(request, multiRequest);
+        boolean complete = rc != null && rc.type == OpCode.multi && rc.multiResult != null
+                && rc.multiResult.size() == multiRequest.size();
+        if (complete) {
+            int index = 0;
+            for (Op op : multiRequest) {
+                ProcessTxnResult subResult = rc.multiResult.get(index++);
+                if (subResult == null || (subResult.type != OpCode.error
+                        && subResult.type != op.getType()
+                        && !(subResult.type == OpCode.create2 && op.getType() == OpCode.create))) {
+                    complete = false;
+                    break;
+                }
+            }
+        }
+        if (!complete) {
+            auditError(request.type, new IOException("Audit multi request/result positions do not match"));
+        }
+        int index = 0;
         for (Op op : multiRequest) {
-            if (op.getType() == ZooDefs.OpCode.create || op.getType() == ZooDefs.OpCode.create2
-                    || op.getType() == ZooDefs.OpCode.createContainer) {
-                CreateRequest requestRecord = (CreateRequest) op.toRequestRecord();
-                createModes.put(requestRecord.getPath(),
-                        getCreateMode(requestRecord));
+            ProcessTxnResult subResult = complete ? rc.multiResult.get(index) : null;
+            String operation = operationFor(op.getType());
+            if (operation != null) {
+                Outcome outcome;
+                if (!complete) {
+                    outcome = Outcome.UNKNOWN;
+                } else if (failed) {
+                    // A zero-code error member was rolled back, not committed. Later members are not applied.
+                    outcome = subResult.err == Code.OK.intValue()
+                            || (index > failureIndex && subResult.err == Code.RUNTIMEINCONSISTENCY.intValue())
+                            ? Outcome.ROLLED_BACK : Outcome.FAILED;
+                } else {
+                    outcome = Outcome.COMMITTED;
+                }
+                RequestMetadata metadata = metadata(op.getType(), op.toRequestRecord(), enhanced);
+                String path = outcome == Outcome.COMMITTED ? subResult.path : op.getPath();
+                log(request, rc, path, operation, metadata, failed ? Result.FAILURE : result(outcome),
+                        subResult == null ? null : subResult.err, outcome, index);
             }
+            index++;
         }
-        return createModes;
     }
 
+    private static RequestMetadata metadata(int type, Record record, boolean enhanced) {
+        RequestMetadata metadata = new RequestMetadata();
+        switch (type) {
+            case OpCode.create:
+            case OpCode.create2:
+            case OpCode.createContainer:
+                CreateRequest create = (CreateRequest) record;
+                metadata.path = create.getPath();
+                metadata.dataLength = length(create.getData());
+                metadata.createMode = createMode(type, create.getFlags());
+                break;
+            case OpCode.createTTL:
+                CreateTTLRequest ttl = (CreateTTLRequest) record;
+                metadata.path = ttl.getPath();
+                metadata.dataLength = length(ttl.getData());
+                metadata.createMode = createMode(type, ttl.getFlags());
+                break;
+            case OpCode.setData:
+                SetDataRequest setData = (SetDataRequest) record;
+                metadata.path = setData.getPath();
+                metadata.dataLength = length(setData.getData());
+                break;
+            case OpCode.delete:
+            case OpCode.deleteContainer:
+                metadata.path = ((DeleteRequest) record).getPath();
+                break;
+            case OpCode.setACL:
+                SetACLRequest setAcl = (SetACLRequest) record;
+                metadata.path = setAcl.getPath();
+                if (setAcl.getAcl() != null) {
+                    metadata.acl = enhanced ? safeAclToString(setAcl.getAcl()) : ZKUtil.aclToString(setAcl.getAcl());
+                }
+                break;
+            default:
+                break;
+        }
+        return metadata;
+    }
+
+    private static String safeAclToString(List<ACL> acls) {
+        StringBuilder value = new StringBuilder();
+        for (ACL acl : acls) {
+            Id id = acl.getId();
+            String user = "[redacted]";
+            if ("world".equals(id.getScheme()) && "anyone".equals(id.getId())) {
+                user = "anyone";
+            } else if ("digest".equals(id.getScheme())) {
+                AuthenticationProvider provider = ProviderRegistry.getProvider(id.getScheme());
+                if (provider != null && provider.getClass() == DigestAuthenticationProvider.class
+                        && id.getId() != null && provider.isValid(id.getId())) {
+                    user = AuthUtil.getUser(id);
+                }
+            }
+            value.append(id.getScheme()).append(':').append(user).append(':')
+                    .append(ZKUtil.getPermString(acl.getPerms()));
+        }
+        return value.toString();
+    }
+
+    private static String createMode(int type, int flags) {
+        try {
+            return CreateMode.fromFlag(flags).name().toLowerCase(Locale.ROOT);
+        } catch (KeeperException e) {
+            auditError(type, e);
+            return null;
+        }
+    }
+
+    private static int length(byte[] data) {
+        return data == null ? 0 : data.length;
+    }
+
+    private static Integer errorCode(Request request, ProcessTxnResult rc, boolean failedTxn) {
+        if (failedTxn && request.getException() != null) {
+            return request.getException().code().intValue();
+        }
+        return rc == null || rc.type == 0 ? null : rc.err;
+    }
+
+    private static Outcome outcome(ProcessTxnResult rc, boolean failedTxn, Integer error) {
+        if (failedTxn || (rc != null && rc.type == OpCode.error)
+                || (error != null && error != Code.OK.intValue())) {
+            return Outcome.FAILED;
+        }
+        return error == null ? Outcome.UNKNOWN : Outcome.COMMITTED;
+    }
+
+    private static Result result(Outcome outcome) {
+        return outcome == Outcome.COMMITTED ? Result.SUCCESS : outcome == Outcome.UNKNOWN ? Result.INVOKED : Result.FAILURE;
+    }
+
+    private static String operationFor(int type) {
+        switch (type) {
+            case OpCode.create:
+            case OpCode.create2:
+            case OpCode.createTTL:
+            case OpCode.createContainer:
+                return AuditConstants.OP_CREATE;
+            case OpCode.delete:
+            case OpCode.deleteContainer:
+                return AuditConstants.OP_DELETE;
+            case OpCode.setData:
+                return AuditConstants.OP_SETDATA;
+            case OpCode.setACL:
+                return AuditConstants.OP_SETACL;
+            case OpCode.reconfig:
+                return AuditConstants.OP_RECONFIG;
+            default:
+                return null;
+        }
+    }
+
+    private static boolean isCreate(int type) {
+        return type == OpCode.create || type == OpCode.create2 || type == OpCode.createTTL || type == OpCode.createContainer;
+    }
+
+    private static void log(Request request, ProcessTxnResult rc, String path, String operation,
+                            RequestMetadata metadata, Result result, Integer error, Outcome outcome, Integer index) {
+        Long zxid = null;
+        if (request.getHdr() != null) {
+            zxid = request.getHdr().getZxid();
+        } else if (rc != null && rc.type != 0) {
+            zxid = rc.zxid;
+        } else if (request.zxid >= 0) {
+            zxid = request.zxid;
+        }
+        ZKAuditProvider.log(request.getUsers(), operation, path, metadata.acl, metadata.createMode,
+                request.cnxn.getSessionIdHex(), request.cnxn.getHostAddress(), result,
+                metadata.dataLength, error, outcome, request.cxid, zxid, index);
+    }
+
+    private static void auditError(int type, Exception e) {
+        ServerMetrics.getMetrics().AUDIT_ERRORS.add(1);
+        LOG.error("Failed to audit log request {}", type, e);
+    }
+
+    private static final class RequestMetadata {
+        private String path;
+        private String acl;
+        private String createMode;
+        private Integer dataLength;
+    }
 }

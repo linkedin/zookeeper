@@ -19,14 +19,12 @@ package org.apache.zookeeper.audit;
 
 import static org.apache.zookeeper.test.ClientBase.CONNECTION_TIMEOUT;
 import static org.junit.Assert.assertEquals;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.LineNumberReader;
-import java.io.StringReader;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.Code;
@@ -36,6 +34,7 @@ import org.apache.zookeeper.ZKUtil;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.audit.AuditEvent.Result;
+import org.apache.zookeeper.audit.AuditHelperTest.AuditCapture;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.server.Request;
@@ -43,7 +42,6 @@ import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.quorum.QuorumPeerTestBase;
 import org.apache.zookeeper.test.ClientBase;
 import org.apache.zookeeper.test.ClientBase.CountdownWatcher;
-import org.apache.zookeeper.test.LoggerTestTool;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
@@ -57,14 +55,14 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
     private static int SERVER_COUNT = 3;
     private static MainThread[] mt;
     private static ZooKeeper zk;
-    private static ByteArrayOutputStream os;
+    private static AuditCapture os;
 
     @BeforeClass
     public static void setUpBeforeClass() throws Exception {
         System.setProperty(ZKAuditProvider.AUDIT_ENABLE, "true");
+        System.setProperty("zookeeper.extendedTypesEnabled", "true");
         // setup the logger to capture all logs
-        LoggerTestTool loggerTestTool = new LoggerTestTool(Slf4jAuditLogger.class);
-        os = loggerTestTool.getOutputStream();
+        os = new AuditCapture();
         mt = startQuorum();
         zk = ClientBase.createZKClient("127.0.0.1:" + mt[0].getQuorumPeer().getClientPort());
         //Verify start audit log here itself
@@ -75,7 +73,7 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
 
     @Before
     public void setUp() {
-        os.reset();
+        os.clear();
     }
 
     @Test
@@ -103,12 +101,46 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
     }
 
     @Test
+    public void testCreateWithTtlAuditLogs() throws Exception {
+        String path = zk.create("/createTtlPath", new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE,
+                CreateMode.PERSISTENT_WITH_TTL, null, 60000);
+        verifyLog(getAuditLog(AuditConstants.OP_CREATE, path, Result.SUCCESS,
+                null, "persistent_with_ttl"), readAuditLog(os));
+    }
+
+    @Test
+    public void testCreateSequentialWithTtlAuditLogs() throws Exception {
+        String path = zk.create("/createTtlSeqPath", new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE,
+                CreateMode.PERSISTENT_SEQUENTIAL_WITH_TTL, null, 60000);
+        verifyLog(getAuditLog(AuditConstants.OP_CREATE, path, Result.SUCCESS,
+                null, "persistent_sequential_with_ttl"), readAuditLog(os));
+    }
+
+    @Test
+    public void testEnhancedEscapingThroughSlf4j() {
+        String previous = System.getProperty(AuditHelperTest.ENHANCED_ENABLE);
+        try (AuditHelperTest.AuditCapture capture = new AuditHelperTest.AuditCapture()) {
+            System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
+            ZKAuditProvider.log("team\tname\r\n\\t", "create", "/name=value\\child",
+                    null, "persistent", "0x123", "127.0.0.1", Result.SUCCESS);
+            String log = capture.read(1).get(0);
+            assertEquals("2", AuditHelperTest.fields(log).get("schema_version"));
+            assertEquals("team\\tname\\r\\n\\\\t", AuditHelperTest.fields(log).get("user"));
+            assertEquals("/name=value\\\\child", AuditHelperTest.fields(log).get("znode"));
+            Assert.assertFalse(log.contains("\n"));
+            Assert.assertFalse(log.contains("\r"));
+        } finally {
+            AuditHelperTest.restoreProperty(AuditHelperTest.ENHANCED_ENABLE, previous);
+        }
+    }
+
+    @Test
     public void testDeleteAuditLogs()
             throws InterruptedException, IOException, KeeperException {
         String path = "/deletePath";
         zk.create(path, "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
                 CreateMode.PERSISTENT);
-        os.reset();
+        os.clear();
         try {
             zk.delete(path, -100);
         } catch (KeeperException exception) {
@@ -129,7 +161,7 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
         String path = "/setDataPath";
         zk.create(path, "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
                 CreateMode.PERSISTENT);
-        os.reset();
+        os.clear();
         try {
             zk.setData(path, "newData".getBytes(), -100);
         } catch (KeeperException exception) {
@@ -151,7 +183,7 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
         String path = "/aclPath";
         zk.create(path, "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
                 CreateMode.PERSISTENT);
-        os.reset();
+        os.clear();
         try {
             zk.setACL(path, openAclUnsafe, -100);
         } catch (KeeperException exception) {
@@ -243,6 +275,32 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
                 ZKAuditProvider.getZKUser(), null), readAuditLog(os, SERVER_COUNT));
     }
 
+    @Test
+    public void testEnhancedSystemDeletionIdentityAcrossReplicas() throws Exception {
+        String previous = System.getProperty(AuditHelperTest.ENHANCED_ENABLE);
+        System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
+        try (ZooKeeper client = ClientBase.createZKClient("127.0.0.1:" + mt[0].getQuorumPeer().getClientPort())) {
+            client.create("/enhanced-ephemeral", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+            String session = "0x" + Long.toHexString(client.getSessionId());
+            os.read(1);
+            client.close();
+            List<String> logs = os.await(SERVER_COUNT, CONNECTION_TIMEOUT);
+            String zxid = Long.toString(zk.exists("/", false).getPzxid());
+            for (String log : logs) {
+                Map<String, String> fields = AuditHelperTest.fields(log);
+                AuditHelperTest.assertWrite(fields, AuditConstants.OP_DEL_EZNODE_EXP,
+                        "/enhanced-ephemeral", null, "committed", "0");
+                assertEquals(zxid, fields.get("zxid"));
+                assertEquals(session, fields.get("session"));
+                assertEquals(ZKAuditProvider.getZKUser(), fields.get("user"));
+                Assert.assertNull(fields.get("cxid"));
+                Assert.assertNull(fields.get("ip"));
+            }
+        } finally {
+            AuditHelperTest.restoreProperty(AuditHelperTest.ENHANCED_ENABLE, previous);
+        }
+    }
+
 
     private static String getStartLog() {
         // user=userName operation=ZooKeeperServer start  result=success
@@ -309,10 +367,7 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
     }
 
     private static void verifyLog(String expectedLog, String log) {
-        String searchString = " - ";
-        int logStartIndex = log.indexOf(searchString);
-        String auditLog = log.substring(logStartIndex + searchString.length());
-        Assert.assertTrue(auditLog.endsWith(expectedLog));
+        Assert.assertTrue(log, log.endsWith(expectedLog));
     }
 
     private static void verifyLogs(String expectedLog, List<String> logs) {
@@ -321,37 +376,14 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
         }
     }
 
-    private String readAuditLog(ByteArrayOutputStream os) throws IOException {
+    private String readAuditLog(AuditCapture os) throws IOException {
         return readAuditLog(os, 1).get(0);
     }
 
-    private static List<String> readAuditLog(ByteArrayOutputStream os,
+    private static List<String> readAuditLog(AuditCapture os,
                                              int numberOfLogEntry)
             throws IOException {
-        return readAuditLog(os, numberOfLogEntry, false);
-    }
-
-    private static List<String> readAuditLog(ByteArrayOutputStream os,
-                                             int numberOfLogEntry,
-                                             boolean skipEphemralDeletion) throws IOException {
-        List<String> logs = new ArrayList<>();
-        LineNumberReader r = new LineNumberReader(
-                new StringReader(os.toString()));
-        String line;
-        while ((line = r.readLine()) != null) {
-            if (skipEphemralDeletion
-                    && line.contains(AuditConstants.OP_DEL_EZNODE_EXP)) {
-                continue;
-            }
-            logs.add(line);
-        }
-        os.reset();
-        assertEquals(
-                "Expected number of log entries are not generated. Logs are "
-                        + logs,
-                numberOfLogEntry, logs.size());
-        return logs;
-
+        return os.read(numberOfLogEntry);
     }
 
     private static MainThread[] startQuorum() throws IOException {
@@ -411,6 +443,7 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
     @AfterClass
     public static void tearDownAfterClass() {
         System.clearProperty(ZKAuditProvider.AUDIT_ENABLE);
+        System.clearProperty("zookeeper.extendedTypesEnabled");
         for (int i = 0; i < SERVER_COUNT; i++) {
             try {
                 if (mt[i] != null) {
@@ -419,11 +452,7 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            try {
-                os.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
+        os.close();
     }
 }
