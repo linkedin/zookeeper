@@ -19,8 +19,13 @@ package org.apache.zookeeper.audit;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import org.apache.jute.Record;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
@@ -41,6 +46,7 @@ import org.apache.zookeeper.proto.SetDataRequest;
 import org.apache.zookeeper.server.ByteBufferInputStream;
 import org.apache.zookeeper.server.DataTree.ProcessTxnResult;
 import org.apache.zookeeper.server.Request;
+import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.auth.AuthenticationProvider;
 import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
 import org.apache.zookeeper.server.auth.IPAuthenticationProvider;
@@ -56,6 +62,63 @@ import org.slf4j.LoggerFactory;
 public final class AuditHelper {
     private static final Logger LOG = LoggerFactory.getLogger(AuditHelper.class);
     private static final String REDACTED = "[redacted]";
+
+    /**
+     * Records the identities on a valid session attachment, including reconnects.
+     * The caller must have validated and assigned the session before invoking this hook.
+     */
+    public static void addSessionEstablishedLog(ServerCnxn cnxn) {
+        logConnection(cnxn, AuditConstants.OP_SESSION_ESTABLISHED, null, Result.SUCCESS, null, null);
+    }
+
+    /**
+     * Records an actual authentication outcome, not an intermediate SASL challenge.
+     * Success includes the accepted scheme's current bindings; failure does not infer a principal.
+     */
+    public static void addAuthenticationLog(ServerCnxn cnxn, String scheme, Code code, int cxid) {
+        logConnection(cnxn, AuditConstants.OP_AUTHENTICATION, scheme,
+                code == Code.OK ? Result.SUCCESS : Result.FAILURE, code == null ? null : code.intValue(), cxid);
+    }
+
+    private static void logConnection(ServerCnxn cnxn, String operation, String scheme,
+                                      Result result, Integer error, Integer cxid) {
+        try {
+            boolean enhanced = ZKAuditProvider.isEnhancedAuditEnabled();
+            if (!enhanced) {
+                return;
+            }
+            long sessionId = cnxn.getSessionId();
+            String session = sessionId == 0 ? null : "0x" + Long.toHexString(sessionId);
+            String ip = cnxn.getHostAddress();
+            Map<String, Set<String>> bindings = connectionBindings(cnxn, operation, scheme, result);
+            for (Map.Entry<String, Set<String>> binding : bindings.entrySet()) {
+                for (String user : binding.getValue()) {
+                    ZKAuditProvider.logConnection(user, operation, binding.getKey(),
+                            session, ip, result, error, cxid, enhanced);
+                }
+            }
+        } catch (RuntimeException e) {
+            ZKAuditProvider.reportAuditError(LOG, "Failed to audit log operation {}", operation, e);
+        }
+    }
+
+    private static Map<String, Set<String>> connectionBindings(
+            ServerCnxn cnxn, String operation, String scheme, Result result) {
+        boolean attachment = AuditConstants.OP_SESSION_ESTABLISHED.equals(operation);
+        Map<String, Set<String>> bindings = new LinkedHashMap<>();
+        if (result == Result.SUCCESS) {
+            for (Id id : cnxn.getAuthInfo()) {
+                if (attachment || (id != null && scheme != null && scheme.equals(id.getScheme()))) {
+                    bindings.computeIfAbsent(id == null ? null : id.getScheme(), key -> new LinkedHashSet<>())
+                            .add(safeUser(id));
+                }
+            }
+        }
+        if (bindings.isEmpty()) {
+            bindings.put(scheme, Collections.singleton(null));
+        }
+        return bindings;
+    }
 
     public static void addAuditLog(Request request, ProcessTxnResult rc) {
         addAuditLog(request, rc, false);

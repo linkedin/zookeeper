@@ -49,6 +49,7 @@ import org.apache.zookeeper.Version;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.ZookeeperBanner;
+import org.apache.zookeeper.audit.AuditHelper;
 import org.apache.zookeeper.common.Time;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
@@ -1108,6 +1109,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                     Long.toHexString(cnxn.getSessionId()),
                     cnxn.getSessionTimeout(),
                     cnxn.getRemoteSocketAddress());
+                AuditHelper.addSessionEstablishedLog(cnxn);
                 cnxn.enableRecv();
             } else {
 
@@ -1658,9 +1660,11 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             if (authReturn == KeeperException.Code.OK) {
                 LOG.debug("Authentication succeeded for scheme: {}", scheme);
                 LOG.info("auth success {}", cnxn.getRemoteSocketAddress());
+                AuditHelper.addAuthenticationLog(cnxn, scheme, Code.OK, h.getXid());
                 ReplyHeader rh = new ReplyHeader(h.getXid(), 0, KeeperException.Code.OK.intValue());
                 cnxn.sendResponse(rh, null, null);
             } else {
+                AuditHelper.addAuthenticationLog(cnxn, scheme, Code.AUTHFAILED, h.getXid());
                 if (ap == null) {
                     LOG.warn(
                         "No authentication provider for scheme: {} has {}",
@@ -1738,8 +1742,10 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                         && authorizationID.equals(System.getProperty("zookeeper.superUser"))) {
                         cnxn.addAuthInfo(new Id("super", ""));
                     }
+                    AuditHelper.addAuthenticationLog(cnxn, SASL_AUTH_SCHEME, Code.OK, requestHeader.getXid());
                 }
             } catch (SaslException e) {
+                AuditHelper.addAuthenticationLog(cnxn, SASL_AUTH_SCHEME, Code.AUTHFAILED, requestHeader.getXid());
                 LOG.warn("Client {} failed to SASL authenticate: {}", cnxn.getRemoteSocketAddress(), e);
                 if (shouldAllowSaslFailedClientsConnect() && !shouldRequireClientSaslAuth()) {
                     LOG.warn("Maintaining client connection despite SASL authentication failure.");

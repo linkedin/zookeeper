@@ -33,4 +33,6 @@ public final class AuditConstants {
     public static final String OP_MULTI_OP = "multiOperation";
     public static final String OP_RECONFIG = "reconfig";
     public static final String OP_DEL_EZNODE_EXP = "ephemeralZNodeDeletionOnSessionCloseOrExpire";
+    public static final String OP_SESSION_ESTABLISHED = "sessionEstablished";
+    public static final String OP_AUTHENTICATION = "authentication";
 }

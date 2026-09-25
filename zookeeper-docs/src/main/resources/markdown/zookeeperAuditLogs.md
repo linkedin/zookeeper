@@ -19,6 +19,7 @@ limitations under the License.
 * [ZooKeeper Audit Logs](#ch_auditLogs)
 * [ZooKeeper Audit Log Configuration](#ch_auditConfig)
 * [Enhanced audit metadata (schema v2)](#ch_auditV2)
+* [Session and authentication bindings](#ch_auditBindings)
 * [Who is taken as user in audit logs?](#ch_zkAuditUser)
 <a name="ch_auditLogs"></a>
 
@@ -35,9 +36,9 @@ The audit log captures detailed information for the operations that are selected
 | Key   | Value |
 | ----- | ----- |
 |session | client session id |
-|user | comma separated list of users who are associate with a client session. For more on this, see [Who is taken as user in audit logs](#ch_zkAuditUser).
+|user | comma separated list of users associated with a write request, or one sanitized principal on each v2 [binding record](#ch_auditBindings). For more on this, see [Who is taken as user in audit logs](#ch_zkAuditUser).
 |ip | client IP address
-|operation | any one of the selected operations for audit. Possible values are(serverStart, serverStop, create, delete, setData, setAcl, multiOperation, reconfig, ephemeralZNodeDeletionOnSessionCloseOrExpire)
+|operation | any one of the selected operations for audit. Possible values are(serverStart, serverStop, create, delete, setData, setAcl, multiOperation, reconfig, ephemeralZNodeDeletionOnSessionCloseOrExpire). Enhanced logging also adds sessionEstablished and authentication.
 |znode | path of the znode
 |znode_type | type of znode in case of creation operation
 |acl | String representation of znode ACL like cdrwa(create, delete,read, write, admin). This is logged only for setAcl operation
@@ -122,6 +123,7 @@ V2 keeps the existing field names and `result=success/failure/invoked`, and adds
 | `cxid` | Known client request ID in decimal. All members of a multi share this ID. |
 | `zxid` | Known transaction ID in decimal, not the server's latest zxid at reply time. A failed transaction may also have a zxid. |
 | `multi_index` | Zero-based position in the **complete** multi request, including non-mutating checks. Omitted on single operations and multi parent records. |
+| `auth_scheme` | Authentication scheme paired with the single sanitized `user` on a session/authentication binding record. Omitted when unknown and on write records. |
 
 No znode payloads are included. For enhanced `setAcl` records, `acl` retains
 schemes and permissions, but identities are conservative: `world:anyone` is
@@ -156,11 +158,13 @@ the string-based APIs cannot infer credentials from arbitrary strings.
   skipped after the failure. They have `result=failure`, **even when their
   individual `error_code` is `0`**. Later skipped members normally have code
   `-2` (RUNTIMEINCONSISTENCY); a first failure with that code is still `failed`.
-* `unknown` means the available metadata cannot establish an operation's
-  outcome. Missing or mismatched multi results are not treated as commits,
+* For transaction records, `unknown` means the available metadata cannot
+  establish the transaction's outcome. Missing or mismatched multi results are not treated as commits,
   and untrustworthy per-member error codes are omitted. If the whole multi
   is known to have failed, these members still have `result=failure`;
-  otherwise unknown operations use `result=invoked`.
+  otherwise unknown transactions use `result=invoked`. Non-transactional
+  lifecycle and successful binding events also use `outcome=unknown`; their
+  separate `result` retains the known lifecycle or authentication result.
 
 Failed multis keep their `multiOperation` parent failure record, followed in v2
 by records for the attempted mutations when the request is decodable. The parent
@@ -172,7 +176,7 @@ failed or rolled-back creates use the attempted path.
 
 ### Supported operations and identity
 
-The audited operations remain creates (`create`, `create2`, container and TTL
+The audited write operations remain creates (`create`, `create2`, container and TTL
 variants), deletes (including container deletes), `setData`, `setAcl`, write
 multis, reconfiguration, server start/stop, and existing system ephemeral-node
 deletions. Ordinary reads, read multis and checks do not produce audit records.
@@ -180,8 +184,8 @@ Checks inside a write multi still occupy an index.
 
 Existing lifecycle events and callers of the legacy logging overloads receive
 `outcome=unknown` in v2 when they do not supply transaction metadata; their
-existing `result` is unchanged. No session/authentication binding events are
-added by this schema.
+existing `result` is unchanged. Enhanced session/authentication events are
+described below; they do not claim a committed transaction.
 
 System ephemeral-node deletion records preserve the **server actor**, the
 affected session and path, and omit client IP. V2 adds the deletion transaction's
@@ -190,6 +194,102 @@ deletion hook, so it is omitted. These system records can be emitted on multiple
 replicas or during replay. Downstream consumers can deduplicate using ensemble
 identity plus `zxid`, `operation`, `session` and `znode`; client multi mutations
 also require `multi_index` to distinguish repeated paths.
+
+<a name="ch_auditBindings"></a>
+
+### Session and authentication bindings
+
+Both existing audit gates must be enabled for these additional operations.
+With audit logging disabled or enhanced logging disabled, neither operation is
+emitted. Authentication, SASL failure policy, TLS, ACL evaluation and client
+responses are unchanged.
+
+* `operation=sessionEstablished`, `result=success` records a **valid session
+  attachment**, including reconnects and movement to another server. It does
+  not necessarily mean a new session was created. The hook runs after the
+  connect response has been queued and before receiving further requests is
+  enabled. Invalid session/password revalidation does not produce these records.
+  Each record binds one identity already attached to that connection.
+* `operation=authentication` records an explicit auth provider's accepted or
+  rejected outcome, or SASL completion/failure. Intermediate SASL challenges
+  do not produce successes. Successful binding records snapshot the accepted
+  **scheme's currently attached identities**, including earlier identities of
+  the same scheme; they are not a delta or proof that each principal was
+  newly authenticated by this packet. A failure record does not extract a
+  principal from credentials or blame an identity already on the connection.
+
+These operations emit one record per distinct sanitized `(auth_scheme, user)`
+binding. `auth_scheme` and the scalar `user` belong to the **same record**;
+neither field is a parallel comma-separated list. For example, one attachment
+with IP, digest and X509 identities produces three records:
+
+```text
+session=0x123	user=127.0.0.1	ip=127.0.0.1	operation=sessionEstablished	schema_version=2	outcome=unknown	auth_scheme=ip	result=success
+session=0x123	user=alice	ip=127.0.0.1	operation=sessionEstablished	schema_version=2	outcome=unknown	auth_scheme=digest	result=success
+session=0x123	user=CN=Bob,OU=Audit	ip=127.0.0.1	operation=sessionEstablished	schema_version=2	outcome=unknown	auth_scheme=x509	result=success
+```
+
+Binding order is unspecified. Duplicate sanitized pairs within a single hook
+are collapsed, including distinct credentials for the same username or
+multiple untrusted identities that redact to the same pair. A later attachment
+or auth outcome can emit that pair again. Record counts are therefore **not**
+session-creation or authentication-attempt counts.
+
+Use ordinary v2 field unescaping only; there is no JSON grammar inside `user`.
+Commas, quotes and equals signs are part of a scalar principal, not binding
+separators. Write-record `user` formatting is unchanged.
+
+An attachment without identities emits one record with `user` and `auth_scheme`
+omitted. Ordinary anonymous network clients normally still have an `ip`
+identity; this is not proof of credential-based authentication. Unknown fields
+are omitted, not encoded as a literal `null` username. Failed digest
+authentication has `auth_scheme=digest` and no `user`. A provider that accepts
+authentication without attaching a matching identity also has no `user`.
+A missing scheme is omitted. An existing but untrusted or
+malformed identity is `[redacted]`, using the same conservative concrete-provider
+policy as other server-generated v2 records. Custom providers and subclasses
+do not opt into trusted extraction through `getUserName`. No auth packet bytes,
+SASL tokens, passwords, digest secrets or certificate bodies are logged.
+
+| Field | Binding-event meaning |
+| --- | --- |
+| `session` | Known connection session ID in hexadecimal. Omitted when the ID is not assigned (zero), including pre-session authentication failures. No replacement session ID is invented. |
+| `auth_scheme` | Scheme of the identity or the authentication outcome. Omitted when unknown. |
+| `user` | One sanitized principal bound to `auth_scheme`. Omitted for failed authentication or when no matching identity is known. |
+| `ip` | Client address available on the connection. |
+| `result` | `success` for valid attachments or accepted authentication; `failure` for rejected authentication, even if SASL policy allows the connection to remain open. |
+| `error_code` | Authentication outcome: `0` for success, `-115` (AUTHFAILED) for failure. Omitted on attachment events. This is not the SASL policy's eventual reply code: allowed failed clients can receive OK, while required-SASL failures can receive SESSIONCLOSEDREQUIRESASLAUTH. |
+| `outcome` | `unknown` for a successful, non-transactional binding; `failed` for authentication failure. Never `committed`. |
+| `cxid` | Actual auth/SASL request ID, when a packet supplied one. These protocol IDs can repeat and are not unique event IDs. Omitted for session attachment. |
+
+There is no binding `zxid`, znode, payload size or multi index. The
+`sessionEstablished` hook is shared by standalone and quorum servers, including
+learner revalidation. An attachment's records describe one snapshot on the
+attached server, not a new binding on every replica. All identities are
+sanitized before the first record is emitted, and the entire group uses one
+captured enhanced mode. A later authentication outcome is a separate stage,
+not a duplicate attachment.
+
+TLS authentication can populate an X509 identity **before** session assignment.
+The later attachment snapshot correlates that identity with the valid session;
+it does not invent an earlier session ID or a second X509 authentication
+outcome. Neither an `x509` nor a `super` identity establishes the transport
+security state. A `super` identity remains conservatively redacted. DN-based
+X509 identities use the existing built-in validation; SAN-derived identities
+that do not validate as DNs and custom TLS identities remain redacted.
+
+Request-time write identities remain authoritative for those writes. Later
+authentication does not rewrite earlier audit history, and reconnecting does
+not transfer another connection's authentication information. Consumers must
+not treat an attachment snapshot as the identity for every subsequent write.
+
+These are best-effort server observations, not evidence of client receipt or
+durable log delivery. TLS handshake failures before session initialization,
+malformed packets that never reach an auth outcome, and a missing SASL server
+are not newly instrumented here. Metadata failures can omit a binding record;
+the existing best-effort `audit_errors` reporter is reused without changing
+authentication or session behavior, even if the counter or diagnostic logger
+also fails.
 
 ### Escaping and parsing
 
@@ -213,7 +313,8 @@ enabling the property on servers, then roll it out gradually. Roll back emission
 by removing the enhanced property or setting it to `false` on restart. Each
 audited request captures the enhanced mode before metadata extraction, and uses
 that same decision for user/ACL sanitization, schema construction and every
-parent/member record of a multi. An in-flight request keeps its captured mode if
+parent/member record of a multi. A connection-binding hook likewise captures
+one mode before identity extraction and carries it through emission. An in-flight request keeps its captured mode if
 the property changes; a subsequent request captures the new value. Direct
 provider logging captures its mode per event. The base audit enablement retains
 its startup behavior. No wire, persistence, authentication, ACL, quota or payload
@@ -230,8 +331,8 @@ runtime failures in either reporting backend are isolated without retries, so
 they cannot reject an applied write or interrupt system deletion. A failing
 metrics backend can therefore also leave detected audit errors uncounted.
 
-Audit coverage is limited to the existing transaction-audit hooks. Rejections
-before a hook, connection-level failures and later reply/send failures need
+Audit coverage is limited to the selected transaction and binding hooks. Rejections
+before a hook, other connection-level failures and later reply/send failures need
 separate instrumentation; these records are not a complete request-delivery
 ledger. Log delivery is also a separate concern: an asynchronous appender using
 `neverBlock=true` can discard records without reporting an exception.
@@ -254,7 +355,7 @@ User is decided based on the configured authentication provider:
 
 * When IPAuthenticationProvider is configured then authenticated IP is taken as user
 * When SASLAuthenticationProvider is configured then client principal is taken as user
-* When X509AuthenticationProvider is configured then client certificate is taken as user
+* When X509AuthenticationProvider is configured then its certificate-derived identity (normally the subject DN) is taken as user, not the certificate body
 * When DigestAuthenticationProvider is configured then authenticated user is user 
 
 Custom authentication provider can override org.apache.zookeeper.server.auth.AuthenticationProvider.getUserName(String id)
