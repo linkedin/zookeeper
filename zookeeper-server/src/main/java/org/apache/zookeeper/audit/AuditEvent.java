@@ -18,6 +18,7 @@
 package org.apache.zookeeper.audit;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -43,12 +44,12 @@ public final class AuditEvent {
 
     void addEntry(FieldName fieldName, String value) {
         if (value != null) {
-            logEntries.put(fieldName.name().toLowerCase(), value);
+            logEntries.put(fieldName.name().toLowerCase(Locale.ROOT), value);
         }
     }
 
     public String getValue(FieldName fieldName) {
-        return logEntries.get(fieldName.name().toLowerCase());
+        return logEntries.get(fieldName.name().toLowerCase(Locale.ROOT));
     }
 
     public Result getResult() {
@@ -63,6 +64,7 @@ public final class AuditEvent {
     @Override
     public String toString() {
         StringBuilder buffer = new StringBuilder();
+        boolean enhanced = AuditConstants.SCHEMA_VERSION.equals(getValue(FieldName.SCHEMA_VERSION));
         boolean first = true;
         for (Map.Entry<String, String> entry : logEntries.entrySet()) {
             String key = entry.getKey();
@@ -75,7 +77,7 @@ public final class AuditEvent {
                     buffer.append(PAIR_SEPARATOR);
                 }
                 buffer.append(key).append(KEY_VAL_SEPARATOR)
-                        .append(value);
+                        .append(enhanced ? escape(value) : value);
             }
         }
         //add result field
@@ -83,16 +85,27 @@ public final class AuditEvent {
             buffer.append(PAIR_SEPARATOR);
         }
         buffer.append("result").append(KEY_VAL_SEPARATOR)
-                .append(result.name().toLowerCase());
+                .append(result.name().toLowerCase(Locale.ROOT));
         return buffer.toString();
     }
 
+    private static String escape(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("\t", "\\t")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n");
+    }
+
     public enum FieldName {
-        USER, OPERATION, IP, ACL, ZNODE, SESSION, ZNODE_TYPE
+        USER, OPERATION, IP, ACL, ZNODE, SESSION, ZNODE_TYPE,
+        SCHEMA_VERSION, DATA_LENGTH, ERROR_CODE, OUTCOME, CXID, ZXID, MULTI_INDEX
     }
 
     public enum Result {
         SUCCESS, FAILURE, INVOKED
     }
-}
 
+    public enum Outcome {
+        COMMITTED, FAILED, ROLLED_BACK, UNKNOWN
+    }
+}

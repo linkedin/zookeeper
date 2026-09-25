@@ -59,6 +59,7 @@ import org.apache.zookeeper.Watcher.WatcherType;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.audit.AuditConstants;
+import org.apache.zookeeper.audit.AuditEvent.Outcome;
 import org.apache.zookeeper.audit.AuditEvent.Result;
 import org.apache.zookeeper.audit.ZKAuditProvider;
 import org.apache.zookeeper.common.PathTrie;
@@ -1451,15 +1452,11 @@ public class DataTree {
                         path, sessionHex);
             }
             if (ZKAuditProvider.isAuditEnabled()) {
-                if (deleted) {
-                    ZKAuditProvider.log(ZKAuditProvider.getZKUser(),
-                            AuditConstants.OP_DEL_EZNODE_EXP, path, null, null,
-                            sessionHex, null, Result.SUCCESS);
-                } else {
-                    ZKAuditProvider.log(ZKAuditProvider.getZKUser(),
-                            AuditConstants.OP_DEL_EZNODE_EXP, path, null, null,
-                            sessionHex, null, Result.FAILURE);
-                }
+                ZKAuditProvider.log(ZKAuditProvider.getZKUser(),
+                        AuditConstants.OP_DEL_EZNODE_EXP, path, null, null,
+                        sessionHex, null, deleted ? Result.SUCCESS : Result.FAILURE,
+                        null, deleted ? Code.OK.intValue() : Code.NONODE.intValue(),
+                        deleted ? Outcome.COMMITTED : Outcome.FAILED, null, zxid, null);
             }
         }
     }

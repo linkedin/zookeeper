@@ -17,7 +17,8 @@ limitations under the License.
 # ZooKeeper Audit Logging
 
 * [ZooKeeper Audit Logs](#ch_auditLogs)
-* [ZooKeeper Audit Log Configuration](#ch_reconfig_format)
+* [ZooKeeper Audit Log Configuration](#ch_auditConfig)
+* [Enhanced audit metadata (schema v2)](#ch_auditV2)
 * [Who is taken as user in audit logs?](#ch_zkAuditUser)
 <a name="ch_auditLogs"></a>
 
@@ -36,9 +37,9 @@ The audit log captures detailed information for the operations that are selected
 |session | client session id |
 |user | comma separated list of users who are associate with a client session. For more on this, see [Who is taken as user in audit logs](#ch_zkAuditUser).
 |ip | client IP address
-|operation | any one of the selected operations for audit. Possible values are(serverStart, serverStop, create, delete, setData, setAcl, multiOperation, reconfig, ephemeralZNodeDeleteOnSessionClose)
+|operation | any one of the selected operations for audit. Possible values are(serverStart, serverStop, create, delete, setData, setAcl, multiOperation, reconfig, ephemeralZNodeDeletionOnSessionCloseOrExpire)
 |znode | path of the znode
-|znode type | type of znode in case of creation operation
+|znode_type | type of znode in case of creation operation
 |acl | String representation of znode ACL like cdrwa(create, delete,read, write, admin). This is logged only for setAcl operation
 |result | result of the operation. Possible values are (success/failure/invoked). Result "invoked" is used for serverStop operation because stop is logged before ensuring that server actually stopped.
 
@@ -98,6 +99,126 @@ Audit logging is done using logback. Following is the default logback configurat
     </logger-->
 
 Change above configuration to customize the auditlog file, number of backups, max file size, custom audit logger etc.
+
+<a name="ch_auditV2"></a>
+
+## Enhanced audit metadata (schema v2)
+
+The optional Java system property `zookeeper.audit.enhanced.enable` defaults to
+`false`. Set `-Dzookeeper.audit.enhanced.enable=true` in addition to enabling
+`zookeeper.audit.enable` to emit v2 records. Enhanced logging does not enable
+audit logging by itself. With enhanced logging off, ordinary legacy formatting
+and the existing logging APIs are preserved. TTL creates are audited in both
+modes, including sequential TTL creates.
+
+V2 keeps the existing field names and `result=success/failure/invoked`, and adds:
+
+| Key | Meaning |
+| --- | --- |
+| `schema_version` | `2`. Its absence identifies legacy output. |
+| `data_length` | Attempted payload size in bytes for create variants and `setData`, not request size, character count, or resulting znode size. Null and empty payloads are `0`; unavailable or undecodable payloads omit this field. A failed attempt can have a nonzero length. |
+| `error_code` | Known numeric ZooKeeper code, such as `0` (OK), `-101` (NONODE), `-102` (NOAUTH), `-103` (BADVERSION), or `-110` (NODEEXISTS). Omitted when unavailable. |
+| `outcome` | `committed`, `failed`, `rolled_back`, or `unknown`, as described below. |
+| `cxid` | Known client request ID in decimal. All members of a multi share this ID. |
+| `zxid` | Known transaction ID in decimal, not the server's latest zxid at reply time. A failed transaction may also have a zxid. |
+| `multi_index` | Zero-based position in the **complete** multi request, including non-mutating checks. Omitted on single operations and multi parent records. |
+
+No znode payloads are included. For enhanced `setAcl` records, `acl` retains
+schemes and permissions, but identities are conservative: `world:anyone` is
+retained, valid built-in digest identities use the provider's username extraction
+(not the digest), and other identities are `[redacted]`. This also applies to
+failed ACL attempts, where identities might be malformed or contain credentials.
+Unknown custom identity representations are not printed as ACL identities.
+Custom callers of the logging APIs must supply sanitized user and ACL metadata;
+the string-based APIs cannot infer credentials from arbitrary strings.
+
+### Results and transaction outcomes
+
+* `committed` means the available transaction result reports an applied write.
+  These records have `result=success` and `error_code=0`. It does not guarantee
+  that the reply reached the client or the log reached durable storage.
+* `failed` means the operation or whole multi failed according to its known
+  result. For rejected single transactions, the request exception takes
+  precedence when the reply path uses it instead of the transaction error.
+* `rolled_back` means a mutation was not applied because its atomic multi
+  failed. This includes prepared members discarded by rollback and members
+  skipped after the failure. They have `result=failure`, **even when their
+  individual `error_code` is `0`**. Later skipped members normally have code
+  `-2` (RUNTIMEINCONSISTENCY); a first failure with that code is still `failed`.
+* `unknown` means the available metadata cannot establish an operation's
+  outcome. Missing or mismatched multi results are not treated as commits,
+  and untrustworthy per-member error codes are omitted. If the whole multi
+  is known to have failed, these members still have `result=failure`;
+  otherwise unknown operations use `result=invoked`.
+
+Failed multis keep their `multiOperation` parent failure record, followed in v2
+by records for the attempted mutations when the request is decodable. The parent
+is retained even if request decoding fails. Successful multis emit individual
+mutation records, not a parent success record. Request and result members are
+paired by position, so repeated paths cannot overwrite each other's metadata.
+Successful sequential creates use the final path returned by the transaction;
+failed or rolled-back creates use the attempted path.
+
+### Supported operations and identity
+
+The audited operations remain creates (`create`, `create2`, container and TTL
+variants), deletes (including container deletes), `setData`, `setAcl`, write
+multis, reconfiguration, server start/stop, and existing system ephemeral-node
+deletions. Ordinary reads, read multis and checks do not produce audit records.
+Checks inside a write multi still occupy an index.
+
+Existing lifecycle events and callers of the legacy logging overloads receive
+`outcome=unknown` in v2 when they do not supply transaction metadata; their
+existing `result` is unchanged. No session/authentication binding events are
+added by this schema.
+
+System ephemeral-node deletion records preserve the **server actor**, the
+affected session and path, and omit client IP. V2 adds the deletion transaction's
+zxid, known error code and outcome. A client request ID is not available at this
+deletion hook, so it is omitted. These system records can be emitted on multiple
+replicas or during replay. Downstream consumers can deduplicate using ensemble
+identity plus `zxid`, `operation`, `session` and `znode`; client multi mutations
+also require `multi_index` to distinguish repeated paths.
+
+### Escaping and parsing
+
+Fields are separated by literal tabs. Split each field at its **first** equals
+sign; equals signs inside values are unchanged. In v2 only, value formatting
+reversibly escapes backslash as `\\`, tab as `\t`, carriage return as `\r`, and
+newline as `\n`. A literal backslash followed by `t` is therefore `\\t`, distinct
+from an escaped tab. Decode left to right, consuming one escape pair at a time;
+do not use successive global replacements to unescape. For example, the user
+value containing a tab and newline is rendered as `user=team\tname\n` on a single
+physical log line. Enum-derived keys and values are independent of the server's
+default locale. Custom `AuditLogger` implementations receive raw event values;
+`AuditEvent.toString()` is the production text-formatting path.
+
+### Mixed versions, rollout, rollback and coverage
+
+Consumers should recognize v2 per record using `schema_version=2`, tolerate
+unknown additive fields, and accept omitted optional fields. Do not apply v2
+unescaping to legacy records. Prepare consumers for mixed legacy/v2 output before
+enabling the property on servers, then roll it out gradually. Roll back emission
+by removing the enhanced property or setting it to `false` on restart. The
+enhanced gate is checked when emitting events; the base audit enablement retains
+its startup behavior. No wire, persistence, authentication, ACL, quota or payload
+limit changes are required.
+
+The bounded-cardinality server counter `audit_errors` counts detected audit
+metadata extraction/correlation failures and runtime failures reported by the
+audit logger. Such failures are logged without rejecting an otherwise valid
+client operation. A metadata error can still yield an audit record with omitted
+fields, so this counter is **not** a dropped-record count. It has no per-path,
+per-user or per-session labels.
+
+Audit coverage is limited to the existing transaction-audit hooks. Rejections
+before a hook, connection-level failures and later reply/send failures need
+separate instrumentation; these records are not a complete request-delivery
+ledger. Log delivery is also a separate concern: an asynchronous appender using
+`neverBlock=true` can discard records without reporting an exception.
+`audit_errors` cannot measure those silent drops, filtering, retention loss, or
+downstream delivery gaps. Validate source-log coverage and delivery independently
+before relying on the stream for complete accounting.
 
 <a name="ch_zkAuditUser"></a>
 
