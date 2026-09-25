@@ -66,6 +66,7 @@ import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.ServerMetrics;
 import org.apache.zookeeper.server.auth.AuthenticationProvider;
+import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.txn.CheckVersionTxn;
 import org.apache.zookeeper.txn.CloseSessionTxn;
@@ -74,6 +75,7 @@ import org.apache.zookeeper.txn.CreateTxn;
 import org.apache.zookeeper.txn.DeleteTxn;
 import org.apache.zookeeper.txn.ErrorTxn;
 import org.apache.zookeeper.txn.MultiTxn;
+import org.apache.zookeeper.txn.SetACLTxn;
 import org.apache.zookeeper.txn.SetDataTxn;
 import org.apache.zookeeper.txn.Txn;
 import org.apache.zookeeper.txn.TxnHeader;
@@ -414,6 +416,115 @@ public class AuditHelperTest {
         assertWrite(fields(log), "create", "/unknown-users", "1", "committed", "0");
         assertEquals("[redacted],[redacted],[redacted]", fields(log).get("user"));
         assertFalse(log.contains("synthetic"));
+    }
+
+    @Test
+    public void testAclModeSnapshotSurvivesOffToOnInterleaving() throws Exception {
+        Request create = request(OpCode.create, createRecord("/mode-acl", new byte[0], CreateMode.PERSISTENT));
+        assertEquals(0, apply(create, OpCode.create, createTxn("/mode-acl", new byte[0], false)).err);
+        String digest = DigestAuthenticationProvider.generateDigest("alice:synthetic-password");
+        List<ACL> acls = Collections.singletonList(new ACL(ZooDefs.Perms.ALL, new Id("digest", digest)));
+        SetACLRequest record = new SetACLRequest("/mode-acl", acls, -1);
+        AtomicInteger transitions = new AtomicInteger();
+        Request switching = new Request(cnxn, SESSION, 41, OpCode.setACL, ByteBuffer.wrap(serialize(record)),
+                Collections.singletonList(new Id("ip", "127.0.0.1"))) {
+            @Override
+            public String getUsers() {
+                System.setProperty(ENHANCED_ENABLE, "true");
+                transitions.incrementAndGet();
+                return super.getUsers();
+            }
+        };
+        ProcessTxnResult changed = apply(switching, OpCode.setACL, new SetACLTxn("/mode-acl", acls, 1));
+        assertEquals(0, changed.err);
+        System.setProperty(ENHANCED_ENABLE, "false");
+        AuditHelper.addAuditLog(switching, changed);
+        Map<String, String> legacy = fields(capture.read(1).get(0));
+        assertEquals(1, transitions.get());
+        assertEquals("true", System.getProperty(ENHANCED_ENABLE));
+        assertNull("An in-flight legacy record must not be relabeled v2", legacy.get("schema_version"));
+        assertEquals("digest:" + digest + ":cdrwa", legacy.get("acl"));
+        assertEquals("success", legacy.get("result"));
+
+        Request enhanced = request(OpCode.setACL, record);
+        ProcessTxnResult updated = apply(enhanced, OpCode.setACL, new SetACLTxn("/mode-acl", acls, 2));
+        assertEquals(0, updated.err);
+        AuditHelper.addAuditLog(enhanced, updated);
+        String log = capture.read(1).get(0);
+        assertWrite(fields(log), "setAcl", "/mode-acl", null, "committed", "0");
+        assertEquals("digest:alice:cdrwa", fields(log).get("acl"));
+        assertFalse(log.contains(digest));
+        assertFalse(log.contains("synthetic-password"));
+    }
+
+    @Test
+    public void testSuccessfulMultiKeepsOneModeAcrossMembers() throws Exception {
+        Request request = request(OpCode.multi, new MultiOperationRecord(Arrays.asList(
+                Op.create("/mode-multi", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
+                Op.setData("/mode-multi", new byte[2], -1))));
+        ProcessTxnResult result = apply(request, OpCode.multi, new MultiTxn(Arrays.asList(
+                txn(OpCode.create, createTxn("/mode-multi", new byte[1], false)),
+                txn(OpCode.setData, new SetDataTxn("/mode-multi", new byte[2], 1)))));
+        assertEquals(0, result.err);
+        System.setProperty(ENHANCED_ENABLE, "false");
+        AtomicInteger events = new AtomicInteger();
+        AuditLogger delegate = new Slf4jAuditLogger();
+        Object previousLogger = replaceProviderField("auditLogger", (AuditLogger) event -> {
+            delegate.logAuditEvent(event);
+            if (events.incrementAndGet() == 1) {
+                System.setProperty(ENHANCED_ENABLE, "true");
+            }
+        });
+        try {
+            AuditHelper.addAuditLog(request, result);
+            List<String> logs = capture.read(2);
+            assertEquals(2, events.get());
+            for (String log : logs) {
+                assertNull("A multi must keep its captured legacy mode", fields(log).get("schema_version"));
+                assertEquals("success", fields(log).get("result"));
+            }
+
+            Request following = request(OpCode.setData, new SetDataRequest("/mode-multi", new byte[3], -1));
+            ProcessTxnResult updated = apply(following, OpCode.setData, new SetDataTxn("/mode-multi", new byte[3], 2));
+            assertEquals(0, updated.err);
+            AuditHelper.addAuditLog(following, updated);
+            assertWrite(fields(capture.read(1).get(0)), "setData", "/mode-multi", "3", "committed", "0");
+        } finally {
+            replaceProviderField("auditLogger", previousLogger);
+        }
+    }
+
+    @Test
+    public void testFailedMultiKeepsParentModeForRolledBackMembers() throws Exception {
+        Request request = request(OpCode.multi, new MultiOperationRecord(Arrays.asList(
+                Op.create("/mode-rolled", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
+                Op.check("/missing", -1),
+                Op.setData("/mode-rolled", new byte[2], -1))));
+        ProcessTxnResult result = apply(request, OpCode.multi, new MultiTxn(Arrays.asList(
+                txn(OpCode.create, createTxn("/mode-rolled", new byte[1], false)),
+                txn(OpCode.error, new ErrorTxn(Code.NONODE.intValue())),
+                txn(OpCode.error, new ErrorTxn(Code.RUNTIMEINCONSISTENCY.intValue())))));
+        assertEquals(-101, result.err);
+        assertNull(tree.getNode("/mode-rolled"));
+        AtomicInteger events = new AtomicInteger();
+        AuditLogger delegate = new Slf4jAuditLogger();
+        Object previousLogger = replaceProviderField("auditLogger", (AuditLogger) event -> {
+            delegate.logAuditEvent(event);
+            if (events.incrementAndGet() == 1) {
+                System.setProperty(ENHANCED_ENABLE, "false");
+            }
+        });
+        try {
+            AuditHelper.addAuditLog(request, result);
+            List<String> logs = capture.read(3);
+            assertEquals(3, events.get());
+            assertWrite(fields(logs.get(0)), "multiOperation", null, null, "failed", "-101");
+            assertWrite(fields(logs.get(1)), "create", "/mode-rolled", "1", "rolled_back", "0");
+            assertWrite(fields(logs.get(2)), "setData", "/mode-rolled", "2", "rolled_back", "-2");
+            assertEquals("2", fields(logs.get(2)).get("multi_index"));
+        } finally {
+            replaceProviderField("auditLogger", previousLogger);
+        }
     }
 
     @Test
