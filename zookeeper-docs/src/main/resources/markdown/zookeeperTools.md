@@ -25,6 +25,7 @@ limitations under the License.
     * [zkSnapShotToolkit.sh](#zkSnapShotToolkit)
     * [zkSnapshotComparer.sh](#zkSnapshotComparer)
     * [zkSnapshotRecursiveSummaryToolkit.sh](#zkSnapshotRecursiveSummaryToolkit)
+    * [zkOfflineAudit.sh](#zkOfflineAudit)
     
 * [Testing](#Testing)
     * [Jepsen Test](#jepsen-test)
@@ -304,7 +305,271 @@ Neither tool compares payload contents, ACLs, versions or other znode metadata.
 **Equal sizes/counts do not prove identical contents.** Snapshots may be fuzzy:
 these tools do not replay transaction logs, reconstruct point-in-time state,
 or establish transaction-consistent equality. The tools load snapshots into
-memory, and recursive traversal still visits the full selected subtree.
+memory, and traversal still visits the full selected subtree.
+
+<a name="zkOfflineAudit"></a>
+
+### zkOfflineAudit.sh
+
+Export versioned, non-value metadata from **one explicitly selected snapshot**.
+The Windows equivalent is `bin/zkOfflineAudit.cmd`; the Java entry point is
+`org.apache.zookeeper.server.OfflineAuditExporter`.
+
+```bash
+bin/zkOfflineAudit.sh --snapshot-file snapshot.100000001.gz --output-dir audit-run
+```
+
+The output directory **must not already exist**, even if empty, and its parent
+must exist. Use a new, owned directory for each invocation. Existing files,
+directories, hard links and symbolic links at the destination are rejected
+without modifying them. Filesystem path resolution preserves symbolic-link
+parent semantics; it does not lexically remove `..` and select a different file.
+The tool never renames, rewrites or deletes the source, connects to a ZooKeeper
+server, replays transaction logs, or selects a fallback snapshot.
+
+The shared native reader accepts format-version 2 snapshots, uncompressed or
+with the native `.gz`/`.snappy` suffix. It checks the header, body seal and any
+optional digest seal, rejects partial trailers, invalid roots and duplicate node
+records, and consumes the decoded stream to its end. A digest is recorded as metadata, **not** compared
+as a transaction-consistent recovery digest. Fuzzy snapshots do not need
+transaction-log coverage for this export.
+
+#### Resources, publication and failures
+
+The native reader loads one complete `DataTree`, its ACL cache and session
+indexes. Budget heap for the **decoded** tree, not just the compressed file or
+stored value bytes. The exporter adds an iterative traversal stack, sorted child
+name references for the active ancestors, one JSON record at a time, and a copy
+of one session's ephemeral path set at a time. It does not build a second tree
+or retain all output records. Native quota initialization can still recurse
+during loading; an unusually deep quota tree can exhaust the JVM stack.
+
+Output can exceed snapshot size substantially: every node includes full paths
+and metadata, and deep paths are repeated. Disk policy must also allow filesystem
+allocation overhead. The optional `--max-output-bytes BYTES` is a **positive,
+decimal signed-64-bit integer** bounding the combined UTF-8 bytes of the three
+NDJSON files and the manifest, including newlines. No production budget is
+assumed when it is absent. This is not an input-size, heap, stack, runtime or
+filesystem-block quota. Supply approved worker budgets and JVM limits through
+the existing launcher environment; do not infer safe limits from this example.
+
+The tool creates a private directory (mode 0700 on POSIX), creates output files
+without replacement, closes and forces the data files, stages the manifest,
+rechecks source identity, and **atomically publishes `manifest.json` last**.
+Atomic move support is required; there is no non-atomic fallback. Source checks
+compare SHA-256 of the original file bytes, resolved path, size, precise mtime,
+creation time, available file key and Unix change time where supported, including
+stat checks around hashing. Access time is deliberately not compared because
+reading may update it. Use immutable, owned input copies: these checks are not
+a lock against concurrent writers, and identity/time precision depends on the
+filesystem.
+
+Exit 0 means publication succeeded. Invalid arguments, decoder properties or an
+existing destination exit 2 with usage; snapshot, source-change, output-budget
+and I/O failures exit 1 with diagnostics. JVM resource errors remain visible
+and nonzero rather than becoming an empty-database success. A failed started
+export can leave partial files and `.manifest.json.inprogress` for diagnosis;
+**neither is a published result** and the directory cannot be reused. An
+existing destination is rejected *before an export is attempted*: its prior
+manifest is left untouched, not relabeled as this invocation's result. Consumers
+must require a successful invocation into their unique run directory, read only
+`manifest.json`, and verify its source identity, schema, file counts and hashes.
+The file descriptors omit the manifest itself to avoid a checksum cycle.
+
+#### Decoder configuration and owner uncertainty
+
+Use JVM system properties (for example through `JVMFLAGS`) only when the source
+settings are known:
+
+* `zookeeper.extendedTypesEnabled`: `true` or `false`, case-insensitive.
+* `zookeeper.emulate353TTLNodes`: `true` or `false`, case-insensitive. Explicit
+  `true` requires explicit `zookeeper.extendedTypesEnabled=true`.
+* `jute.maxbuffer`: positive 32-bit integer in the native Java numeric-property
+  syntax (`Integer.decode`: decimal, `0x`/`#` hexadecimal or leading-zero octal).
+  When absent, the native `BinaryInputArchive.maxBuffer` default applies.
+* `zookeeper.jute.maxbuffer.extrasize`: non-negative 32-bit integer in the same
+  syntax. When absent it defaults to `jute.maxbuffer`; the native minimum extra
+  padding of 1024 bytes is applied. The effective sum must fit a signed 32-bit
+  length. These decoder bounds are not estimates of server response limits.
+
+Malformed properties are rejected instead of silently using Java's fallback.
+Compression is detected by the selected file's suffix, not the output
+compression system property. The optional digest is read regardless of the
+local digest-calculation setting. Arbitrary JVM properties are not exported.
+
+Snapshots do not persist the source's type settings. Absent source properties
+are therefore `null` in the manifest, although the native decoder's effective
+boolean defaults are false. Owner 0 is persistent, `0x8000000000000000` is a
+container, and nonzero sign-bit-clear owners are normal ephemerals. Other owners
+are classified as follows:
+
+| Known source configuration | Classification of other negative owners |
+| --- | --- |
+| Extended types unspecified | `unknown`; never grouped as sessions |
+| Extended types explicitly false | Native normal ephemeral/session |
+| Extended types true, emulation unspecified | `unknown`; legacy interpretation is unresolved |
+| Extended types true, emulation false | Native modern TTL or normal ephemeral; unsupported extended feature bits fail |
+| Extended types true, emulation true | Native 3.5.3-emulated TTL |
+
+`ttl_ms` uses this decoder's `EphemeralType.TTL.getValue(owner)` (low 40 bits),
+including emulation; it does not reconstruct a historical implementation's
+different value mask. It is a duration, **not** a calculated expiry time.
+Neither an owner in `sessions.ndjson` nor membership in the snapshot session
+table proves a currently live session.
+
+#### Schema version 1
+
+All files are UTF-8. Each NDJSON line is one complete JSON object; `manifest.json`
+is one JSON object. `null` means unknown/not applicable, not zero. `integer`
+below means a JSON integral number (64-bit arithmetic for counts, lengths,
+byte totals and times); schema/format/digest versions, node version counters,
+session timeouts and quota counts are 32-bit integers. No field is a JVM-memory
+estimate. **All 64-bit zxids, owner/session identifiers and digest values are
+lowercase, zero-padded, 16-digit hex strings prefixed with `0x`**, preserving
+their unsigned bit patterns. SHA-256 values are 64 lowercase hex digits without
+a prefix. Consumers must not convert identifiers to floating-point numbers.
+
+**`nodes.ndjson`** includes the root exactly once as `/`, all customer nodes and
+the reserved subtree. Records are emitted in deterministic depth-first
+**preorder** with sorted children. Each parent's descendants are contiguous,
+supporting streaming subtree intervals. This is not a global lexical path sort:
+`/a/x` follows `/a` before the traversal advances to `/a-`.
+
+| Field | Type | Exact meaning |
+| --- | --- | --- |
+| `schema_version` | integer | `1` |
+| `path` | string | Full absolute decoded znode path; root is `/`, never `""` |
+| `data_length` | integer | This decoded node's payload length in bytes; null data contributes 0 |
+| `num_children` | integer | Number of **immediate** children, not descendants |
+| `getchildren_response_bytes` | integer | Full successful getChildren reply, defined below |
+| `getchildren2_response_bytes` | integer | Same reply plus the 68-byte Stat |
+| `ctime_ms`, `mtime_ms` | integer | Stored node creation/data-modification timestamps, epoch milliseconds |
+| `czxid`, `mzxid`, `pzxid` | hex string | Stored creation, data-modification and child-modification zxids |
+| `data_version`, `acl_version` | integer | Persisted data/ACL version counters |
+| `persisted_cversion` | integer | Raw persisted child-create counter; not the client Stat cversion conversion |
+| `path_utf8_bytes` | integer | Full absolute path's UTF-8 length, including leading slash, without a length prefix |
+| `node_type` | string | `persistent`, `ephemeral`, `container`, `ttl` or `unknown` |
+| `ephemeral_owner` | hex string | Raw persisted owner bits, including 0, TTL/container and unknown encodings |
+| `owner_encoding` | string | `none`, `session`, `container`, `ttl`, `ttl-3.5.3` or `unknown` |
+| `ttl_ms` | integer or null | Native decoded TTL duration for known TTL types only |
+| `acl_risk_flags` | array of strings | Non-secret review hints below; empty means no listed hint, not proven safe |
+
+The getChildren size is
+`16 + 4 + sum(4 + UTF-8(child-name).length)`: the 16-byte ReplyHeader, four-byte
+vector count, and four-byte length plus bytes for each **child name**, not full
+path. getChildren2 adds 68 bytes. Both **exclude** the outer four-byte framing
+prefix and transport/TLS overhead. Empty vectors are 20/88 bytes; names `é`, `a`
+are 31/99 bytes. Counts use `long` arithmetic, independent of any packet limit.
+Actual Jute serialization agrees for valid znode names. This branch's older
+Jute encoder treats surrogate pairs differently from standard UTF-8, but native
+`PathUtils` prohibits those characters in znode paths; malformed decoded paths
+are rejected, not silently relabeled.
+
+ACL hints do not disclose ACL scheme strings or IDs, change permissions, or
+perform authentication/authorization:
+
+| Flag | Meaning |
+| --- | --- |
+| `world_read` | `world:anyone` has READ |
+| `world_write` | `world:anyone` has any of WRITE, CREATE or DELETE |
+| `world_admin` | `world:anyone` has ADMIN |
+| `auth` | An `auth` scheme entry remains in the decoded ACL |
+| `unknown_scheme` | Scheme outside the known set `world`, `auth`, `digest`, `ip`, `sasl`, `x509`; custom providers require review |
+| `missing_acl` | Decoded ACL list is null or empty |
+| `invalid_permissions` | Permission bits outside `ZooDefs.Perms.ALL` |
+| `invalid_identity` | Missing identity/scheme/ID, or a `world` identity other than `anyone` |
+
+Native deserialization can reject malformed ACL structures before flags can be
+produced. Node values and raw ACL identities are never written to the export.
+Paths themselves can be sensitive; protect the output as metadata.
+
+**`namespaces.ndjson`** contains **every** immediate root child except exactly
+`/zookeeper`, including leaves and `/zookeeper-client`. Counts/bytes include the
+namespace node and all descendants of every node type. Root data is not assigned
+to a namespace. Records follow traversal order.
+
+| Field | Type | Exact meaning |
+| --- | --- | --- |
+| `schema_version` | integer | `1` |
+| `path` | string | Top-level customer namespace path |
+| `subtree_node_count` | integer | Inclusive subtree node count |
+| `payload_bytes` | integer | Sum of decoded payload lengths; null contributes 0 |
+| `path_utf8_bytes` | integer | Sum of full absolute path lengths in UTF-8 |
+| `quota_status` | string | `absent`, `valid` or `invalid` for the exact namespace limit znode |
+| `quota_limit_count` | integer or null | Parsed `count`, including -1 (unset); null if absent/invalid |
+| `quota_limit_bytes` | integer or null | Parsed `bytes`, including -1 (unset); null if absent/invalid |
+| `quota_stat_present` | boolean | Exact namespace quota stat znode exists; not evidence of freshness |
+
+Quota availability refers specifically to
+`/zookeeper/quota<namespace>/zookeeper_limits` and `zookeeper_stats`; it does not
+claim absence of quotas on descendants or model inherited enforcement. A valid
+limit has the native `count=<int>,bytes=<long>` format with values at least -1.
+Malformed limits are flagged without exporting their raw value. Native DataTree
+loading **rebuilds quota-stat payloads in memory**; node lengths under the
+reserved quota subtree describe that decoded tree, not necessarily the original
+stat-node payload lengths. Customer subtree totals are computed independently
+from the decoded customer nodes; no rebuilt quota count is trusted for them.
+
+**`sessions.ndjson`** has one record per owner with decoded normal ephemerals.
+It excludes containers, known TTLs, unknown encodings and session-table entries
+with no normal ephemeral nodes. Session ordering is unspecified; records are
+streamed from the native index, including ephemerals in the reserved subtree.
+
+| Field | Type | Exact meaning |
+| --- | --- | --- |
+| `schema_version` | integer | `1` |
+| `session_id` | hex string | Normal ephemeral owner under the known/unambiguous decoder interpretation |
+| `ephemeral_node_count` | integer | Number of nodes owned by that session |
+| `payload_bytes` | integer | Sum of those nodes' payload lengths |
+| `path_utf8_bytes` | integer | Sum of those nodes' full UTF-8 path lengths |
+| `present_in_snapshot_session_table` | boolean | Owner also appears in the serialized session/timeout table |
+| `timeout_ms` | integer or null | Serialized timeout if present; null otherwise, not a remaining lifetime |
+
+**`manifest.json`** is the sole publication marker. Export completeness means
+complete traversal/output of this decoded snapshot, **not** current-state,
+backup completeness or transaction-consistent recovery.
+
+| Field | Type | Exact meaning |
+| --- | --- | --- |
+| `schema_version` | integer | `1` |
+| `tool` | object | `name` = `OfflineAuditExporter`; `version` = native `Version.getFullVersion()` string |
+| `export_id` | string | New UUID identifying this published export |
+| `export_complete` | boolean | `true` in a successfully published manifest only |
+| `recovery_scope` | string | Always `snapshot-only` |
+| `transaction_logs_replayed` | boolean | Always `false` |
+| `source_capture_time_ms` | null | Capture time unknown; never inferred from file or node timestamps |
+| `source_capture_provenance` | null | No authoritative capture provenance supplied to this CLI |
+| `source_server_version` | null | Snapshot header version does not identify the source server release |
+| `source` | object | Source descriptor defined below |
+| `decoder` | object | Decoder settings defined below |
+| `snapshot_zxid` | hex string or null | Label parsed only from `snapshot.<1..16 hex digits>[.gz or .snappy]`; renamed/range filenames yield null; not a consistent endpoint |
+| `last_observed_zxid` | hex string | Unsigned maximum of all exported nodes' `czxid`, `mzxid`, `pzxid`; excludes filename/digest zxids |
+| `last_observed_zxid_scope` | string | Always `maximum-node-czxid-mzxid-pzxid-unsigned` |
+| `snapshot_digest` | object or null | Optional stored digest metadata, not recovery evidence |
+| `unknown_owner_nodes` | integer | Count of node records with `node_type=unknown` |
+| `max_output_bytes` | integer or null | Requested output byte budget, or no CLI budget |
+| `files` | array of objects | Exactly three output descriptors, in nodes/namespaces/sessions order |
+
+Nested objects have these exact fields:
+
+* `source`: `path` (resolved absolute filename string), `sha256` (hash of the
+  original **compressed bytes**, if compressed), `size_bytes` (integer),
+  `mtime_ms` (integer epoch milliseconds), `change_time_ms` (Unix inode-change
+  time in epoch milliseconds, or null if unavailable), `compression` (`checked`
+  = uncompressed, `gzip` or `snappy`), `format_version` (integer, currently 2),
+  `database_id` (raw header dbid as a hex string). None of the file times is
+  snapshot capture time.
+* `decoder`: `source_extended_types_enabled` and `source_emulate_353_ttl_nodes`
+  (boolean or null); `effective_extended_types_enabled` and
+  `effective_emulate_353_ttl_nodes` (boolean); `jute_maxbuffer` and
+  `jute_extra_maxbuffer` (integers after native default/minimum handling).
+* `snapshot_digest`, when present: `zxid` (hex string), `version` (integer),
+  `value` (hex string), `seal_validated` (true),
+  `transaction_consistency_verified` (false). A native zero/empty digest is
+  retained as zero, not promoted to completeness evidence.
+* Each `files` entry: `name` (exactly `nodes.ndjson`, `namespaces.ndjson` or
+  `sessions.ndjson`), `records` (integer line count), `size_bytes` (integer
+  physical file length), `sha256` (hash of all file bytes, including newlines).
 
 <a name="Testing"></a>
 

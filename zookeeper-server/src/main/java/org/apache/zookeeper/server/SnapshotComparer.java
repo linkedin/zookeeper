@@ -18,8 +18,10 @@
 
 package org.apache.zookeeper.server;
 
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PushbackInputStream;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,9 +40,12 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.InputArchive;
+import org.apache.jute.Record;
 import org.apache.zookeeper.ZKUtil;
+import org.apache.zookeeper.server.persistence.FileHeader;
 import org.apache.zookeeper.server.persistence.FileSnap;
 import org.apache.zookeeper.server.persistence.SnapStream;
+import org.apache.zookeeper.server.util.SerializeUtils;
 import org.apache.zookeeper.util.ServiceUtils;
 
 /**
@@ -219,25 +224,78 @@ public class SnapshotComparer {
     }
 
     static DataTree getSnapshot(File file) throws IOException {
+        return readSnapshot(file).tree;
+    }
+
+    static final class SnapshotData {
+
+        final DataTree tree;
+        final Map<Long, Integer> sessions;
+        final FileHeader header;
+        final DataTree.ZxidDigest digest;
+
+        SnapshotData(DataTree tree, Map<Long, Integer> sessions, FileHeader header, DataTree.ZxidDigest digest) {
+            this.tree = tree;
+            this.sessions = sessions;
+            this.header = header;
+            this.digest = digest;
+        }
+
+    }
+
+    private static final class SnapshotInputArchive extends BinaryInputArchive {
+
+        long nodeRecords;
+
+        SnapshotInputArchive(InputStream input) {
+            super(new DataInputStream(input));
+        }
+
+        @Override
+        public void readRecord(Record record, String tag) throws IOException {
+            super.readRecord(record, tag);
+            if (record instanceof DataNode) {
+                nodeRecords++;
+            }
+        }
+
+    }
+
+    static SnapshotData readSnapshot(File file) throws IOException {
         try (CheckedInputStream stream = SnapStream.getInputStream(file);
              PushbackInputStream input = new PushbackInputStream(stream)) {
-            InputArchive archive = BinaryInputArchive.getArchive(input);
+            SnapshotInputArchive archive = new SnapshotInputArchive(input);
+            FileHeader header = new FileHeader();
+            header.deserialize(archive, "fileheader");
+            if (header.getMagic() != FileSnap.SNAP_MAGIC || header.getVersion() != 2) {
+                throw new IOException("Unsupported snapshot magic or format version: " + header.getVersion());
+            }
             DataTree dataTree = new DataTree();
-            new FileSnap(null).deserialize(dataTree, new HashMap<Long, Integer>(), archive);
+            Map<Long, Integer> sessions = new HashMap<>();
+            SerializeUtils.deserializeSnapshot(dataTree, archive, sessions);
+            if (dataTree.getNode("") == null || dataTree.getNode("") != dataTree.getNode("/")) {
+                throw new IOException("Invalid snapshot root");
+            }
+            // DataTree overwrites duplicate paths; count records without a second path index.
+            if (archive.nodeRecords != (long) dataTree.getNodeCount() - 1) {
+                throw new IOException("Duplicate snapshot node records");
+            }
             checkSealIntegrity(stream, archive);
 
             // Distinguish an absent digest in older snapshots from a truncated digest.
+            DataTree.ZxidDigest digest = null;
             int next = input.read();
             if (next != -1) {
                 input.unread(next);
-                dataTree.new ZxidDigest().deserialize(archive);
+                digest = dataTree.new ZxidDigest();
+                digest.deserialize(archive);
                 checkSealIntegrity(stream, archive);
                 if (input.read() != -1) {
                     throw new IOException("Unexpected data after snapshot");
                 }
             }
-            return dataTree;
-        } catch (IOException | NumberFormatException e) {
+            return new SnapshotData(dataTree, sessions, header, digest);
+        } catch (IOException | IllegalArgumentException e) {
             throw new IOException(file + ": " + e, e);
         }
     }
