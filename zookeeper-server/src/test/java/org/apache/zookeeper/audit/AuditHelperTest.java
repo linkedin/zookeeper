@@ -41,6 +41,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
 import org.apache.zookeeper.CreateMode;
@@ -53,6 +54,7 @@ import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.audit.AuditEvent.Result;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
+import org.apache.zookeeper.metrics.Counter;
 import org.apache.zookeeper.metrics.MetricsUtils;
 import org.apache.zookeeper.proto.CreateRequest;
 import org.apache.zookeeper.proto.CreateTTLRequest;
@@ -62,6 +64,7 @@ import org.apache.zookeeper.server.DataTree;
 import org.apache.zookeeper.server.DataTree.ProcessTxnResult;
 import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.ServerCnxn;
+import org.apache.zookeeper.server.ServerMetrics;
 import org.apache.zookeeper.server.auth.AuthenticationProvider;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.txn.CheckVersionTxn;
@@ -503,6 +506,57 @@ public class AuditHelperTest {
         }
     }
 
+    @Test
+    public void testFailingErrorCounterDoesNotEscapeMetadataFailure() throws Exception {
+        Request request = request(OpCode.create, ByteBuffer.wrap(new byte[] {1}));
+        ProcessTxnResult result = apply(request, OpCode.create, createTxn("/reporter-metadata", new byte[2], false));
+        FailingCounter counter = new FailingCounter();
+        Counter previousCounter = replaceAuditErrorCounter(counter);
+        try {
+            RuntimeException escaped = null;
+            try {
+                AuditHelper.addAuditLog(request, result);
+            } catch (RuntimeException e) {
+                escaped = e;
+            }
+            assertNotNull(tree.getNode("/reporter-metadata"));
+            assertNull("The error reporter must not escape the audit boundary", escaped);
+            assertWrite(fields(capture.read(1).get(0)), "create", "/reporter-metadata", null, "committed", "0");
+            assertEquals("Do not retry a failing error reporter", 1, counter.get());
+        } finally {
+            replaceAuditErrorCounter(previousCounter);
+        }
+    }
+
+    @Test
+    public void testFailingErrorCounterDoesNotInterruptSystemDeletions() throws Exception {
+        for (String path : Arrays.asList("/reporter-a", "/reporter-b")) {
+            Request request = request(OpCode.create, createRecord(path, new byte[0], CreateMode.EPHEMERAL));
+            assertEquals(0, apply(request, OpCode.create, createTxn(path, new byte[0], true)).err);
+        }
+        FailingCounter counter = new FailingCounter();
+        Counter previousCounter = replaceAuditErrorCounter(counter);
+        Object previousLogger = replaceProviderField("auditLogger", (AuditLogger) event -> {
+            throw new IllegalStateException("synthetic audit sink failure");
+        });
+        try {
+            RuntimeException escaped = null;
+            try {
+                tree.processTxn(new TxnHeader(SESSION, -11, 81, 1000, OpCode.closeSession),
+                        new CloseSessionTxn(Arrays.asList("/reporter-a", "/reporter-b")));
+            } catch (RuntimeException e) {
+                escaped = e;
+            }
+            assertNull("Reporting a sink failure must not escape system deletion", escaped);
+            assertNull(tree.getNode("/reporter-a"));
+            assertNull(tree.getNode("/reporter-b"));
+            assertEquals("One best-effort report per deletion, with no retries", 2, counter.get());
+        } finally {
+            replaceProviderField("auditLogger", previousLogger);
+            replaceAuditErrorCounter(previousCounter);
+        }
+    }
+
     private Request request(int type, Record record) throws IOException {
         return request(type, ByteBuffer.wrap(serialize(record)));
     }
@@ -546,6 +600,15 @@ public class AuditHelperTest {
         field.setAccessible(true);
         Object previous = field.get(null);
         field.set(null, value);
+        return previous;
+    }
+
+    static Counter replaceAuditErrorCounter(Counter counter) throws ReflectiveOperationException {
+        ServerMetrics metrics = ServerMetrics.getMetrics();
+        Field field = ServerMetrics.class.getField("AUDIT_ERRORS");
+        field.setAccessible(true);
+        Counter previous = (Counter) field.get(metrics);
+        field.set(metrics, counter);
         return previous;
     }
 
@@ -605,6 +668,21 @@ public class AuditHelperTest {
         @Override
         public boolean isValid(String id) {
             return true;
+        }
+    }
+
+    static final class FailingCounter implements Counter {
+        private final AtomicInteger attempts = new AtomicInteger();
+
+        @Override
+        public void add(long delta) {
+            attempts.incrementAndGet();
+            throw new IllegalStateException("synthetic audit counter failure");
+        }
+
+        @Override
+        public long get() {
+            return attempts.get();
         }
     }
 

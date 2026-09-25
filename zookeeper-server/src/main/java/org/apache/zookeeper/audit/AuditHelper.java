@@ -41,7 +41,6 @@ import org.apache.zookeeper.proto.SetDataRequest;
 import org.apache.zookeeper.server.ByteBufferInputStream;
 import org.apache.zookeeper.server.DataTree.ProcessTxnResult;
 import org.apache.zookeeper.server.Request;
-import org.apache.zookeeper.server.ServerMetrics;
 import org.apache.zookeeper.server.auth.AuthenticationProvider;
 import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
 import org.apache.zookeeper.server.auth.IPAuthenticationProvider;
@@ -388,8 +387,7 @@ public final class AuditHelper {
     }
 
     private static void auditError(int type, Exception e) {
-        ServerMetrics.getMetrics().AUDIT_ERRORS.add(1);
-        LOG.error("Failed to audit log request {}", type, e);
+        ZKAuditProvider.reportAuditError(LOG, "Failed to audit log request {}", type, e);
     }
 
     private static final class RequestMetadata {
