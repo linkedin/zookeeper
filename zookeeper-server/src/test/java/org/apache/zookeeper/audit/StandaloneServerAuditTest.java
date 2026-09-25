@@ -41,10 +41,12 @@ import org.apache.zookeeper.OpResult;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.audit.AuditHelperTest.AuditCapture;
+import org.apache.zookeeper.audit.AuditHelperTest.CredentialAuthenticationProvider;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
+import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.test.ClientBase;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -258,6 +260,38 @@ public class StandaloneServerAuditTest extends ClientBase {
         assertFalse(log.contains("synthetic-password"));
         assertEquals(acls, zk.getACL("/acl", new Stat()));
         capture.read(0);
+    }
+
+    @Test
+    public void testRegisteredCustomUserIsRedactedOnlyInEnhancedMode() throws Exception {
+        String property = ProviderRegistry.AUTHPROVIDER_PROPERTY_PREFIX + "c1-audit-user";
+        String previous = System.getProperty(property);
+        System.setProperty(property, CredentialAuthenticationProvider.class.getName());
+        ProviderRegistry.initialize();
+        try {
+            System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
+            ZooKeeper zk = createClient();
+            zk.addAuthInfo("audit-test-custom", "alice:synthetic-password".getBytes(StandardCharsets.UTF_8));
+            zk.create("/custom-user", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+            String enhanced = capture.read(1).get(0);
+            assertWrite(fields(enhanced), "create", "/custom-user", "1", "committed", "0");
+            assertFalse(enhanced.contains("synthetic-password"));
+            List<String> enhancedUsers = Arrays.asList(fields(enhanced).get("user").split(","));
+            Collections.sort(enhancedUsers);
+            assertEquals(Arrays.asList("127.0.0.1", "[redacted]"), enhancedUsers);
+
+            System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "false");
+            zk.setData("/custom-user", new byte[2], -1);
+            Map<String, String> legacy = fields(capture.read(1).get(0));
+            assertNull(legacy.get("schema_version"));
+            List<String> legacyUsers = Arrays.asList(legacy.get("user").split(","));
+            Collections.sort(legacyUsers);
+            assertEquals(Arrays.asList("127.0.0.1", "alice:synthetic-password"), legacyUsers);
+            assertArrayEquals(new byte[2], zk.getData("/custom-user", false, null));
+        } finally {
+            ProviderRegistry.removeProvider("audit-test-custom");
+            AuditHelperTest.restoreProperty(property, previous);
+        }
     }
 
     @Test

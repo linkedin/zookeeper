@@ -62,6 +62,8 @@ import org.apache.zookeeper.server.DataTree;
 import org.apache.zookeeper.server.DataTree.ProcessTxnResult;
 import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.ServerCnxn;
+import org.apache.zookeeper.server.auth.AuthenticationProvider;
+import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.txn.CheckVersionTxn;
 import org.apache.zookeeper.txn.CloseSessionTxn;
 import org.apache.zookeeper.txn.CreateTTLTxn;
@@ -373,6 +375,45 @@ public class AuditHelperTest {
     }
 
     @Test
+    public void testEnhancedUsersRedactRegisteredDefaultProvider() throws Exception {
+        String property = ProviderRegistry.AUTHPROVIDER_PROPERTY_PREFIX + "c1-audit-user";
+        String previous = System.getProperty(property);
+        System.setProperty(property, CredentialAuthenticationProvider.class.getName());
+        ProviderRegistry.initialize();
+        try {
+            Request request = new Request(cnxn, SESSION, 41, OpCode.create,
+                    ByteBuffer.wrap(serialize(createRecord("/custom-user", new byte[1], CreateMode.PERSISTENT))),
+                    Arrays.asList(new Id("ip", "127.0.0.1"),
+                            new Id("audit-test-custom", "alice:synthetic-password")));
+            ProcessTxnResult result = apply(request, OpCode.create, createTxn("/custom-user", new byte[1], false));
+            assertEquals(0, result.err);
+            AuditHelper.addAuditLog(request, result);
+            String log = capture.read(1).get(0);
+            assertWrite(fields(log), "create", "/custom-user", "1", "committed", "0");
+            assertEquals("127.0.0.1,[redacted]", fields(log).get("user"));
+            assertFalse(log.contains("synthetic-password"));
+        } finally {
+            ProviderRegistry.removeProvider("audit-test-custom");
+            restoreProperty(property, previous);
+        }
+    }
+
+    @Test
+    public void testEnhancedUsersRedactUnknownAndMalformedIdentities() throws Exception {
+        Request request = new Request(cnxn, SESSION, 41, OpCode.create,
+                ByteBuffer.wrap(serialize(createRecord("/unknown-users", new byte[1], CreateMode.PERSISTENT))),
+                Arrays.asList(new Id("unregistered", "synthetic-token"),
+                        new Id("digest", "synthetic-digest-token"),
+                        new Id("ip", "alice:synthetic-password")));
+        ProcessTxnResult result = apply(request, OpCode.create, createTxn("/unknown-users", new byte[1], false));
+        AuditHelper.addAuditLog(request, result);
+        String log = capture.read(1).get(0);
+        assertWrite(fields(log), "create", "/unknown-users", "1", "committed", "0");
+        assertEquals("[redacted],[redacted],[redacted]", fields(log).get("user"));
+        assertFalse(log.contains("synthetic"));
+    }
+
+    @Test
     public void testAuditDisabledSkipsRequestsAndProvider() throws Exception {
         Object previous = replaceProviderField("auditEnabled", false);
         long before = auditErrors();
@@ -537,6 +578,34 @@ public class AuditHelperTest {
         assertEquals(error, fields.get("error_code"));
         assertEquals("committed".equals(outcome) ? "success" : "unknown".equals(outcome) ? "invoked" : "failure",
                 fields.get("result"));
+    }
+
+    public static class CredentialAuthenticationProvider implements AuthenticationProvider {
+        @Override
+        public String getScheme() {
+            return "audit-test-custom";
+        }
+
+        @Override
+        public Code handleAuthentication(ServerCnxn connection, byte[] authData) {
+            connection.addAuthInfo(new Id(getScheme(), new String(authData, StandardCharsets.UTF_8)));
+            return Code.OK;
+        }
+
+        @Override
+        public boolean matches(String id, String aclExpr) {
+            return id.equals(aclExpr);
+        }
+
+        @Override
+        public boolean isAuthenticated() {
+            return true;
+        }
+
+        @Override
+        public boolean isValid(String id) {
+            return true;
+        }
     }
 
     static final class AuditCapture extends AppenderBase<ILoggingEvent> implements AutoCloseable {

@@ -44,8 +44,10 @@ import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.ServerMetrics;
 import org.apache.zookeeper.server.auth.AuthenticationProvider;
 import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
+import org.apache.zookeeper.server.auth.IPAuthenticationProvider;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
-import org.apache.zookeeper.server.util.AuthUtil;
+import org.apache.zookeeper.server.auth.SASLAuthenticationProvider;
+import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +56,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class AuditHelper {
     private static final Logger LOG = LoggerFactory.getLogger(AuditHelper.class);
+    private static final String REDACTED = "[redacted]";
 
     public static void addAuditLog(Request request, ProcessTxnResult rc) {
         addAuditLog(request, rc, false);
@@ -95,7 +98,7 @@ public final class AuditHelper {
             if (outcome != Outcome.COMMITTED || path == null) {
                 path = metadata.path == null ? path : metadata.path;
             }
-            log(request, txnResult, path, operation, metadata, result(outcome), error, outcome, null);
+            log(request, txnResult, path, operation, metadata, result(outcome), error, outcome, null, enhanced);
         } catch (RuntimeException e) {
             auditError(request.type, e);
         }
@@ -159,7 +162,7 @@ public final class AuditHelper {
         // Emit the failed parent before decoding so malformed metadata cannot hide the failure.
         if (failed) {
             log(request, rc, rc == null ? null : rc.path, AuditConstants.OP_MULTI_OP,
-                    new RequestMetadata(), Result.FAILURE, error, Outcome.FAILED, null);
+                    new RequestMetadata(), Result.FAILURE, error, Outcome.FAILED, null, enhanced);
             if (!enhanced) {
                 return;
             }
@@ -207,7 +210,7 @@ public final class AuditHelper {
                 RequestMetadata metadata = metadata(op.getType(), op.toRequestRecord(), enhanced);
                 String path = outcome == Outcome.COMMITTED ? subResult.path : op.getPath();
                 log(request, rc, path, operation, metadata, failed ? Result.FAILURE : result(outcome),
-                        subResult == null ? null : subResult.err, outcome, index);
+                        subResult == null ? null : subResult.err, outcome, index, enhanced);
             }
             index++;
         }
@@ -256,20 +259,59 @@ public final class AuditHelper {
         StringBuilder value = new StringBuilder();
         for (ACL acl : acls) {
             Id id = acl.getId();
-            String user = "[redacted]";
+            String user = REDACTED;
             if ("world".equals(id.getScheme()) && "anyone".equals(id.getId())) {
                 user = "anyone";
             } else if ("digest".equals(id.getScheme())) {
                 AuthenticationProvider provider = ProviderRegistry.getProvider(id.getScheme());
                 if (provider != null && provider.getClass() == DigestAuthenticationProvider.class
                         && id.getId() != null && provider.isValid(id.getId())) {
-                    user = AuthUtil.getUser(id);
+                    user = provider.getUserName(id.getId());
                 }
             }
             value.append(id.getScheme()).append(':').append(user).append(':')
                     .append(ZKUtil.getPermString(acl.getPerms()));
         }
         return value.toString();
+    }
+
+    private static String getUsers(Request request, boolean enhanced) {
+        if (!enhanced) {
+            return request.getUsers();
+        }
+        if (request.authInfo == null) {
+            return null;
+        }
+        StringBuilder users = new StringBuilder();
+        boolean first = true;
+        for (Id id : request.authInfo) {
+            if (!first) {
+                users.append(',');
+            }
+            first = false;
+            users.append(safeUser(id));
+        }
+        return users.toString();
+    }
+
+    private static String safeUser(Id id) {
+        if (id == null || id.getScheme() == null || id.getId() == null) {
+            return REDACTED;
+        }
+        AuthenticationProvider provider = ProviderRegistry.getProvider(id.getScheme());
+        if (provider == null) {
+            return REDACTED;
+        }
+        Class<?> providerClass = provider.getClass();
+        // Custom providers, including subclasses, do not establish safe identity representations.
+        if ((providerClass == DigestAuthenticationProvider.class
+                || providerClass == IPAuthenticationProvider.class
+                || providerClass == SASLAuthenticationProvider.class
+                || providerClass == X509AuthenticationProvider.class)
+                && provider.isValid(id.getId())) {
+            return provider.getUserName(id.getId());
+        }
+        return REDACTED;
     }
 
     private static String createMode(int type, int flags) {
@@ -330,7 +372,8 @@ public final class AuditHelper {
     }
 
     private static void log(Request request, ProcessTxnResult rc, String path, String operation,
-                            RequestMetadata metadata, Result result, Integer error, Outcome outcome, Integer index) {
+                            RequestMetadata metadata, Result result, Integer error, Outcome outcome,
+                            Integer index, boolean enhanced) {
         Long zxid = null;
         if (request.getHdr() != null) {
             zxid = request.getHdr().getZxid();
@@ -339,7 +382,7 @@ public final class AuditHelper {
         } else if (request.zxid >= 0) {
             zxid = request.zxid;
         }
-        ZKAuditProvider.log(request.getUsers(), operation, path, metadata.acl, metadata.createMode,
+        ZKAuditProvider.log(getUsers(request, enhanced), operation, path, metadata.acl, metadata.createMode,
                 request.cnxn.getSessionIdHex(), request.cnxn.getHostAddress(), result,
                 metadata.dataLength, error, outcome, request.cxid, zxid, index);
     }
