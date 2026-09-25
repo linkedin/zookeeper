@@ -42,9 +42,11 @@ import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.audit.AuditHelperTest.AuditCapture;
 import org.apache.zookeeper.audit.AuditHelperTest.CredentialAuthenticationProvider;
+import org.apache.zookeeper.audit.AuditHelperTest.FailingCounter;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.data.Stat;
+import org.apache.zookeeper.metrics.Counter;
 import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.test.ClientBase;
@@ -310,6 +312,37 @@ public class StandaloneServerAuditTest extends ClientBase {
             assertEquals(before + 1, AuditHelperTest.auditErrors());
         } finally {
             AuditHelperTest.replaceProviderField("auditLogger", previous);
+        }
+    }
+
+    @Test
+    public void testAuditReporterFailureDoesNotRejectAppliedWrite() throws Exception {
+        ZooKeeper zk = createClient();
+        FailingCounter counter = new FailingCounter();
+        Counter previousCounter = AuditHelperTest.replaceAuditErrorCounter(counter);
+        Object previousLogger = AuditHelperTest.replaceProviderField("auditLogger", (AuditLogger) event -> {
+            throw new IllegalStateException("synthetic audit sink failure");
+        });
+        try {
+            for (String enhanced : Arrays.asList("false", "true")) {
+                System.setProperty(AuditHelperTest.ENHANCED_ENABLE, enhanced);
+                String path = "/reporter-" + enhanced;
+                Code replyError = null;
+                String created = null;
+                long before = counter.get();
+                try {
+                    created = zk.create(path, new byte[2], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                } catch (KeeperException e) {
+                    replyError = e.code();
+                }
+                assertArrayEquals(new byte[2], zk.getData(path, false, null));
+                assertNull("Audit reporting changed the reply after the write was applied", replyError);
+                assertEquals(path, created);
+                assertEquals("Do not retry a failing error reporter", before + 1, counter.get());
+            }
+        } finally {
+            AuditHelperTest.replaceProviderField("auditLogger", previousLogger);
+            AuditHelperTest.replaceAuditErrorCounter(previousCounter);
         }
     }
 }

@@ -221,6 +221,10 @@ audit logger. Such failures are logged without rejecting an otherwise valid
 client operation. A metadata error can still yield an audit record with omitted
 fields, so this counter is **not** a dropped-record count. It has no per-path,
 per-user or per-session labels.
+The counter update and diagnostic error logging are independently best-effort:
+runtime failures in either reporting backend are isolated without retries, so
+they cannot reject an applied write or interrupt system deletion. A failing
+metrics backend can therefore also leave detected audit errors uncounted.
 
 Audit coverage is limited to the existing transaction-audit hooks. Rejections
 before a hook, connection-level failures and later reply/send failures need

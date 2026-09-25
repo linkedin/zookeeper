@@ -151,8 +151,20 @@ public class ZKAuditProvider {
         try {
             auditLogger.logAuditEvent(event);
         } catch (RuntimeException e) {
+            reportAuditError(LOG, "Failed to write audit log for operation {}", event.getValue(FieldName.OPERATION), e);
+        }
+    }
+
+    static void reportAuditError(Logger logger, String message, Object context, Exception error) {
+        try {
             ServerMetrics.getMetrics().AUDIT_ERRORS.add(1);
-            LOG.error("Failed to write audit log for operation {}", event.getValue(FieldName.OPERATION), e);
+        } catch (RuntimeException ignored) {
+            // A failed metrics backend must not prevent the diagnostic or change the operation's result.
+        }
+        try {
+            logger.error(message, context, error);
+        } catch (RuntimeException ignored) {
+            // Reporting is best-effort; retrying through the same failing logger could escape or recurse.
         }
     }
 
