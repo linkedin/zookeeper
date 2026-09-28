@@ -39,6 +39,7 @@ import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.MockServerCnxn;
 import org.apache.zookeeper.server.PrepRequestProcessor;
+import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider;
 import org.apache.zookeeper.test.X509AuthTest.TestTrustManager;
@@ -449,6 +450,108 @@ public class X509DirectAclTest extends ZKTestCase {
             "/protected", "10.1.2.3", "10.0.0.0/8", ZooDefs.Perms.READ, null)));
         assertFalse(provider.matches(null, new ServerAuthenticationProvider.MatchValues(
             "/protected", "192.0.2.1", "10.0.0.0/8", ZooDefs.Perms.READ, null)));
+    }
+
+    @Test
+    public void testForwardedIdentitiesMatchFormattedAclsForBothProviders() throws Exception {
+        for (Class<? extends AuthenticationProvider> providerClass : Arrays.asList(
+            X509AuthenticationProvider.class, X509ZNodeGroupAclProvider.class)) {
+            selectProvider(providerClass);
+            for (String path : Arrays.asList(
+                "/v1/wl/kafka", "/v1/application/example-mp/kafka",
+                "/v2/application/example-mp/kafka", "/v2/application/example-mp/kafka/blue")) {
+                MockServerCnxn cnxn = authenticate("spiffe://example.org" + path);
+                Request request = forward(cnxn);
+                assertNull(request.cnxn);
+                assertEquals(cnxn.getAuthInfo(), request.authInfo);
+                for (String target : Arrays.asList("servicePrincipal(kafka", "servicePrincipal(kafka)",
+                    "urn:li:servicePrincipal(kafka;region1;instance1)")) {
+                    for (int permission : Arrays.asList(ZooDefs.Perms.READ, ZooDefs.Perms.WRITE,
+                        ZooDefs.Perms.CREATE, ZooDefs.Perms.DELETE, ZooDefs.Perms.ADMIN)) {
+                        server.checkACL(request, acl(target, permission), permission, "/protected", null);
+                    }
+                }
+                assertDenied(request, "servicePrincipal(kafka", ZooDefs.Perms.READ, ZooDefs.Perms.WRITE);
+                assertDenied(request, "servicePrincipal(other", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
+                if (!"kafka".equals(request.getX509ClientIdentity().getId())) {
+                    assertDenied(request, "kafka", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
+                }
+                assertEquals(Collections.singletonList(new ACL(ZooDefs.Perms.ALL,
+                    new Id("x509", request.getX509ClientIdentity().getId()))),
+                    PrepRequestProcessor.fixupACL("/created", request.authInfo, ZooDefs.Ids.CREATOR_ALL_ACL));
+            }
+        }
+    }
+
+    @Test
+    public void testForwardedRequestsRequireIdentityContextAndMatchingAuthInfo() throws Exception {
+        for (Class<? extends AuthenticationProvider> providerClass : Arrays.asList(
+            X509AuthenticationProvider.class, X509ZNodeGroupAclProvider.class)) {
+            selectProvider(providerClass);
+            MockServerCnxn cnxn = authenticate("spiffe://example.org/v2/application/example-mp/kafka");
+            Request missing = new Request(null, 1, 1, ZooDefs.OpCode.setData, null, cnxn.getAuthInfo());
+            assertDenied(missing, "servicePrincipal(kafka", ZooDefs.Perms.ALL, ZooDefs.Perms.WRITE);
+            server.checkACL(missing, acl("application/example-mp/kafka", ZooDefs.Perms.WRITE),
+                ZooDefs.Perms.WRITE, "/protected", null);
+
+            MockServerCnxn other = authenticate("spiffe://example.org/v2/application/example-mp/reporting");
+            for (Id id : other.getAuthInfo()) {
+                other.removeAuthInfo(id);
+            }
+            other.addAuthInfo(new Id("x509", "application/example-mp/kafka"));
+            Request mapped = forward(other);
+            server.checkACL(mapped, acl("application/example-mp/kafka", ZooDefs.Perms.READ),
+                ZooDefs.Perms.READ, "/protected", null);
+            assertDenied(mapped, "servicePrincipal(kafka", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
+            assertDenied(mapped, "servicePrincipal(reporting", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
+        }
+    }
+
+    @Test
+    public void testForwardedLegacyIdentitiesDoNotAcquireSpiffeType() throws Exception {
+        configureSan("^urn:example:(.*)$");
+        for (Class<? extends AuthenticationProvider> providerClass : Arrays.asList(
+            X509AuthenticationProvider.class, X509ZNodeGroupAclProvider.class)) {
+            selectProvider(providerClass);
+            for (String clientId : Arrays.asList("kafka", "application/example-mp/kafka")) {
+                Request request = forward(authenticate("urn:example:" + clientId));
+                assertEquals(X509AuthenticationUtil.CertificateType.LEGACY_SAN,
+                    request.getX509ClientIdentity().getCertificateType());
+                server.checkACL(request, acl(clientId, ZooDefs.Perms.WRITE), ZooDefs.Perms.WRITE,
+                    "/protected", null);
+                assertDenied(request, "servicePrincipal(kafka", ZooDefs.Perms.ALL, ZooDefs.Perms.WRITE);
+            }
+        }
+    }
+
+    @Test
+    public void testRequestAclUsesItsAuthenticatedIdentitySnapshot() throws Exception {
+        MockServerCnxn cnxn = authenticate("spiffe://example.org/v2/application/example-mp/kafka");
+        Request request = new Request(cnxn, 1, 1, ZooDefs.OpCode.setData, null, cnxn.getAuthInfo());
+        cnxn.setX509ClientIdentity(
+            authenticate("spiffe://example.org/v2/application/example-mp/reporting").getX509ClientIdentity());
+        for (Class<? extends AuthenticationProvider> providerClass : Arrays.asList(
+            X509AuthenticationProvider.class, X509ZNodeGroupAclProvider.class)) {
+            selectProvider(providerClass);
+            server.checkACL(request, acl("servicePrincipal(kafka", ZooDefs.Perms.WRITE),
+                ZooDefs.Perms.WRITE, "/protected", null);
+            assertDenied(request, "servicePrincipal(reporting", ZooDefs.Perms.ALL, ZooDefs.Perms.WRITE);
+        }
+    }
+
+    private static Request forward(MockServerCnxn cnxn) throws Exception {
+        X509QuorumAuthInfo auth = X509QuorumAuthInfo.decode(
+            X509QuorumAuthInfo.encode(cnxn.getAuthInfo(), cnxn.getX509ClientIdentity()));
+        return new Request(null, 1, 1, ZooDefs.OpCode.setData, null, auth.getAuthInfo(), auth.getClientIdentity());
+    }
+
+    private void assertDenied(Request request, String id, int allowedPerms, int requestedPerm) {
+        try {
+            server.checkACL(request, acl(id, allowedPerms), requestedPerm, "/protected", null);
+            fail("Unexpected forwarded access to ACL " + id);
+        } catch (KeeperException.NoAuthException expected) {
+            // Expected denial.
+        }
     }
 
     private MockServerCnxn authenticate(String... uriSans) throws Exception {

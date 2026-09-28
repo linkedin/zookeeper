@@ -63,7 +63,7 @@ public class X509AuthenticationUtil extends X509Util {
     private final CertificateType certificateType;
     private final String id;
 
-    private ClientIdentity(CertificateType certificateType, String id) {
+    ClientIdentity(CertificateType certificateType, String id) {
       this.certificateType = Objects.requireNonNull(certificateType);
       this.id = Objects.requireNonNull(id);
     }

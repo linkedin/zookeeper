@@ -128,9 +128,10 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
     }
 
     @Override
-    public boolean matches(ServerCnxn cnxn, String id, String aclExpr) {
+    public boolean matches(ServerAuthenticationProvider.ServerObjs serverObjs, String id, String aclExpr) {
         return matches(id, aclExpr)
-            || LegacyServicePrincipalMatcher.matchesAuthenticatedClient(cnxn, id, aclExpr);
+            || LegacyServicePrincipalMatcher.matchesAuthenticatedClient(
+                serverObjs == null ? null : serverObjs.getX509ClientIdentity(), id, aclExpr);
     }
 
     @Override

@@ -63,10 +63,10 @@ public interface AuthenticationProvider {
     boolean matches(String id, String aclExpr);
 
     /**
-     * Connection-aware matching for providers that need authenticated connection context.
+     * Context-aware matching for providers that need authenticated request identity.
      * Existing providers retain their string-only matching behavior.
      */
-    default boolean matches(ServerCnxn cnxn, String id, String aclExpr) {
+    default boolean matches(ServerAuthenticationProvider.ServerObjs serverObjs, String id, String aclExpr) {
         return matches(id, aclExpr);
     }
 

@@ -1403,6 +1403,15 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     extracted as **kafka** still matches that exact ID. A client explicitly
     mapped into domain **kafka** can still match the **x509:kafka** domain ACL.
 
+    Direct ACL matching uses authenticated identity context attached to the request,
+    including writes forwarded by followers or observers. Quorum requests carry this
+    context in a reserved transport-only **zookeeper-internal-x509** entry, removed
+    before authorization; it is not a client authentication scheme or a stored ACL.
+    Both the receiving server and the leader must support this context for forwarded
+    compatibility matches. Missing context does not enable an alias, so do not rely
+    on this compatibility during a mixed-version rollout. Exact IDs and existing
+    domain/superuser AuthInfo continue to use their ordinary authorization rules.
+
 * *zookeeper.superUser* :
     (Java system property: **zookeeper.superUser**)
     Similar to **zookeeper.X509AuthenticationProvider.superUser**

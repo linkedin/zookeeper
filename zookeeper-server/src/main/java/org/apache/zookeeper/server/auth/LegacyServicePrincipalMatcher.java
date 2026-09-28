@@ -22,7 +22,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil.CertificateType;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 
@@ -70,12 +69,8 @@ public final class LegacyServicePrincipalMatcher {
         return false;
     }
 
-    public static boolean matchesAuthenticatedClient(ServerCnxn cnxn, String authenticatedId, String aclId) {
-        if (cnxn == null) {
-            return false;
-        }
+    public static boolean matchesAuthenticatedClient(ClientIdentity identity, String authenticatedId, String aclId) {
         // Bind the candidate AuthInfo ID to the authenticated certificate identity, not a mapped domain.
-        ClientIdentity identity = cnxn.getX509ClientIdentity();
         return identity != null && identity.getId().equals(authenticatedId)
             && matches(identity.getCertificateType(), authenticatedId, aclId);
     }

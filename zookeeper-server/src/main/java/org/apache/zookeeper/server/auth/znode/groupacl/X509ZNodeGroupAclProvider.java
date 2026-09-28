@@ -127,7 +127,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     // in checkAcl() in ZookeeperServer.class
     return matchValues.getId().equals(matchValues.getAclExpr())
         || LegacyServicePrincipalMatcher.matchesAuthenticatedClient(
-            serverObjs == null ? null : serverObjs.getCnxn(), matchValues.getId(), matchValues.getAclExpr());
+            serverObjs == null ? null : serverObjs.getX509ClientIdentity(), matchValues.getId(), matchValues.getAclExpr());
   }
 
   @Override
