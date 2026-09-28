@@ -206,7 +206,7 @@ public class ZkClientUriDomainMappingHelper implements ClientUriDomainMappingHel
 
   /**
    * After exact and segment-prefix lookup miss, SPIFFE v1/wl and v1/v2 application identities
-   * may match a legacy bare-app or service-principal mapping key. Application paths must
+   * may match a formatted legacy service-principal mapping key. Application paths must
    * contain both MP and app segments, with an optional tag; other principal kinds are not aliases.
    */
   @Override

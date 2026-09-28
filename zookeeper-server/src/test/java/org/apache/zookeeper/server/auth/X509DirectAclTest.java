@@ -120,7 +120,7 @@ public class X509DirectAclTest extends ZKTestCase {
                 String clientId = path.substring("/v1/".length());
                 assertEquals(Collections.singletonList(new Id("x509", clientId)), cnxn.getAuthInfo());
                 for (String id : Arrays.asList(
-                    clientId, "kafka", "servicePrincipal(kafka", "servicePrincipal(kafka)",
+                    clientId, "servicePrincipal(kafka", "servicePrincipal(kafka)",
                     "urn:li:servicePrincipal(kafka;region1;instance1)")) {
                     server.checkACL(cnxn, acl(id, ZooDefs.Perms.READ), ZooDefs.Perms.READ,
                         cnxn.getAuthInfo(), "/protected", null);
@@ -130,7 +130,7 @@ public class X509DirectAclTest extends ZKTestCase {
                 assertDenied(cnxn, "servicePrincipal(kafka", ZooDefs.Perms.READ, ZooDefs.Perms.WRITE);
                 assertDenied(cnxn, "kafka", ZooDefs.Perms.READ, ZooDefs.Perms.WRITE);
                 for (String id : Arrays.asList(
-                    "other", "kafka-extra", "Kafka", "kafka)", "kafka;instance", "nested/kafka",
+                    "kafka", "other", "kafka-extra", "Kafka", "kafka)", "kafka;instance", "nested/kafka",
                     "application/other-mp/kafka", "servicePrincipal(example-mp", "servicePrincipal(cluster-a",
                     "servicePrincipal(kafka-extra", "servicePrincipal(Kafka",
                     "userPrincipal(kafka", "groupPrincipal(kafka", "servicePrincipalMetadata(kafka)")) {
@@ -144,14 +144,10 @@ public class X509DirectAclTest extends ZKTestCase {
     }
 
     @Test
-    public void testBareApplicationNameGrammarPreservesFormattedMatching() throws Exception {
-        for (String app : Arrays.asList("kafka-server", "kafka_1", "kafka.v2", "Kafka", "9kafka")) {
-            MockServerCnxn cnxn = authenticate("spiffe://example.org/v2/application/example-mp/" + app);
-            server.checkACL(cnxn, acl(app, ZooDefs.Perms.READ), ZooDefs.Perms.READ,
-                cnxn.getAuthInfo(), "/protected", null);
-        }
+    public void testUnformattedTargetsDoNotGainApplicationCompatibility() throws Exception {
         System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
         for (String target : Arrays.asList(
+            "kafka", "kafka-server", "kafka_1", "kafka.v2", "Kafka", "9kafka",
             "CN=admin", "urn:example:admin", "CN=admin,O=example", "kafka+worker", "kafka@realm",
             "_kafka", "-kafka", ".kafka")) {
             System.setProperty(SUPERUSER_PROPERTY, target);
@@ -330,7 +326,7 @@ public class X509DirectAclTest extends ZKTestCase {
     public void testOptInSuperUserCompatibilityPreservesOriginalIdentity() throws Exception {
         System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
         for (String configuredId : Arrays.asList(
-            "kafka", "servicePrincipal(kafka", "servicePrincipal(kafka)",
+            "servicePrincipal(kafka", "servicePrincipal(kafka)",
             "urn:li:servicePrincipal(kafka;region1;instance1)")) {
             System.setProperty(SUPERUSER_PROPERTY, configuredId);
             for (String path : Arrays.asList(
@@ -347,6 +343,27 @@ public class X509DirectAclTest extends ZKTestCase {
                     cnxn.getAuthInfo(), "/protected", null);
                 assertEquals(Collections.singletonList(new ACL(ZooDefs.Perms.ALL, new Id("x509", clientId))),
                     PrepRequestProcessor.fixupACL("/created", cnxn.getAuthInfo(), ZooDefs.Ids.CREATOR_ALL_ACL));
+            }
+        }
+    }
+
+    @Test
+    public void testBareSuperUserIdRequiresExactIdentity() throws Exception {
+        System.setProperty(SUPERUSER_PROPERTY, "kafka");
+        configureSan("^urn:example:(.*)$");
+        for (String enabled : Arrays.asList("false", "true")) {
+            System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, enabled);
+            for (String path : Arrays.asList(
+                "/v1/application/example-mp/kafka", "/v2/application/example-mp/kafka/blue")) {
+                MockServerCnxn cnxn = authenticate("spiffe://example.org" + path);
+                assertEquals(Collections.singletonList(new Id("x509", path.substring("/v1/".length()))),
+                    cnxn.getAuthInfo());
+                assertDenied(cnxn, "unrelated", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
+            }
+            for (String uri : Arrays.asList("spiffe://example.org/v1/wl/kafka", "urn:example:kafka")) {
+                MockServerCnxn exact = authenticate(uri);
+                assertEquals("kafka", exact.getX509ClientIdentity().getId());
+                assertTrue(exact.getAuthInfo().contains(new Id("super", "kafka")));
             }
         }
     }
@@ -395,7 +412,7 @@ public class X509DirectAclTest extends ZKTestCase {
     public void testSuperUserCompatibilityRequiresMatchingLegacyConfig() throws Exception {
         System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
         for (String configuredId : Arrays.asList(
-            "other", "kafka-extra", "Kafka", "kafka)", "kafka;instance", "nested/kafka",
+            "kafka", "other", "kafka-extra", "Kafka", "kafka)", "kafka;instance", "nested/kafka",
             "application/other-mp/kafka",
             "servicePrincipal(other", "servicePrincipal(kafka-extra", "servicePrincipal(Kafka",
             "userPrincipal(kafka", "groupPrincipal(kafka", "servicePrincipalMetadata(kafka)",
