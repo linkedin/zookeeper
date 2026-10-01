@@ -50,10 +50,11 @@ import org.junit.Test;
 public class X509DirectAclTest extends ZKTestCase {
     private static final String PROVIDER_PROPERTY = ProviderRegistry.AUTHPROVIDER_PROPERTY_PREFIX + "x509";
     private static final String SUPERUSER_PROPERTY = "zookeeper.X509AuthenticationProvider.superUser";
+    private static final String REMOVED_COMPATIBILITY_PROPERTY = "zookeeper.ssl.x509.legacySuperUserCompatibilityEnabled";
     private static final String[] PROPERTIES = {
         PROVIDER_PROPERTY,
         SUPERUSER_PROPERTY,
-        X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED,
+        REMOVED_COMPATIBILITY_PROPERTY,
         X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE,
         X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE,
         X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX,
@@ -145,7 +146,6 @@ public class X509DirectAclTest extends ZKTestCase {
 
     @Test
     public void testUnformattedTargetsDoNotGainApplicationCompatibility() throws Exception {
-        System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
         for (String target : Arrays.asList(
             "kafka", "kafka-server", "kafka_1", "kafka.v2", "Kafka", "9kafka",
             "CN=admin", "urn:example:admin", "CN=admin,O=example", "kafka+worker", "kafka@realm",
@@ -163,7 +163,6 @@ public class X509DirectAclTest extends ZKTestCase {
 
     @Test
     public void testStructuredSuperUserIdsKeepExactLegacyMatches() throws Exception {
-        System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
         System.setProperty(SUPERUSER_PROPERTY, "CN=test-client");
         MockServerCnxn subject = authenticate("urn:example:admin");
         assertTrue(subject.getAuthInfo().contains(new Id("super", "CN=test-client")));
@@ -315,16 +314,25 @@ public class X509DirectAclTest extends ZKTestCase {
     }
 
     @Test
-    public void testCompatibilityDoesNotPromoteConfiguredSuperuserAlias() throws Exception {
+    public void testSuperUserCompatibilityIgnoresRemovedProperty() throws Exception {
         System.setProperty(SUPERUSER_PROPERTY, "servicePrincipal(kafka");
-        MockServerCnxn cnxn = authenticate("spiffe://example.org/v1/wl/kafka");
-        assertEquals(Collections.singletonList(new Id("x509", "kafka")), cnxn.getAuthInfo());
-        assertDenied(cnxn, "servicePrincipal(other", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
+        for (String value : Arrays.asList(null, "false", "true")) {
+            if (value == null) {
+                System.clearProperty(REMOVED_COMPATIBILITY_PROPERTY);
+            } else {
+                System.setProperty(REMOVED_COMPATIBILITY_PROPERTY, value);
+            }
+            for (String path : Arrays.asList("/v1/wl/kafka", "/v2/application/example-mp/kafka")) {
+                MockServerCnxn cnxn = authenticate("spiffe://example.org" + path);
+                assertTrue(cnxn.getAuthInfo().contains(new Id("super", "servicePrincipal(kafka")));
+                server.checkACL(cnxn, acl("unrelated", ZooDefs.Perms.READ), ZooDefs.Perms.ADMIN,
+                    cnxn.getAuthInfo(), "/protected", null);
+            }
+        }
     }
 
     @Test
-    public void testOptInSuperUserCompatibilityPreservesOriginalIdentity() throws Exception {
-        System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
+    public void testSuperUserCompatibilityPreservesOriginalIdentity() throws Exception {
         for (String configuredId : Arrays.asList(
             "servicePrincipal(kafka", "servicePrincipal(kafka)",
             "urn:li:servicePrincipal(kafka;region1;instance1)")) {
@@ -351,40 +359,31 @@ public class X509DirectAclTest extends ZKTestCase {
     public void testBareSuperUserIdRequiresExactIdentity() throws Exception {
         System.setProperty(SUPERUSER_PROPERTY, "kafka");
         configureSan("^urn:example:(.*)$");
-        for (String enabled : Arrays.asList("false", "true")) {
-            System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, enabled);
-            for (String path : Arrays.asList(
-                "/v1/application/example-mp/kafka", "/v2/application/example-mp/kafka/blue")) {
-                MockServerCnxn cnxn = authenticate("spiffe://example.org" + path);
-                assertEquals(Collections.singletonList(new Id("x509", path.substring("/v1/".length()))),
-                    cnxn.getAuthInfo());
-                assertDenied(cnxn, "unrelated", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
-            }
-            for (String uri : Arrays.asList("spiffe://example.org/v1/wl/kafka", "urn:example:kafka")) {
-                MockServerCnxn exact = authenticate(uri);
-                assertEquals("kafka", exact.getX509ClientIdentity().getId());
-                assertTrue(exact.getAuthInfo().contains(new Id("super", "kafka")));
-            }
+        for (String path : Arrays.asList(
+            "/v1/application/example-mp/kafka", "/v2/application/example-mp/kafka/blue")) {
+            MockServerCnxn cnxn = authenticate("spiffe://example.org" + path);
+            assertEquals(Collections.singletonList(new Id("x509", path.substring("/v1/".length()))),
+                cnxn.getAuthInfo());
+            assertDenied(cnxn, "unrelated", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
+        }
+        for (String uri : Arrays.asList("spiffe://example.org/v1/wl/kafka", "urn:example:kafka")) {
+            MockServerCnxn exact = authenticate(uri);
+            assertEquals("kafka", exact.getX509ClientIdentity().getId());
+            assertTrue(exact.getAuthInfo().contains(new Id("super", "kafka")));
         }
     }
 
     @Test
-    public void testExactSuperUserDoesNotRequireCompatibility() throws Exception {
-        System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "false");
-        for (String configuredId : Arrays.asList("kafka", "servicePrincipal(kafka")) {
-            System.setProperty(SUPERUSER_PROPERTY, configuredId);
-            MockServerCnxn normal = authenticate("spiffe://example.org/v2/application/example-mp/kafka");
-            assertDenied(normal, "unrelated", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
-        }
-
+    public void testExactApplicationSuperUserId() throws Exception {
         System.setProperty(SUPERUSER_PROPERTY, "application/example-mp/kafka");
         MockServerCnxn exact = authenticate("spiffe://example.org/v2/application/example-mp/kafka");
         assertTrue(exact.getAuthInfo().contains(new Id("super", "application/example-mp/kafka")));
+        assertDenied(authenticate("spiffe://example.org/v2/application/other-mp/kafka"),
+            "unrelated", ZooDefs.Perms.ALL, ZooDefs.Perms.READ);
     }
 
     @Test
     public void testSuperUserCompatibilityRejectsOtherIdentityTypes() throws Exception {
-        System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
         System.setProperty(SUPERUSER_PROPERTY, "servicePrincipal(kafka");
         for (String path : Arrays.asList(
             "/v2/kafka", "/v2/user/kafka", "/v2/group/kafka", "/v1/airflow/kafka",
@@ -410,7 +409,6 @@ public class X509DirectAclTest extends ZKTestCase {
 
     @Test
     public void testSuperUserCompatibilityRequiresMatchingLegacyConfig() throws Exception {
-        System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
         for (String configuredId : Arrays.asList(
             "kafka", "other", "kafka-extra", "Kafka", "kafka)", "kafka;instance", "nested/kafka",
             "application/other-mp/kafka",
@@ -428,7 +426,6 @@ public class X509DirectAclTest extends ZKTestCase {
 
     @Test
     public void testUntrustedCertificateCannotGainCompatibleSuperIdentity() throws Exception {
-        System.setProperty(X509AuthenticationConfig.SSL_X509_LEGACY_SUPER_USER_COMPATIBILITY_ENABLED, "true");
         System.setProperty(SUPERUSER_PROPERTY, "servicePrincipal(kafka");
         X509Certificate trusted = SpiffeAuthTestUtil.buildClientCertWithUriSans("spiffe://example.org/v1/wl/other");
         X509AuthenticationProvider provider = new X509AuthenticationProvider(

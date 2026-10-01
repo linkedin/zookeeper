@@ -26,7 +26,7 @@ import org.apache.zookeeper.server.auth.X509AuthenticationUtil.CertificateType;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 
 /**
- * Compatibility matching shared by X509 ACLs, URI-domain mappings and opt-in superuser selection.
+ * Compatibility matching shared by X509 ACLs, URI-domain mappings and superuser selection.
  */
 public final class LegacyServicePrincipalMatcher {
     private static final Pattern LEGACY_SERVICE_PRINCIPAL_PATTERN =
@@ -44,9 +44,6 @@ public final class LegacyServicePrincipalMatcher {
     public static Optional<String> findMatchingSuperUserId(ClientIdentity identity, Set<String> configuredIds) {
         if (configuredIds.contains(identity.getId())) {
             return Optional.of(identity.getId());
-        }
-        if (!X509AuthenticationConfig.getInstance().isLegacySuperUserCompatibilityEnabled()) {
-            return Optional.empty();
         }
         return configuredIds.stream()
             .filter(id -> matches(identity.getCertificateType(), identity.getId(), id))

@@ -1368,13 +1368,12 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     authenticated client with that principal will be able to bypass
     ACL checking and have full privileges to all znodes.
 
-* *ssl.x509.legacySuperUserCompatibilityEnabled* :
-    (Java system property: **zookeeper.ssl.x509.legacySuperUserCompatibilityEnabled**)
-    **Default: false.** When enabled, both **X509AuthenticationProvider** and
-    **X509ZNodeGroupAclProvider** can match an authenticated SPIFFE v1/wl identity,
+    Both **X509AuthenticationProvider** and **X509ZNodeGroupAclProvider**
+    automatically match an authenticated SPIFFE v1/wl identity,
     or a v1/v2 **application/\<mp\>/\<app\>[/\<tag\>]** identity, against an
     existing formatted legacy service-principal superuser ID by application name. Exact
-    configured client-ID matches take precedence and do not require this option.
+    configured client-ID matches take precedence. This compatibility is always
+    enabled and does not require a separate configuration flag.
     Supported legacy forms include **servicePrincipal(kafka**,
     **servicePrincipal(kafka)**, and **urn:li:servicePrincipal(kafka;region1;instance1)**.
     The existing superuser settings remain **zookeeper.X509AuthenticationProvider.superUser**
@@ -1382,17 +1381,19 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     The original certificate-derived identity is preserved; the **super** AuthInfo
     marker uses the matched configured ID so explicit superusers remain distinct
     from cross-domain components during ACL preparation.
-    This option does not enable reverse legacy-to-SPIFFE superuser aliases or
+    This matching does not enable reverse legacy-to-SPIFFE superuser aliases or
     compatibility for user, group, airflow, arbitrary v2, or Subject DN identities.
     **Warning:** legacy application names do not distinguish products or tags;
-    enable this option only when all eligible trusted identities with that app
-    name should have full superuser privileges. It does not change certificate
-    trust validation or existing cross-domain grants. Treat it as a startup
-    setting and restart servers or reconnect clients when changing it; it is not
-    an immediate revocation mechanism for already authenticated connections.
+    configuring a formatted legacy superuser grants full superuser privileges to
+    all eligible trusted identities with that app name. Use an exact full
+    application ID when product/tag-specific privileges are required.
+    Certificate trust validation and existing cross-domain grants are unchanged.
+    Treat superuser configuration as a startup setting and restart servers or
+    reconnect clients when changing it; it is not an immediate revocation
+    mechanism for already authenticated connections.
 
-    URI-domain and direct ACL compatibility does not require this option.
-    That compatibility is one-way: eligible SPIFFE application identities may
+    URI-domain and direct ACL compatibility follow the same one-way rules:
+    eligible SPIFFE application identities may
     match formatted legacy service principals, but
     legacy clients do not acquire reverse aliases.
     Original client IDs, exact matches and existing mapped-domain grants remain
