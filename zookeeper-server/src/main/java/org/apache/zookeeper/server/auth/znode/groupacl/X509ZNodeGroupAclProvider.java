@@ -19,7 +19,6 @@
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -164,11 +163,14 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
           // Set up AuthInfo updater to refresh connection AuthInfo on any client domain changes.
           // TODO Making the anonymous class to a separate updater implementation class if any other Acl provider shares
           // the same logic.
-          helper.setDomainAuthUpdater((cnxn, clientUriToDomainNames) -> {
+          // Route through helper.getDomains(clientId) so SPIFFE multi-segment principals resolve
+          // via the segment-prefix walk-up (operator can register an MP-level leaf to grant all
+          // apps under that MP; see ZkClientUriDomainMappingHelper class javadoc). The map passed
+          // into the lambda is ignored — kept in the interface signature for backward compat.
+          helper.setDomainAuthUpdater((cnxn, ignoredMap) -> {
             try {
               String clientId = X509AuthenticationUtil.getClientId(cnxn, trustManager);
-              assignAuthInfo(cnxn, clientId,
-                  clientUriToDomainNames.getOrDefault(clientId, Collections.emptySet()));
+              assignAuthInfo(cnxn, clientId, helper.getDomains(clientId));
             } catch (UnsupportedOperationException unsupportedEx) {
               LOG.info("Cannot update AuthInfo for session 0x{} since the operation is not supported.",
                   Long.toHexString(cnxn.getSessionId()));

@@ -131,6 +131,77 @@ public class X509AuthTest extends ZKTestCase {
     X509AuthenticationConfig.reset();
   }
 
+  @Test
+  public void testUrnMatchRegexTooBroadWithGrestinMetadataSanFallsBackToDn() {
+    // Real Grestin-issued service certs carry TWO urn:li: URIs in the same cert:
+    // servicePrincipal(...) and servicePrincipalMetadata(...). A loose match regex like
+    // "^.*urn:li:.*$" matches BOTH, which findSingleMatchingSan() rejects (requires exactly one
+    // match), causing a fall back to Subject DN instead of the intended service principal.
+    String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;None;i001)";
+    String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX, "^.*urn:li:.*$");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+        "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+
+    try {
+      TestCertificate grestinCert = new TestCertificate("CLIENT",
+          Arrays.asList(servicePrincipalSan, servicePrincipalMetadataSan));
+      X509AuthenticationProvider provider = createProvider(grestinCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{grestinCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      // Multiple SAN matches -> extractor throws -> falls back to Subject DN.
+      assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
+      X509AuthenticationConfig.reset();
+    }
+  }
+
+  @Test
+  public void testUrnMatchRegexAnchoredToServicePrincipalExtractsCorrectlyWithGrestinMetadataSan() {
+    // Same two-SAN Grestin-style cert as above, but with a properly anchored match regex
+    // (matching only servicePrincipal, not servicePrincipalMetadata). This is the
+    // production-correct configuration and must yield exactly one match, extracting the
+    // service principal even with SPIFFE support also configured alongside it.
+    String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;None;i001)";
+    String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX,
+        "^.*urn:li:servicePrincipal\\(.*$");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+        "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+    System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+    // SPIFFE detection is always on; this cert has no spiffe:// SAN, so it's unaffected.
+
+    try {
+      TestCertificate grestinCert = new TestCertificate("CLIENT",
+          Arrays.asList(servicePrincipalSan, servicePrincipalMetadataSan));
+      X509AuthenticationProvider provider = createProvider(grestinCert);
+      MockServerCnxn cnxn = new MockServerCnxn();
+      cnxn.clientChain = new X509Certificate[]{grestinCert};
+
+      assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+      assertEquals("servicePrincipal(zk-test-client", cnxn.getAuthInfo().get(0).getId());
+    } finally {
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX);
+      System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX);
+      X509AuthenticationConfig.reset();
+    }
+  }
+
   protected static class TestPublicKey implements PublicKey {
 
         private static final long serialVersionUID = 1L;
@@ -155,17 +226,21 @@ public class X509AuthTest extends ZKTestCase {
         private byte[] encoded;
         private X500Principal principal;
         private PublicKey publicKey;
-        private String subjectAlternativeName;
+        private List<String> subjectAlternativeNames;
 
         public TestCertificate(String name) {
           this(name, TEST_SAN_STR);
         }
 
         public TestCertificate(String name, String sanVal) {
+          this(name, Collections.singletonList(sanVal));
+        }
+
+        public TestCertificate(String name, List<String> sanVals) {
           encoded = name.getBytes();
           principal = new X500Principal("CN=" + name);
           publicKey = new TestPublicKey();
-          subjectAlternativeName = sanVal;
+          subjectAlternativeNames = sanVals;
         }
           @Override
         public boolean hasUnsupportedCriticalExtension() {
@@ -273,10 +348,14 @@ public class X509AuthTest extends ZKTestCase {
         }
         @Override
         public Collection<List<?>> getSubjectAlternativeNames() {
-            List<Object> subjectAlternativeNamePair = new ArrayList<>();
-            subjectAlternativeNamePair.add(6);
-            subjectAlternativeNamePair.add(subjectAlternativeName);
-            return Collections.singletonList(subjectAlternativeNamePair);
+            List<List<?>> result = new ArrayList<>();
+            for (String san : subjectAlternativeNames) {
+                List<Object> pair = new ArrayList<>();
+                pair.add(6);
+                pair.add(san);
+                result.add(pair);
+            }
+            return result;
         }
     }
 

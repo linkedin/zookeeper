@@ -83,6 +83,7 @@ public class X509AuthenticationConfig {
   public static final String SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX =
       SSL_X509_CONFIG_PREFIX + "clientCertIdSanExtractMatcherGroupIndex";
   public static final String SUBJECT_ALTERNATIVE_NAME_SHORT = "SAN";
+
   private static final String DEFAULT_REGEX = ".*";
   private String clientCertIdType;
   private int clientCertIdSanMatchType = -1;
@@ -482,4 +483,5 @@ public class X509AuthenticationConfig {
       instance = null;
     }
   }
+
 }
