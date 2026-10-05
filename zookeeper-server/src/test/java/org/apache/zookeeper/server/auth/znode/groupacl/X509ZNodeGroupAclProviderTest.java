@@ -215,7 +215,8 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
         System.setProperty(REMOVED_COMPATIBILITY_PROPERTY, value);
       }
       for (String configuredId : Arrays.asList(
-          "servicePrincipal(kafka", "servicePrincipal(kafka)", "urn:li:servicePrincipal(kafka;region1;instance1)")) {
+          "kafka", "servicePrincipal(kafka", "servicePrincipal(kafka)",
+          "urn:li:servicePrincipal(kafka;region1;instance1)")) {
         System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, configuredId);
         for (String path : Arrays.asList(
             "/v1/wl/kafka", "/v1/application/example-mp/kafka", "/v2/application/example-mp/kafka/blue",
@@ -232,13 +233,13 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
   }
 
   @Test
-  public void testBareSuperUserConfigurationRequiresExactIdentity() throws Exception {
+  public void testBareSuperUserConfigurationMatchesSpiffeApplications() throws Exception {
     System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, "kafka");
     for (String path : Arrays.asList(
         "/v1/application/example-mp/kafka", "/v2/application/example-mp/kafka/blue")) {
       String clientId = path.substring("/v1/".length());
       MockServerCnxn cnxn = authenticateSpiffe(path);
-      Assert.assertEquals(Collections.singletonList(new Id("x509", clientId)), cnxn.getAuthInfo());
+      Assert.assertEquals(Collections.singletonList(new Id("super", "kafka")), cnxn.getAuthInfo());
       Assert.assertEquals(clientId, cnxn.getX509ClientIdentity().getId());
     }
     Assert.assertEquals(Collections.singletonList(new Id("super", "kafka")),
@@ -266,6 +267,11 @@ public class X509ZNodeGroupAclProviderTest extends ZKTestCase {
       System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, configuredIds);
       Assert.assertEquals(Collections.singletonList(new Id("super", legacyId)),
           authenticateSpiffe("/v1/wl/zookeeper").getAuthInfo());
+    }
+    for (String configuredIds : Arrays.asList(legacyId + ",zookeeper", "zookeeper," + legacyId)) {
+      System.setProperty(X509AuthenticationConfig.ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID, configuredIds);
+      Assert.assertEquals(Collections.singletonList(new Id("super", legacyId)),
+          authenticateSpiffe("/v2/" + applicationId).getAuthInfo());
     }
   }
 

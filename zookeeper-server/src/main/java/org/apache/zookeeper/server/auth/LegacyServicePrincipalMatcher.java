@@ -31,6 +31,7 @@ import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 public final class LegacyServicePrincipalMatcher {
     private static final Pattern LEGACY_SERVICE_PRINCIPAL_PATTERN =
         Pattern.compile("^(?:urn:li:)?servicePrincipal\\(([^();/]+)(?:\\)|;[^()/]*\\))?$");
+    private static final Pattern BARE_APPLICATION_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]*$");
     private static final Pattern SPIFFE_APPLICATION_PATTERN =
         Pattern.compile("^application/[^/]+/([^/]+)(?:/[^/]+)?$");
 
@@ -77,6 +78,9 @@ public final class LegacyServicePrincipalMatcher {
             return null;
         }
         Matcher matcher = LEGACY_SERVICE_PRINCIPAL_PATTERN.matcher(legacyId);
-        return matcher.matches() ? matcher.group(1) : null;
+        if (matcher.matches()) {
+            return matcher.group(1);
+        }
+        return BARE_APPLICATION_PATTERN.matcher(legacyId).matches() ? legacyId : null;
     }
 }

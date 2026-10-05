@@ -1371,10 +1371,10 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     Both **X509AuthenticationProvider** and **X509ZNodeGroupAclProvider**
     automatically match an authenticated SPIFFE v1/wl identity,
     or a v1/v2 **application/\<mp\>/\<app\>[/\<tag\>]** identity, against an
-    existing formatted legacy service-principal superuser ID by application name. Exact
+    existing bare application-name or formatted legacy service-principal superuser ID. Exact
     configured client-ID matches take precedence. This compatibility is always
     enabled and does not require a separate configuration flag.
-    Supported legacy forms include **servicePrincipal(kafka**,
+    Supported legacy forms include **kafka**, **servicePrincipal(kafka**,
     **servicePrincipal(kafka)**, and **urn:li:servicePrincipal(kafka;region1;instance1)**.
     The existing superuser settings remain **zookeeper.X509AuthenticationProvider.superUser**
     and **zookeeper.X509ZNodeGroupAclProvider.superUserId**, respectively.
@@ -1384,7 +1384,7 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     This matching does not enable reverse legacy-to-SPIFFE superuser aliases or
     compatibility for user, group, airflow, arbitrary v2, or Subject DN identities.
     **Warning:** legacy application names do not distinguish products or tags;
-    configuring a formatted legacy superuser grants full superuser privileges to
+    configuring a bare or formatted legacy superuser grants full superuser privileges to
     all eligible trusted identities with that app name. Use an exact full
     application ID when product/tag-specific privileges are required.
     Certificate trust validation and existing cross-domain grants are unchanged.
@@ -1394,15 +1394,18 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
 
     URI-domain and direct ACL compatibility follow the same one-way rules:
     eligible SPIFFE application identities may
-    match formatted legacy service principals, but
+    match bare application names or formatted legacy service principals, but
     legacy clients do not acquire reverse aliases.
     Original client IDs, exact matches and existing mapped-domain grants remain
-    unchanged. Bare names such as **kafka** are not compatibility targets for
-    URI-domain mappings, direct ACLs or superuser selection. For example,
-    **application/example-mp/kafka** does not gain an alias to **kafka**.
-    This does not reject existing exact matches: a v1/wl or legacy SAN identity
-    extracted as **kafka** still matches that exact ID. A client explicitly
-    mapped into domain **kafka** can still match the **x509:kafka** domain ACL.
+    unchanged. Bare compatibility targets must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`:
+    a letter or digit followed by letters, digits, dots, underscores or hyphens.
+    For example, **application/example-mp/kafka** matches both **kafka** and
+    **servicePrincipal(kafka**. Comparisons are case-sensitive and require equal
+    application names, not application-name prefixes. DN/URN-shaped strings and
+    paths are not interpreted as bare application names.
+    Existing exact matches remain valid, including v1/wl and legacy SAN identities.
+    Creator ACL generation is unchanged: it stores the selected original AuthInfo
+    IDs, not additional aliases or shortened application IDs.
 
     Direct ACL matching uses authenticated identity context attached to the request,
     including writes forwarded by followers or observers. Quorum requests carry this
