@@ -46,6 +46,7 @@ import org.apache.zookeeper.server.TxnLogProposalIterator;
 import org.apache.zookeeper.server.ZKDatabase;
 import org.apache.zookeeper.server.ZooKeeperThread;
 import org.apache.zookeeper.server.ZooTrace;
+import org.apache.zookeeper.server.auth.X509QuorumAuthInfo;
 import org.apache.zookeeper.server.quorum.Leader.Proposal;
 import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
 import org.apache.zookeeper.server.quorum.auth.QuorumAuthServer;
@@ -661,11 +662,6 @@ public class LearnerHandler extends ZooKeeperThread {
 
                 packetsReceived.incrementAndGet();
 
-                ByteBuffer bb;
-                long sessionId;
-                int cxid;
-                int type;
-
                 switch (qp.getType()) {
                 case Leader.ACK:
                     if (this.learnerType == LearnerType.OBSERVER) {
@@ -689,17 +685,7 @@ public class LearnerHandler extends ZooKeeperThread {
                     learnerMaster.revalidateSession(qp, this);
                     break;
                 case Leader.REQUEST:
-                    bb = ByteBuffer.wrap(qp.getData());
-                    sessionId = bb.getLong();
-                    cxid = bb.getInt();
-                    type = bb.getInt();
-                    bb = bb.slice();
-                    Request si;
-                    if (type == OpCode.sync) {
-                        si = new LearnerSyncRequest(this, sessionId, cxid, type, bb, qp.getAuthinfo());
-                    } else {
-                        si = new Request(null, sessionId, cxid, type, bb, qp.getAuthinfo());
-                    }
+                    Request si = readRequest(qp);
                     si.setOwner(this);
                     learnerMaster.submitLearnerRequest(si);
                     requestsReceived.incrementAndGet();
@@ -738,6 +724,20 @@ public class LearnerHandler extends ZooKeeperThread {
             messageTracker.dumpToLog(remoteAddr);
             shutdown();
         }
+    }
+
+    Request readRequest(QuorumPacket packet) throws IOException {
+        ByteBuffer buffer = ByteBuffer.wrap(packet.getData());
+        long sessionId = buffer.getLong();
+        int cxid = buffer.getInt();
+        int type = buffer.getInt();
+        X509QuorumAuthInfo auth = X509QuorumAuthInfo.decode(packet.getAuthinfo());
+        if (type == OpCode.sync) {
+            return new LearnerSyncRequest(this, sessionId, cxid, type, buffer.slice(),
+                auth.getAuthInfo(), auth.getClientIdentity());
+        }
+        return new Request(null, sessionId, cxid, type, buffer.slice(),
+            auth.getAuthInfo(), auth.getClientIdentity());
     }
 
     /**

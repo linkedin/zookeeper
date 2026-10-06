@@ -56,7 +56,7 @@ public class X509AuthenticationConfig {
     return instance;
   }
 
-  // The following System Property keys are used to extract clientId from the client cert.
+  // Shared X509 authentication settings.
 
   /**
    * Config prefix for x509-related config properties.
