@@ -2105,7 +2105,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
              * we only care about it being well-formed (and if it isn't, an
              * exception will be raised).
              */
-            PrepRequestProcessor.fixupACL(path, request.authInfo, acl);
+            PrepRequestProcessor.fixupACL(path, request.authInfo, acl, request.getX509ClientIdentity());
         }
 
         return path;
