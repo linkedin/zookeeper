@@ -368,7 +368,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             String path = deleteRequest.getPath();
             String parentPath = getParentPathAndValidate(path);
             ChangeRecord parentRecord = getRecordForPath(parentPath);
-            zks.checkACL(request.cnxn, parentRecord.acl, ZooDefs.Perms.DELETE, request.authInfo, path, null);
+            zks.checkACL(request, parentRecord.acl, ZooDefs.Perms.DELETE, path, null);
             ChangeRecord nodeRecord = getRecordForPath(path);
             checkAndIncVersion(nodeRecord.stat.getVersion(), deleteRequest.getVersion(), path);
             if (nodeRecord.childCount > 0) {
@@ -396,7 +396,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             path = setDataRequest.getPath();
             validatePath(path, request.sessionId);
             nodeRecord = getRecordForPath(path);
-            zks.checkACL(request.cnxn, nodeRecord.acl, ZooDefs.Perms.WRITE, request.authInfo, path, null);
+            zks.checkACL(request, nodeRecord.acl, ZooDefs.Perms.WRITE, path, null);
             int newVersion = checkAndIncVersion(nodeRecord.stat.getVersion(), setDataRequest.getVersion(), path);
             request.setTxn(new SetDataTxn(path, setDataRequest.getData(), newVersion));
             nodeRecord = nodeRecord.duplicate(request.getHdr().getZxid());
@@ -536,7 +536,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             }
 
             nodeRecord = getRecordForPath(ZooDefs.CONFIG_NODE);
-            zks.checkACL(request.cnxn, nodeRecord.acl, ZooDefs.Perms.WRITE, request.authInfo, null, null);
+            zks.checkACL(request, nodeRecord.acl, ZooDefs.Perms.WRITE, null, null);
             SetDataTxn setDataTxn = new SetDataTxn(ZooDefs.CONFIG_NODE, request.qv.toString().getBytes(), -1);
             request.setTxn(setDataTxn);
             nodeRecord = nodeRecord.duplicate(request.getHdr().getZxid());
@@ -562,7 +562,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             validatePath(path, request.sessionId);
             List<ACL> listACL = fixupACL(path, request.authInfo, setAclRequest.getAcl());
             nodeRecord = getRecordForPath(path);
-            zks.checkACL(request.cnxn, nodeRecord.acl, ZooDefs.Perms.ADMIN, request.authInfo, path, listACL);
+            zks.checkACL(request, nodeRecord.acl, ZooDefs.Perms.ADMIN, path, listACL);
             newVersion = checkAndIncVersion(nodeRecord.stat.getAversion(), setAclRequest.getVersion(), path);
             request.setTxn(new SetACLTxn(path, listACL, newVersion));
             nodeRecord = nodeRecord.duplicate(request.getHdr().getZxid());
@@ -633,7 +633,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             path = checkVersionRequest.getPath();
             validatePath(path, request.sessionId);
             nodeRecord = getRecordForPath(path);
-            zks.checkACL(request.cnxn, nodeRecord.acl, ZooDefs.Perms.READ, request.authInfo, path, null);
+            zks.checkACL(request, nodeRecord.acl, ZooDefs.Perms.READ, path, null);
             request.setTxn(new CheckVersionTxn(
                 path,
                 checkAndIncVersion(nodeRecord.stat.getVersion(), checkVersionRequest.getVersion(), path)));
@@ -682,7 +682,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         List<ACL> listACL = fixupACL(path, request.authInfo, acl);
         ChangeRecord parentRecord = getRecordForPath(parentPath);
 
-        zks.checkACL(request.cnxn, parentRecord.acl, ZooDefs.Perms.CREATE, request.authInfo, path, listACL);
+        zks.checkACL(request, parentRecord.acl, ZooDefs.Perms.CREATE, path, listACL);
         int parentCVersion = parentRecord.stat.getCversion();
         if (createMode.isSequential()) {
             path = path + String.format(Locale.ENGLISH, "%010d", parentCVersion);
