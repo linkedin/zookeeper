@@ -46,6 +46,7 @@ import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.metrics.Counter;
 import org.apache.zookeeper.proto.ReplyHeader;
 import org.apache.zookeeper.proto.RequestHeader;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,6 +62,9 @@ public abstract class ServerCnxn implements Stats, Watcher {
     private static final Logger LOG = LoggerFactory.getLogger(ServerCnxn.class);
 
     private Set<Id> authInfo = Collections.newSetFromMap(new ConcurrentHashMap<Id, Boolean>());
+
+    // Retain authenticated type information without reparsing certificates during ACL checks.
+    private volatile ClientIdentity x509ClientIdentity;
 
     private static final byte[] fourBytes = new byte[4];
 
@@ -283,6 +287,14 @@ public abstract class ServerCnxn implements Stats, Watcher {
 
     public boolean removeAuthInfo(Id id) {
         return authInfo.remove(id);
+    }
+
+    public ClientIdentity getX509ClientIdentity() {
+        return x509ClientIdentity;
+    }
+
+    public void setX509ClientIdentity(ClientIdentity identity) {
+        x509ClientIdentity = identity;
     }
 
     abstract void sendBuffer(ByteBuffer... buffers);
