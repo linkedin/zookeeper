@@ -52,6 +52,7 @@ import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.TxnLogEntry;
 import org.apache.zookeeper.server.ZooTrace;
+import org.apache.zookeeper.server.auth.X509QuorumAuthInfo;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.flexible.QuorumVerifier;
 import org.apache.zookeeper.server.util.ConfigUtils;
@@ -250,7 +251,8 @@ public class Learner {
             oa.write(b);
         }
         oa.close();
-        QuorumPacket qp = new QuorumPacket(Leader.REQUEST, -1, baos.toByteArray(), request.authInfo);
+        QuorumPacket qp = new QuorumPacket(Leader.REQUEST, -1, baos.toByteArray(),
+            X509QuorumAuthInfo.encode(request.authInfo, request.getX509ClientIdentity()));
         writePacket(qp, true);
     }
 

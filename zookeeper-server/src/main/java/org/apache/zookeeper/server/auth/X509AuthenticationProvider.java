@@ -19,6 +19,8 @@
 package org.apache.zookeeper.server.auth;
 
 import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.Optional;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
@@ -28,6 +30,7 @@ import org.apache.zookeeper.common.X509Exception.TrustManagerException;
 import org.apache.zookeeper.common.ZKConfig;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.ServerCnxn;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,14 +94,20 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         try {
             clientCert = X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
         } catch (KeeperException.AuthFailedException e) {
+            cnxn.setX509ClientIdentity(null);
             return KeeperException.Code.AUTHFAILED;
         }
 
-        String clientId = X509AuthenticationUtil.getClientId(clientCert);
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(clientCert);
+        cnxn.setX509ClientIdentity(identity);
+        String clientId = identity.getId();
 
-        if (clientId.equals(System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER))) {
-            cnxn.addAuthInfo(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));
-            LOG.info("Authenticated Id '{}' as super user", clientId);
+        String configuredSuperUser = System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER);
+        Optional<String> superUserId = LegacyServicePrincipalMatcher.findMatchingSuperUserId(identity,
+            configuredSuperUser == null ? Collections.emptySet() : Collections.singleton(configuredSuperUser));
+        if (superUserId.isPresent()) {
+            cnxn.addAuthInfo(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, superUserId.get()));
+            LOG.info("Authenticated Id '{}' as configured super user '{}'", clientId, superUserId.get());
         }
 
         Id authInfo = new Id(getScheme(), clientId);
@@ -116,6 +125,13 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         }
 
         return id.equals(aclExpr);
+    }
+
+    @Override
+    public boolean matches(ServerAuthenticationProvider.ServerObjs serverObjs, String id, String aclExpr) {
+        return matches(id, aclExpr)
+            || LegacyServicePrincipalMatcher.matchesAuthenticatedClient(
+                serverObjs == null ? null : serverObjs.getX509ClientIdentity(), id, aclExpr);
     }
 
     @Override
