@@ -102,6 +102,7 @@ public class StandaloneServerAuditTest extends ClientBase {
     public void testEnhancedWriteResultsMatchClientResponses() throws Exception {
         System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
         ZooKeeper zk = createClient();
+        assertSessionEstablished();
         byte[] data = "audit-secret".getBytes(StandardCharsets.UTF_8);
         zk.create("/enhanced", data, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
         String log = capture.read(1).get(0);
@@ -141,6 +142,7 @@ public class StandaloneServerAuditTest extends ClientBase {
         System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
         System.setProperty("zookeeper.extendedTypesEnabled", "true");
         ZooKeeper zk = createClient();
+        assertSessionEstablished();
         Stat stat = new Stat();
         zk.create("/create2", null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT, stat);
         assertWrite(fields(capture.read(1).get(0)), "create", "/create2", "0", "committed", "0");
@@ -174,6 +176,7 @@ public class StandaloneServerAuditTest extends ClientBase {
         System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
         System.setProperty("zookeeper.extendedTypesEnabled", "true");
         ZooKeeper zk = createClient();
+        assertSessionEstablished();
         List<OpResult> results = zk.multi(Arrays.asList(
                 Op.create("/same", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
                 Op.delete("/same", -1),
@@ -201,6 +204,7 @@ public class StandaloneServerAuditTest extends ClientBase {
     public void testEnhancedFailedMultiMatchesAtomicRollback() throws Exception {
         System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
         ZooKeeper zk = createClient();
+        assertSessionEstablished();
         try {
             zk.multi(Arrays.asList(
                     Op.create("/rolled", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
@@ -227,6 +231,7 @@ public class StandaloneServerAuditTest extends ClientBase {
     public void testFailedCheckRollsBackMutationsWithoutACheckEvent() throws Exception {
         System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
         ZooKeeper zk = createClient();
+        assertSessionEstablished();
         try {
             zk.multi(Arrays.asList(
                     Op.create("/rolled", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
@@ -248,11 +253,15 @@ public class StandaloneServerAuditTest extends ClientBase {
     public void testEnhancedAclRedactionDoesNotChangeStoredAcl() throws Exception {
         System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
         ZooKeeper zk = createClient();
+        assertSessionEstablished();
         String credentials = "alice:synthetic-password";
         String digest = DigestAuthenticationProvider.generateDigest(credentials);
         zk.addAuthInfo("digest", credentials.getBytes(StandardCharsets.UTF_8));
         zk.create("/acl", new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-        capture.read(1);
+        List<String> initialLogs = capture.read(2);
+        assertEquals(AuditConstants.OP_AUTHENTICATION, fields(initialLogs.get(0)).get("operation"));
+        assertEquals("digest", fields(initialLogs.get(0)).get("auth_scheme"));
+        assertEquals(AuditConstants.OP_CREATE, fields(initialLogs.get(1)).get("operation"));
         List<ACL> acls = Collections.singletonList(new ACL(ZooDefs.Perms.ALL, new Id("digest", digest)));
         zk.setACL("/acl", acls, -1);
         String log = capture.read(1).get(0);
@@ -273,9 +282,13 @@ public class StandaloneServerAuditTest extends ClientBase {
         try {
             System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
             ZooKeeper zk = createClient();
+            assertSessionEstablished();
             zk.addAuthInfo("audit-test-custom", "alice:synthetic-password".getBytes(StandardCharsets.UTF_8));
             zk.create("/custom-user", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-            String enhanced = capture.read(1).get(0);
+            List<String> initialLogs = capture.read(2);
+            assertEquals(AuditConstants.OP_AUTHENTICATION, fields(initialLogs.get(0)).get("operation"));
+            assertEquals("audit-test-custom", fields(initialLogs.get(0)).get("auth_scheme"));
+            String enhanced = initialLogs.get(1);
             assertWrite(fields(enhanced), "create", "/custom-user", "1", "committed", "0");
             assertFalse(enhanced.contains("synthetic-password"));
             List<String> enhancedUsers = Arrays.asList(fields(enhanced).get("user").split(","));
@@ -300,6 +313,7 @@ public class StandaloneServerAuditTest extends ClientBase {
     public void testAuditFailureDoesNotRejectValidWrite() throws Exception {
         System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
         ZooKeeper zk = createClient();
+        assertSessionEstablished();
         AuditLogger failingLogger = event -> {
             throw new IllegalStateException("synthetic audit sink failure");
         };
@@ -344,5 +358,12 @@ public class StandaloneServerAuditTest extends ClientBase {
             AuditHelperTest.replaceProviderField("auditLogger", previousLogger);
             AuditHelperTest.replaceAuditErrorCounter(previousCounter);
         }
+    }
+
+    private void assertSessionEstablished() throws InterruptedException {
+        Map<String, String> binding = fields(capture.await(1, CONNECTION_TIMEOUT).get(0));
+        assertEquals(AuditConstants.OP_SESSION_ESTABLISHED, binding.get("operation"));
+        assertEquals("ip", binding.get("auth_scheme"));
+        assertEquals("success", binding.get("result"));
     }
 }

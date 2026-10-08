@@ -280,6 +280,9 @@ public class Slf4JAuditLoggerTest extends QuorumPeerTestBase {
         String previous = System.getProperty(AuditHelperTest.ENHANCED_ENABLE);
         System.setProperty(AuditHelperTest.ENHANCED_ENABLE, "true");
         try (ZooKeeper client = ClientBase.createZKClient("127.0.0.1:" + mt[0].getQuorumPeer().getClientPort())) {
+            Map<String, String> binding = AuditHelperTest.fields(os.await(1, CONNECTION_TIMEOUT).get(0));
+            assertEquals(AuditConstants.OP_SESSION_ESTABLISHED, binding.get("operation"));
+            assertEquals("ip", binding.get("auth_scheme"));
             client.create("/enhanced-ephemeral", new byte[1], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
             String session = "0x" + Long.toHexString(client.getSessionId());
             os.read(1);
