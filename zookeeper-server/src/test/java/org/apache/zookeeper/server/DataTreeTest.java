@@ -18,6 +18,7 @@
 
 package org.apache.zookeeper.server;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -32,10 +33,16 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -260,6 +267,295 @@ public class DataTreeTest extends ZKTestCase {
 
         //Check that the node path is removed from pTrie
         assertEquals("/bug is still in pTrie", "/", pTrie.findMaxPrefix("/bug"));
+    }
+
+    @Test
+    public void testQuotaStatsRejectsMalformedUsage() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        String[] values = {
+            "other=1,bytes=3", "count=1,other=3", "bytes=3,count=1", "count=1",
+            "count=1,bytes=3,", "count=1,bytes=3,extra=4", "count=1=2,bytes=3",
+            "count=+1,bytes=3", "count=1,bytes=+3", "count=1,bytes=3\n",
+            " count=1,bytes=3", "count=1,bytes=3.0", "count=\u0661,bytes=3", "sensitive-token"
+        };
+        for (String value : values) {
+            setQuotaData(tree, Quotas.statPath("/quota-test"), value);
+            assertQuotaUnavailable(sampleQuota(tree), "invalid_quota_stats");
+        }
+        tree.setData(Quotas.statPath("/quota-test"), new byte[]{(byte) 0xc3, (byte) 0x28}, 1, 2, 2);
+        assertQuotaUnavailable(sampleQuota(tree), "invalid_quota_stats");
+    }
+
+    @Test
+    public void testQuotaStatsRejectsMalformedLimits() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        for (String value : Arrays.asList("other=10,bytes=100", "bytes=100,count=10",
+                                          "count=10,bytes=", "count=10,bytes=100,",
+                                          "count=10,bytes=100=sensitive-token", "sensitive-token")) {
+            setQuotaData(tree, Quotas.quotaPath("/quota-test"), value);
+            assertQuotaUnavailable(sampleQuota(tree), "invalid_quota_limits");
+        }
+    }
+
+    @Test
+    public void testQuotaStatsRejectsNullOrEmptyMetadata() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        for (String value : Arrays.asList(null, "")) {
+            setQuotaData(tree, Quotas.statPath("/quota-test"), value);
+            assertQuotaUnavailable(sampleQuota(tree), "invalid_quota_stats");
+        }
+        setQuotaData(tree, Quotas.statPath("/quota-test"), "count=1,bytes=3");
+        for (String value : Arrays.asList(null, "")) {
+            setQuotaData(tree, Quotas.quotaPath("/quota-test"), value);
+            assertQuotaUnavailable(sampleQuota(tree), "invalid_quota_limits");
+        }
+    }
+
+    @Test
+    public void testQuotaStatsRejectsOutOfRangeUsage() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        for (String value : Arrays.asList("count=-1,bytes=3", "count=1,bytes=-1",
+                                          "count=-2,bytes=3", "count=2147483648,bytes=3",
+                                          "count=1,bytes=9223372036854775808")) {
+            setQuotaData(tree, Quotas.statPath("/quota-test"), value);
+            assertQuotaUnavailable(sampleQuota(tree), "invalid_quota_stats");
+        }
+    }
+
+    @Test
+    public void testQuotaStatsRejectsOutOfRangeLimits() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        for (String value : Arrays.asList("count=-2,bytes=100", "count=10,bytes=-2",
+                                          "count=2147483648,bytes=100",
+                                          "count=10,bytes=9223372036854775808")) {
+            setQuotaData(tree, Quotas.quotaPath("/quota-test"), value);
+            assertQuotaUnavailable(sampleQuota(tree), "invalid_quota_limits");
+        }
+    }
+
+    @Test
+    public void testQuotaStatsIncompleteMetadata() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        tree.deleteNode(Quotas.statPath("/quota-test"), 2);
+        assertQuotaUnavailable(sampleQuota(tree), "quota_incomplete");
+        tree.createNode(Quotas.statPath("/quota-test"), new byte[0], null, 0, -1, 3, 3);
+        tree.deleteNode(Quotas.quotaPath("/quota-test"), 4);
+        assertQuotaUnavailable(sampleQuota(tree), "quota_incomplete");
+        tree.deleteNode(Quotas.statPath("/quota-test"), 5);
+        assertQuotaUnavailable(sampleQuota(tree), "quota_missing");
+    }
+
+    @Test
+    public void testQuotaStatsNamespaceRemoval() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        tree.deleteNode("/quota-test", 2);
+        assertNotNull(tree.getNode(Quotas.statPath("/quota-test")));
+        assertNotNull(tree.getNode(Quotas.quotaPath("/quota-test")));
+        assertQuotaUnavailable(sampleQuota(tree), "namespace_missing");
+        tree.createNode("/quota-test", new byte[5], null, 0, -1, 3, 3);
+        DataTree.QuotaStats sample = sampleQuota(tree);
+        assertTrue(sample.isAvailable());
+        assertEquals(Integer.valueOf(1), sample.getCountUsed());
+        assertEquals(Long.valueOf(5), sample.getBytesUsed());
+    }
+
+    @Test
+    public void testQuotaStatsDetectsRemovalDuringSample() throws Exception {
+        for (String path : Arrays.asList("/quota-test", Quotas.statPath("/quota-test"), Quotas.quotaPath("/quota-test"))) {
+            ChangingQuotaTree tree = new ChangingQuotaTree();
+            createQuotaTree(tree);
+            tree.changePath = path;
+            assertQuotaUnavailable(sampleQuota(tree), "quota_changed");
+        }
+    }
+
+    @Test
+    public void testQuotaStatsDetectsReplacementDuringSample() throws Exception {
+        for (String path : Arrays.asList("/quota-test", Quotas.statPath("/quota-test"), Quotas.quotaPath("/quota-test"))) {
+            ChangingQuotaTree tree = new ChangingQuotaTree();
+            createQuotaTree(tree);
+            tree.changePath = path;
+            tree.replace = true;
+            assertQuotaUnavailable(sampleQuota(tree), "quota_changed");
+        }
+    }
+
+    @Test
+    public void testQuotaStatsDoesNotTraverseMissingQuota() throws Exception {
+        BoundedQuotaTree tree = new BoundedQuotaTree();
+        tree.createNode("/quota-test", new byte[3], null, 0, -1, 1, 1);
+        for (int i = 0; i < 100; i++) {
+            tree.createNode("/quota-test/child" + i, new byte[4], null, 0, -1, 1, 1);
+        }
+        tree.sampling = true;
+        assertQuotaUnavailable(sampleQuota(tree), "quota_missing");
+        assertTrue(tree.lookups <= 6);
+    }
+
+    @Test
+    public void testQuotaStatsSamplesMetadataWithoutRecounting() throws Exception {
+        BoundedQuotaTree tree = new BoundedQuotaTree();
+        createQuotaTree(tree);
+        setQuotaData(tree, Quotas.statPath("/quota-test"), "count=19,bytes=999");
+        byte[] data = tree.getNode(Quotas.statPath("/quota-test")).getData().clone();
+        long digest = tree.getTreeDigest();
+        long size = tree.cachedApproximateDataSize();
+        int watches = tree.getWatchCount();
+        Map<String, Object> metrics = MetricsUtils.currentServerMetrics();
+        tree.sampling = true;
+        DataTree.QuotaStats sample = sampleQuota(tree);
+        tree.sampling = false;
+
+        assertTrue(sample.isAvailable());
+        assertEquals(Integer.valueOf(19), sample.getCountUsed());
+        assertEquals(Long.valueOf(999), sample.getBytesUsed());
+        assertTrue(tree.lookups <= 6);
+        assertArrayEquals(data, tree.getNode(Quotas.statPath("/quota-test")).getData());
+        assertEquals(digest, tree.getTreeDigest());
+        assertEquals(size, tree.cachedApproximateDataSize());
+        assertEquals(watches, tree.getWatchCount());
+        assertEquals(metrics, MetricsUtils.currentServerMetrics());
+        setQuotaData(tree, Quotas.statPath("/quota-test"), "count=2,bytes=7");
+        assertEquals(Integer.valueOf(19), sample.getCountUsed());
+        assertEquals(Long.valueOf(999), sample.getBytesUsed());
+    }
+
+    @Test
+    public void testQuotaStatsNumericBoundaries() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        setQuotaData(tree, Quotas.statPath("/quota-test"), "count=2147483647,bytes=9223372036854775807");
+        setQuotaData(tree, Quotas.quotaPath("/quota-test"), "count=2147483647,bytes=9223372036854775807");
+        DataTree.QuotaStats sample = sampleQuota(tree);
+        assertTrue(sample.isAvailable());
+        assertEquals(Integer.valueOf(Integer.MAX_VALUE), sample.getCountUsed());
+        assertEquals(Long.valueOf(Long.MAX_VALUE), sample.getBytesUsed());
+        assertEquals(Integer.valueOf(Integer.MAX_VALUE), sample.getCountLimit());
+        assertEquals(Long.valueOf(Long.MAX_VALUE), sample.getBytesLimit());
+        setQuotaData(tree, Quotas.statPath("/quota-test"), "count=000,bytes=000");
+        sample = sampleQuota(tree);
+        assertTrue(sample.isAvailable());
+        assertEquals(Integer.valueOf(0), sample.getCountUsed());
+        assertEquals(Long.valueOf(0), sample.getBytesUsed());
+    }
+
+    @Test(timeout = 30000)
+    public void testQuotaStatsConcurrentMetadataUpdates() throws Exception {
+        DataTree tree = new DataTree();
+        createQuotaTree(tree);
+        setQuotaData(tree, Quotas.statPath("/quota-test"), "count=2,bytes=20");
+        setQuotaData(tree, Quotas.quotaPath("/quota-test"), "count=5,bytes=50");
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService writer = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> updates = writer.submit(() -> {
+                start.await();
+                for (int i = 0; i < 1000; i++) {
+                    setQuotaData(tree, Quotas.statPath("/quota-test"), i % 2 == 0 ? "count=3,bytes=30" : "count=2,bytes=20");
+                    setQuotaData(tree, Quotas.quotaPath("/quota-test"), i % 2 == 0 ? "count=7,bytes=70" : "count=5,bytes=50");
+                }
+                return null;
+            });
+            start.countDown();
+            for (int i = 0; i < 1000; i++) {
+                DataTree.QuotaStats sample = sampleQuota(tree);
+                assertTrue(sample.isAvailable());
+                assertTrue((sample.getCountUsed() == 2 && sample.getBytesUsed() == 20)
+                           || (sample.getCountUsed() == 3 && sample.getBytesUsed() == 30));
+                assertTrue((sample.getCountLimit() == 5 && sample.getBytesLimit() == 50)
+                           || (sample.getCountLimit() == 7 && sample.getBytesLimit() == 70));
+            }
+            updates.get(10, TimeUnit.SECONDS);
+        } finally {
+            writer.shutdownNow();
+            assertTrue(writer.awaitTermination(10, TimeUnit.SECONDS));
+        }
+    }
+
+    private void createQuotaTree(DataTree tree) throws Exception {
+        tree.createNode("/quota-test", new byte[3], null, 0, -1, 1, 1);
+        tree.createNode(Quotas.quotaZookeeper + "/quota-test", null, null, 0, -1, 1, 1);
+        tree.createNode(Quotas.quotaPath("/quota-test"), "count=10,bytes=100".getBytes(StandardCharsets.UTF_8),
+                        null, 0, -1, 1, 1);
+        tree.createNode(Quotas.statPath("/quota-test"), new byte[0], null, 0, -1, 1, 1);
+    }
+
+    private void setQuotaData(DataTree tree, String path, String value) throws NoNodeException {
+        tree.setData(path, value == null ? null : value.getBytes(StandardCharsets.UTF_8), 1, 2, 2);
+    }
+
+    private DataTree.QuotaStats sampleQuota(DataTree tree) {
+        try {
+            return tree.getQuotaStats("/quota-test");
+        } catch (RuntimeException e) {
+            throw new AssertionError("Quota telemetry must report unavailable, not throw " + e.getClass().getSimpleName());
+        }
+    }
+
+    private void assertQuotaUnavailable(DataTree.QuotaStats sample, String reason) {
+        assertFalse(sample.isAvailable());
+        assertEquals(reason, sample.getReason());
+        assertNull(sample.getCountUsed());
+        assertNull(sample.getBytesUsed());
+        assertNull(sample.getCountLimit());
+        assertNull(sample.getBytesLimit());
+    }
+
+    private static class BoundedQuotaTree extends DataTree {
+
+        private boolean sampling;
+        private int lookups;
+
+        @Override
+        public DataNode getNode(String path) {
+            if (sampling) {
+                assertTrue("Unexpected subtree lookup", "/quota-test".equals(path)
+                           || Quotas.statPath("/quota-test").equals(path)
+                           || Quotas.quotaPath("/quota-test").equals(path));
+                assertTrue("Quota telemetry must perform bounded lookups", ++lookups <= 6);
+            }
+            return super.getNode(path);
+        }
+
+        @Override
+        public String getMaxPrefixWithQuota(String path) {
+            assertFalse("Quota telemetry must not search ancestor quotas", sampling);
+            return super.getMaxPrefixWithQuota(path);
+        }
+
+    }
+
+    private static class ChangingQuotaTree extends DataTree {
+
+        private String changePath;
+        private boolean replace;
+
+        @Override
+        public DataNode getNode(String path) {
+            DataNode node = super.getNode(path);
+            if (changePath != null && Quotas.quotaPath("/quota-test").equals(path)) {
+                String changed = changePath;
+                changePath = null;
+                byte[] data = super.getNode(changed).getData();
+                try {
+                    super.deleteNode(changed, 2);
+                    if (replace) {
+                        super.createNode(changed, data, null, 0, -1, 3, 3);
+                    }
+                } catch (NoNodeException | NodeExistsException e) {
+                    throw new AssertionError(e);
+                }
+            }
+            return node;
+        }
+
     }
 
 
