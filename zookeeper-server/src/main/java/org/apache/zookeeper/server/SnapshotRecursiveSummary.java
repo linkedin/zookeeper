@@ -20,8 +20,11 @@ package org.apache.zookeeper.server;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.Collections;
-import java.util.Set;
+import java.util.Deque;
+import java.util.Iterator;
 import java.util.TreeSet;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.zookeeper.ZKUtil;
@@ -71,37 +74,91 @@ public class SnapshotRecursiveSummary {
             throw new IllegalArgumentException("Starting node does not exist: " + startingNode);
         }
         StringBuilder builder = new StringBuilder();
-        printZnode(dataTree, startingNode, builder, 0, maxDepth);
+        Deque<StringBuilder> children = new ArrayDeque<>();
+        walk(dataTree, startingNode, new TreeVisitor() {
+            @Override
+            public void visit(String path, DataNode node, int depth) {
+                children.push(new StringBuilder());
+            }
+
+            @Override
+            public void leave(String path, int depth, long nodes, long payloadBytes, long pathBytes) {
+                StringBuilder childSummary = children.pop();
+                StringBuilder summary = new StringBuilder();
+                if (nodes > 1 && (maxDepth == 0 || depth <= maxDepth)) {
+                    String indent = String.join("", Collections.nCopies(depth, "--"));
+                    summary.append(indent).append(" ").append(path).append("\n");
+                    summary.append(indent).append("   children: ").append(nodes - 1).append("\n");
+                    summary.append(indent).append("   data: ").append(payloadBytes).append("\n");
+                    summary.append(childSummary);
+                }
+                (children.isEmpty() ? builder : children.peek()).append(summary);
+            }
+        });
         System.out.println(builder);
     }
 
-    private long[] printZnode(DataTree dataTree, String name, StringBuilder builder, int level, int maxDepth) {
-        DataNode node = dataTree.getNode(name);
-        Set<String> children;
-        long dataSize;
-        synchronized (node) {
-            dataSize = node.data == null ? 0 : node.data.length;
-            children = new TreeSet<>(node.getChildren());
+    interface TreeVisitor {
+
+        void visit(String path, DataNode node, int depth) throws IOException;
+
+        void leave(String path, int depth, long nodes, long payloadBytes, long pathBytes) throws IOException;
+
+    }
+
+    private static final class Frame {
+
+        final String path;
+        final int depth;
+        final Iterator<String> children;
+        long nodes = 1;
+        long payloadBytes;
+        long pathBytes;
+
+        Frame(String path, int depth, DataNode node) {
+            this.path = path;
+            this.depth = depth;
+            synchronized (node) {
+                children = new TreeSet<>(node.getChildren()).iterator();
+                payloadBytes = node.data == null ? 0 : node.data.length;
+            }
+            pathBytes = path.getBytes(StandardCharsets.UTF_8).length;
         }
-        long[] result = {1L, dataSize};
-        if (children.isEmpty()) {
-            return result;
+
+    }
+
+    /** Visits the offline tree once, with inclusive subtree totals on exit and no second tree. */
+    static void walk(DataTree tree, String startingNode, TreeVisitor visitor) throws IOException {
+        String start = startingNode.isEmpty() ? "/" : startingNode;
+        Deque<Frame> stack = new ArrayDeque<>();
+        enter(tree, start, 0, visitor, stack);
+        while (!stack.isEmpty()) {
+            Frame current = stack.peek();
+            if (current.children.hasNext()) {
+                String child = current.path + (current.path.equals("/") ? "" : "/") + current.children.next();
+                enter(tree, child, current.depth + 1, visitor, stack);
+            } else {
+                stack.pop();
+                visitor.leave(current.path, current.depth, current.nodes, current.payloadBytes, current.pathBytes);
+                if (!stack.isEmpty()) {
+                    Frame parent = stack.peek();
+                    parent.nodes = Math.addExact(parent.nodes, current.nodes);
+                    parent.payloadBytes = Math.addExact(parent.payloadBytes, current.payloadBytes);
+                    parent.pathBytes = Math.addExact(parent.pathBytes, current.pathBytes);
+                }
+            }
         }
-        StringBuilder childBuilder = new StringBuilder();
-        for (String child : children) {
-            long[] childResult = printZnode(dataTree, name + (name.equals("/") ? "" : "/") + child,
-                                            childBuilder, level + 1, maxDepth);
-            result[0] += childResult[0];
-            result[1] += childResult[1];
+    }
+
+    private static void enter(DataTree tree, String path, int depth, TreeVisitor visitor, Deque<Frame> stack)
+        throws IOException {
+        PathUtils.validatePath(path);
+        DataNode node = tree.getNode(path);
+        if (node == null) {
+            throw new IOException("Missing snapshot node: " + path);
         }
-        if (maxDepth == 0 || level <= maxDepth) {
-            String indent = String.join("", Collections.nCopies(level, "--"));
-            builder.append(indent).append(" ").append(name).append("\n");
-            builder.append(indent).append("   children: ").append(result[0] - 1).append("\n");
-            builder.append(indent).append("   data: ").append(result[1]).append("\n");
-            builder.append(childBuilder);
-        }
-        return result;
+        stack.push(new Frame(path, depth, node));
+        visitor.visit(path, node, depth);
     }
 
     public static String getUsage() {
