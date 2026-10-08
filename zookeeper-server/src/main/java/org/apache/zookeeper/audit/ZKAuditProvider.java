@@ -19,13 +19,17 @@ package org.apache.zookeeper.audit;
 
 import static org.apache.zookeeper.audit.AuditEvent.FieldName;
 import java.lang.reflect.Constructor;
+import java.util.Locale;
+import org.apache.zookeeper.audit.AuditEvent.Outcome;
 import org.apache.zookeeper.audit.AuditEvent.Result;
 import org.apache.zookeeper.server.ServerCnxnFactory;
+import org.apache.zookeeper.server.ServerMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ZKAuditProvider {
     static final String AUDIT_ENABLE = "zookeeper.audit.enable";
+    static final String AUDIT_ENHANCED_ENABLE = "zookeeper.audit.enhanced.enable";
     static final String AUDIT_IMPL_CLASS = "zookeeper.audit.impl.class";
     private static final Logger LOG = LoggerFactory.getLogger(ZKAuditProvider.class);
     // By default audit logging is disabled
@@ -66,9 +70,39 @@ public class ZKAuditProvider {
         return auditEnabled;
     }
 
+    public static boolean isEnhancedAuditEnabled() {
+        return auditEnabled && Boolean.getBoolean(AUDIT_ENHANCED_ENABLE);
+    }
+
     public static void log(String user, String operation, String znode, String acl,
                            String createMode, String session, String ip, Result result) {
-        auditLogger.logAuditEvent(createLogEvent(user, operation, znode, acl, createMode, session, ip, result));
+        log(user, operation, znode, acl, createMode, session, ip, result, null, null, null, null, null, null);
+    }
+
+    /**
+     * Logs optional operation metadata only when enhanced audit logging is enabled.
+     * Null metadata is unavailable, not zero. Callers must sanitize ACL identities.
+     */
+    public static void log(String user, String operation, String znode, String acl,
+                           String createMode, String session, String ip, Result result,
+                           Integer dataLength, Integer errorCode, Outcome outcome,
+                           Integer cxid, Long zxid, Integer multiIndex) {
+        if (!isAuditEnabled()) {
+            return;
+        }
+        log(user, operation, znode, acl, createMode, session, ip, result,
+                dataLength, errorCode, outcome, cxid, zxid, multiIndex, isEnhancedAuditEnabled());
+    }
+
+    static void log(String user, String operation, String znode, String acl,
+                    String createMode, String session, String ip, Result result,
+                    Integer dataLength, Integer errorCode, Outcome outcome,
+                    Integer cxid, Long zxid, Integer multiIndex, boolean enhanced) {
+        if (!isAuditEnabled()) {
+            return;
+        }
+        logAuditEvent(createLogEvent(user, operation, znode, acl, createMode, session, ip, result,
+                dataLength, errorCode, outcome, cxid, zxid, multiIndex, enhanced));
     }
 
     /**
@@ -78,6 +112,7 @@ public class ZKAuditProvider {
         AuditEvent event = new AuditEvent(result);
         event.addEntry(FieldName.USER, user);
         event.addEntry(FieldName.OPERATION, operation);
+        addMetadata(event, null, null, null, null, null, null, isEnhancedAuditEnabled());
         return event;
     }
 
@@ -86,6 +121,22 @@ public class ZKAuditProvider {
      */
     static AuditEvent createLogEvent(String user, String operation, String znode, String acl,
                                      String createMode, String session, String ip, Result result) {
+        return createLogEvent(user, operation, znode, acl, createMode, session, ip, result,
+                null, null, null, null, null, null);
+    }
+
+    static AuditEvent createLogEvent(String user, String operation, String znode, String acl,
+                                     String createMode, String session, String ip, Result result,
+                                     Integer dataLength, Integer errorCode, Outcome outcome,
+                                     Integer cxid, Long zxid, Integer multiIndex) {
+        return createLogEvent(user, operation, znode, acl, createMode, session, ip, result,
+                dataLength, errorCode, outcome, cxid, zxid, multiIndex, isEnhancedAuditEnabled());
+    }
+
+    private static AuditEvent createLogEvent(String user, String operation, String znode, String acl,
+                                             String createMode, String session, String ip, Result result,
+                                             Integer dataLength, Integer errorCode, Outcome outcome,
+                                             Integer cxid, Long zxid, Integer multiIndex, boolean enhanced) {
         AuditEvent event = new AuditEvent(result);
         event.addEntry(FieldName.SESSION, session);
         event.addEntry(FieldName.USER, user);
@@ -94,7 +145,46 @@ public class ZKAuditProvider {
         event.addEntry(FieldName.ZNODE, znode);
         event.addEntry(FieldName.ZNODE_TYPE, createMode);
         event.addEntry(FieldName.ACL, acl);
+        addMetadata(event, dataLength, errorCode, outcome, cxid, zxid, multiIndex, enhanced);
         return event;
+    }
+
+    private static void addMetadata(AuditEvent event, Integer dataLength, Integer errorCode, Outcome outcome,
+                                    Integer cxid, Long zxid, Integer multiIndex, boolean enhanced) {
+        if (enhanced) {
+            event.addEntry(FieldName.SCHEMA_VERSION, AuditConstants.SCHEMA_VERSION);
+            event.addEntry(FieldName.DATA_LENGTH, valueOf(dataLength));
+            event.addEntry(FieldName.ERROR_CODE, valueOf(errorCode));
+            event.addEntry(FieldName.OUTCOME, (outcome == null ? Outcome.UNKNOWN : outcome).name().toLowerCase(Locale.ROOT));
+            event.addEntry(FieldName.CXID, valueOf(cxid));
+            event.addEntry(FieldName.ZXID, valueOf(zxid));
+            event.addEntry(FieldName.MULTI_INDEX, valueOf(multiIndex));
+        }
+    }
+
+    private static String valueOf(Number value) {
+        return value == null ? null : value.toString();
+    }
+
+    private static void logAuditEvent(AuditEvent event) {
+        try {
+            auditLogger.logAuditEvent(event);
+        } catch (RuntimeException e) {
+            reportAuditError(LOG, "Failed to write audit log for operation {}", event.getValue(FieldName.OPERATION), e);
+        }
+    }
+
+    static void reportAuditError(Logger logger, String message, Object context, Exception error) {
+        try {
+            ServerMetrics.getMetrics().AUDIT_ERRORS.add(1);
+        } catch (RuntimeException ignored) {
+            // A failed metrics backend must not prevent the diagnostic or change the operation's result.
+        }
+        try {
+            logger.error(message, context, error);
+        } catch (RuntimeException ignored) {
+            // Reporting is best-effort; retrying through the same failing logger could escape or recurse.
+        }
     }
 
     /**
@@ -119,7 +209,7 @@ public class ZKAuditProvider {
     }
 
     private static void log(String user, String operation, Result result) {
-        auditLogger.logAuditEvent(createLogEvent(user, operation, result));
+        logAuditEvent(createLogEvent(user, operation, result));
     }
 
     /**
