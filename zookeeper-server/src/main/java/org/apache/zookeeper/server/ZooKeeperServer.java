@@ -1985,6 +1985,18 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
      * @param setAcls : for set ACL operations, the list of ACLs being set. Otherwise null.
      */
     public void checkACL(ServerCnxn cnxn, List<ACL> acl, int perm, List<Id> ids, String path, List<ACL> setAcls) throws KeeperException.NoAuthException {
+        checkACLWithContext(new ServerAuthenticationProvider.ServerObjs(this, cnxn), acl, perm, ids, path, setAcls);
+    }
+
+    public void checkACL(Request request, List<ACL> acl, int perm, String path, List<ACL> setAcls)
+        throws KeeperException.NoAuthException {
+        checkACLWithContext(
+            new ServerAuthenticationProvider.ServerObjs(this, request.cnxn, request.getX509ClientIdentity()),
+            acl, perm, request.authInfo, path, setAcls);
+    }
+
+    private void checkACLWithContext(ServerAuthenticationProvider.ServerObjs serverObjs, List<ACL> acl, int perm,
+                                    List<Id> ids, String path, List<ACL> setAcls) throws KeeperException.NoAuthException {
         if (skipACL) {
             return;
         }
@@ -2012,7 +2024,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                     for (Id authId : ids) {
                         if (authId.getScheme().equals(id.getScheme())
                             && ap.matches(
-                                new ServerAuthenticationProvider.ServerObjs(this, cnxn),
+                                serverObjs,
                                 new ServerAuthenticationProvider.MatchValues(path, authId.getId(), id.getId(), perm, setAcls))) {
                             return;
                         }
@@ -2142,7 +2154,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         try {
             pathToCheck = effectiveACLPath(request);
             if (pathToCheck != null) {
-                checkACL(request.cnxn, zkDb.getACL(pathToCheck, null), effectiveACLPerms(request), request.authInfo, pathToCheck, null);
+                checkACL(request, zkDb.getACL(pathToCheck, null), effectiveACLPerms(request), pathToCheck, null);
             }
         } catch (KeeperException.NoAuthException e) {
             LOG.debug("Request failed ACL check", e);
