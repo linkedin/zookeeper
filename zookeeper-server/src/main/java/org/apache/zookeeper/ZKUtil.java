@@ -107,7 +107,8 @@ public class ZKUtil {
      * @param pathRoot path of the node whose descendants are to be deleted
      * @param batchSize number of delete operations to be submitted in one call; see
      *                  {@link #deleteRecursive(ZooKeeper, String, int)}.
-     * @return true if all descendants are deleted successfully otherwise false.
+     * @return true if all descendants are deleted successfully and the node has no children
+     *         left afterwards, otherwise false (for example if a child was created concurrently).
      *         Returns true if the node has no children.
      * @throws IllegalArgumentException if an invalid path is specified
      */
@@ -125,13 +126,17 @@ public class ZKUtil {
             return true;
         }
         if (batchSize > 0) {
-            return deleteInBatch(zk, tree, batchSize, 1);
+            if (!deleteInBatch(zk, tree, batchSize, 1)) {
+                return false;
+            }
         } else {
             for (int i = tree.size() - 1; i >= 1; --i) {
                 zk.delete(tree.get(i), -1); //Delete all versions of the node with -1.
             }
-            return true;
         }
+        // The root is kept, so unlike deleteRecursive nothing fails if a child was created after the
+        // listing; report it instead of returning true with children left behind.
+        return zk.getAllChildrenPaginated(pathRoot, false).isEmpty();
     }
 
     private static class BatchedDeleteCbContext {
@@ -268,7 +273,8 @@ public class ZKUtil {
             String node = queue.poll();
             List<String> children = paginated ? zk.getAllChildrenPaginated(node, false) : zk.getChildren(node, false);
             for (final String child : children) {
-                final String childPath = node + "/" + child;
+                // the legacy listing builds "//child" for the root; only the paginated listing handles "/"
+                final String childPath = paginated && "/".equals(node) ? "/" + child : node + "/" + child;
                 queue.add(childPath);
                 tree.add(childPath);
             }
