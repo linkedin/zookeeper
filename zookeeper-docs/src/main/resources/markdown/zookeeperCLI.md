@@ -43,7 +43,7 @@ ZooKeeper -server host:port cmd args
 	connect host:port
 	create [-s] [-e] [-c] [-t ttl] path [data] [acl]
 	delete [-v version] path
-	deleteall path
+	deleteall path [-b batch size] [-c]
 	delquota [-n|-b] path
 	get [-s] [-w] path
 	getAcl [-s] path
@@ -179,6 +179,19 @@ zkshell: 1] ls /config
 [zkshell: 2] deleteall /config
 [zkshell: 3] ls /config
 	Node does not exist: /config
+```
+
+Use `-b <batch size>` to set the delete batch size (default 1000). Use `-c` to delete only the
+descendants and keep the node itself. With `-c` children are listed with pagination, so it also works on
+nodes whose children list exceeds `jute.maxbuffer`; this requires a server that supports paginated
+`getChildren`.
+
+```bash
+zkshell: 1] ls /config/topics
+	[a, b]
+[zkshell: 2] deleteall /config/topics -c
+[zkshell: 3] ls /config/topics
+	[]
 ```
 
 ## delquota
