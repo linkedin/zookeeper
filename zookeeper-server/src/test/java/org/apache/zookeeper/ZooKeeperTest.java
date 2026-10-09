@@ -20,6 +20,7 @@ package org.apache.zookeeper;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -158,6 +159,50 @@ public class ZooKeeperTest extends ClientBase {
         zkMain.cl.parseCommand(cmdstring1);
         assertFalse(zkMain.processZKCmd(zkMain.cl));
         assertNull(zk.exists("/a", null));
+    }
+
+    @Test
+    public void testDeleteChildrenOnlyCli() throws IOException, InterruptedException, CliException, KeeperException {
+        final ZooKeeper zk = createClient();
+        zk.create("/a", "keep".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/a/b", "some".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/a/b/v", "some".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/a/c", "some".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        ZooKeeperMain zkMain = new ZooKeeperMain(zk);
+        zkMain.cl.parseCommand("deleteall /a -c -b 2");
+        assertFalse(zkMain.processZKCmd(zkMain.cl));
+
+        assertNotNull(zk.exists("/a", null));
+        assertEquals(0, zk.getChildren("/a", false).size());
+        assertEquals("keep", new String(zk.getData("/a", false, null)));
+    }
+
+    @Test
+    public void testDeleteAllWithoutChildrenOptionStillDeletesNode()
+        throws IOException, InterruptedException, CliException, KeeperException {
+        final ZooKeeper zk = createClient();
+        zk.create("/a", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/a/b", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        ZooKeeperMain zkMain = new ZooKeeperMain(zk);
+        zkMain.cl.parseCommand("deleteall /a -b 5");
+        assertFalse(zkMain.processZKCmd(zkMain.cl));
+
+        assertNull(zk.exists("/a", null));
+    }
+
+    @Test
+    public void testDeleteChildrenOnlyCliOnMissingNode() throws IOException, InterruptedException {
+        final ZooKeeper zk = createClient();
+        ZooKeeperMain zkMain = new ZooKeeperMain(zk);
+        zkMain.cl.parseCommand("deleteall /missing -c");
+        try {
+            zkMain.processZKCmd(zkMain.cl);
+            fail("expected NoNode");
+        } catch (CliException e) {
+            assertTrue(e.getCause() instanceof KeeperException.NoNodeException);
+        }
     }
 
     @Test

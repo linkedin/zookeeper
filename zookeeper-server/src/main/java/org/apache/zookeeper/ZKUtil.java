@@ -69,7 +69,7 @@ public class ZKUtil {
         LOG.debug("Deleting tree: {}", tree);
 
         if (batchSize > 0) {
-            return deleteInBatch(zk, tree, batchSize);
+            return deleteInBatch(zk, tree, batchSize, 0);
         } else {
             for (int i = tree.size() - 1; i >= 0; --i) {
                 //Delete the leaves first and eventually get rid of the root
@@ -92,6 +92,48 @@ public class ZKUtil {
         deleteRecursive(zk, pathRoot, 0);
     }
 
+    /**
+     * Recursively delete all descendants of the node with the given path, keeping the node itself.
+     * <p>
+     * Unlike {@link #deleteRecursive(ZooKeeper, String, int)}, the subtree is listed using
+     * {@link ZooKeeper#getAllChildrenPaginated(String, boolean)}, so it also works on nodes whose
+     * children list does not fit in {@code jute.maxbuffer}. This requires a server that supports
+     * paginated getChildren.
+     * <p>
+     * If there is an error with deleting one of the sub-nodes in the tree,
+     * this operation would abort and would be the responsibility of the app to handle the same.
+     *
+     * @param zk Zookeeper client
+     * @param pathRoot path of the node whose descendants are to be deleted
+     * @param batchSize number of delete operations to be submitted in one call; see
+     *                  {@link #deleteRecursive(ZooKeeper, String, int)}.
+     * @return true if all descendants are deleted successfully otherwise false.
+     *         Returns true if the node has no children.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public static boolean deleteChildrenRecursive(
+        ZooKeeper zk,
+        final String pathRoot,
+        final int batchSize) throws InterruptedException, KeeperException {
+        PathUtils.validatePath(pathRoot);
+
+        List<String> tree = listSubTreeBFS(zk, pathRoot, true);
+        LOG.debug("Deleting children of {}: {}", pathRoot, tree);
+
+        // tree.get(0) is always the root, which is kept
+        if (tree.size() <= 1) {
+            return true;
+        }
+        if (batchSize > 0) {
+            return deleteInBatch(zk, tree, batchSize, 1);
+        } else {
+            for (int i = tree.size() - 1; i >= 1; --i) {
+                zk.delete(tree.get(i), -1); //Delete all versions of the node with -1.
+            }
+            return true;
+        }
+    }
+
     private static class BatchedDeleteCbContext {
 
         public Semaphore sem;
@@ -104,7 +146,9 @@ public class ZKUtil {
 
     }
 
-    private static boolean deleteInBatch(ZooKeeper zk, List<String> tree, int batchSize) throws InterruptedException {
+    // Deletes tree[lastIndex..] leaves first; lastIndex 0 includes the root.
+    private static boolean deleteInBatch(ZooKeeper zk, List<String> tree, int batchSize, int lastIndex)
+        throws InterruptedException {
         int rateLimit = 10;
         List<Op> ops = new ArrayList<>();
         BatchedDeleteCbContext context = new BatchedDeleteCbContext(rateLimit);
@@ -116,11 +160,11 @@ public class ZKUtil {
         };
 
         // Delete the leaves first and eventually get rid of the root
-        for (int i = tree.size() - 1; i >= 0; --i) {
+        for (int i = tree.size() - 1; i >= lastIndex; --i) {
             // Create Op to delete all versions of the node with -1.
             ops.add(Op.delete(tree.get(i), -1));
 
-            if (ops.size() == batchSize || i == 0) {
+            if (ops.size() == batchSize || i == lastIndex) {
                 if (!context.success.get()) {
                     // fail fast
                     break;
@@ -201,13 +245,28 @@ public class ZKUtil {
     public static List<String> listSubTreeBFS(
         ZooKeeper zk,
         final String pathRoot) throws KeeperException, InterruptedException {
+        return listSubTreeBFS(zk, pathRoot, false);
+    }
+
+    /**
+     * Same as {@link #listSubTreeBFS(ZooKeeper, String)} but optionally lists the children of each
+     * node using {@link ZooKeeper#getAllChildrenPaginated(String, boolean)}, which works for nodes
+     * whose children list exceeds {@code jute.maxbuffer}. This requires a server that supports
+     * paginated getChildren.
+     *
+     * @param paginated true to list children with pagination
+     */
+    public static List<String> listSubTreeBFS(
+        ZooKeeper zk,
+        final String pathRoot,
+        boolean paginated) throws KeeperException, InterruptedException {
         Queue<String> queue = new ArrayDeque<>();
         List<String> tree = new ArrayList<String>();
         queue.add(pathRoot);
         tree.add(pathRoot);
         while (!queue.isEmpty()) {
             String node = queue.poll();
-            List<String> children = zk.getChildren(node, false);
+            List<String> children = paginated ? zk.getAllChildrenPaginated(node, false) : zk.getChildren(node, false);
             for (final String child : children) {
                 final String childPath = node + "/" + child;
                 queue.add(childPath);
