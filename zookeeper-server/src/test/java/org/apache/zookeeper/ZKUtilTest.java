@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.apache.jute.BinaryInputArchive;
+import org.apache.zookeeper.common.PathUtils;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.test.ClientBase;
 import org.junit.BeforeClass;
@@ -281,5 +282,21 @@ public class ZKUtilTest extends ClientBase {
         zk.create("/leaf", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
         assertTrue(ZKUtil.deleteRecursive(zk, "/leaf", 10));
         assertNull(zk.exists("/leaf", false));
+    }
+
+    @Test
+    public void testListSubTreeBFSPaginatedFromRootBuildsValidPaths() throws Exception {
+        TestableZooKeeper zk = createClient();
+        zk.create("/rootchild", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/rootchild/g", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        List<String> paginated = ZKUtil.listSubTreeBFS(zk, "/", true);
+
+        assertEquals("/", paginated.get(0));
+        assertTrue(paginated.contains("/rootchild"));
+        assertTrue(paginated.contains("/rootchild/g"));
+        for (String path : paginated) {
+            PathUtils.validatePath(path);
+        }
     }
 }
