@@ -26,7 +26,7 @@ import org.apache.zookeeper.server.auth.X509AuthenticationUtil.CertificateType;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 
 /**
- * Compatibility matching shared by X509 ACLs, URI-domain mappings and superuser selection.
+ * Legacy service-principal compatibility for X509 ACLs, URI-domain mappings and superuser selection.
  */
 public final class LegacyServicePrincipalMatcher {
     private static final Pattern LEGACY_SERVICE_PRINCIPAL_PATTERN =
@@ -54,17 +54,38 @@ public final class LegacyServicePrincipalMatcher {
 
     public static boolean matches(CertificateType certificateType, String clientId, String legacyId) {
         String applicationName = getApplicationName(legacyId);
-        if (applicationName == null || clientId == null) {
-            return false;
+        return applicationName != null && applicationName.equals(getSpiffeApplicationName(certificateType, clientId));
+    }
+
+    /**
+     * Format only the original authenticated SPIFFE client entry for an automatic ACL.
+     * Mapped domains, other certificate types and unrepresentable application names retain their IDs.
+     */
+    public static String getClientAclId(ClientIdentity identity, String authenticatedId) {
+        if (identity == null || !identity.getId().equals(authenticatedId)) {
+            return authenticatedId;
+        }
+        String applicationName = getSpiffeApplicationName(identity.getCertificateType(), authenticatedId);
+        if (applicationName == null) {
+            return authenticatedId;
+        }
+        String legacyId = "servicePrincipal(" + applicationName;
+        // Require a round trip through the matcher so the creator can still use the stored ACL.
+        return matchesAuthenticatedClient(identity, authenticatedId, legacyId) ? legacyId : authenticatedId;
+    }
+
+    private static String getSpiffeApplicationName(CertificateType certificateType, String clientId) {
+        if (clientId == null) {
+            return null;
         }
         if (certificateType == CertificateType.SPIFFE_V1_WL) {
-            return applicationName.equals(clientId);
+            return clientId;
         }
         if (certificateType == CertificateType.SPIFFE_V1_WORKLOAD || certificateType == CertificateType.SPIFFE_V2) {
             Matcher matcher = SPIFFE_APPLICATION_PATTERN.matcher(clientId);
-            return matcher.matches() && applicationName.equals(matcher.group(1));
+            return matcher.matches() ? matcher.group(1) : null;
         }
-        return false;
+        return null;
     }
 
     public static boolean matchesAuthenticatedClient(ClientIdentity identity, String authenticatedId, String aclId) {
