@@ -266,10 +266,15 @@ public class ZKUtil {
      * node using {@link ZooKeeper#getAllChildrenPaginated(String, boolean)}, which works for nodes
      * whose children list exceeds {@code jute.maxbuffer}. This requires a server that supports
      * paginated getChildren.
+     * <p>
+     * Deliberately not public: with {@code paginated} set, passing the root of the server's
+     * namespace ("/" on a client without a chroot) can silently return an incomplete subtree on
+     * servers that do not handle paginated listing of "/". Callers must reject that case first, as
+     * {@link #deleteChildrenRecursive(ZooKeeper, String, int)} does.
      *
      * @param paginated true to list children with pagination
      */
-    public static List<String> listSubTreeBFS(
+    static List<String> listSubTreeBFS(
         ZooKeeper zk,
         final String pathRoot,
         boolean paginated) throws KeeperException, InterruptedException {
