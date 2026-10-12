@@ -98,11 +98,15 @@ public class ZKUtil {
      * <p>
      * Unlike {@link #deleteRecursive(ZooKeeper, String, int)}, the subtree is listed using
      * {@link ZooKeeper#getAllChildrenPaginated(String, boolean)}, so it also works on nodes whose
-     * children list does not fit in {@code jute.maxbuffer}. This requires a server that supports
-     * paginated getChildren.
+     * children list does not fit in a single {@code jute.maxbuffer} sized response. This requires a
+     * server that supports paginated getChildren. Note that each page is only bounded by the
+     * server's {@code jute.maxbuffer}, while the client enforces its own limit on the incoming
+     * packet, so the client's {@code jute.maxbuffer} must be at least as large as the server's.
      * <p>
      * If there is an error with deleting one of the sub-nodes in the tree,
      * this operation would abort and would be the responsibility of the app to handle the same.
+     * Children created or deleted concurrently with this call can cause it to return false or to
+     * abort part-way, so writers to the subtree should be quiesced first.
      *
      * @param zk Zookeeper client
      * @param pathRoot path of the node whose descendants are to be deleted
@@ -112,9 +116,10 @@ public class ZKUtil {
      *         left afterwards, otherwise false (for example if a child was created concurrently).
      *         Returns true if the node has no children.
      * @throws IllegalArgumentException if an invalid path is specified, or if the path is the root
-     *         of the server's namespace ("/" on a client without a chroot): its children include the
-     *         protected /zookeeper subtree that can never be deleted, and paginated listing of "/"
-     *         is not reliable on current servers.
+     *         of the server's namespace ("/" on a client without a chroot). The root can never be
+     *         emptied because its children include the protected /zookeeper subtree, so this is
+     *         rejected unconditionally and the check must not be relaxed. Paginated listing of "/"
+     *         is additionally broken on servers without the root-pagination fix.
      */
     public static boolean deleteChildrenRecursive(
         ZooKeeper zk,
@@ -141,8 +146,9 @@ public class ZKUtil {
             }
         }
         // The root is kept, so unlike deleteRecursive nothing fails if a child was created after the
-        // listing. Verify using the server's own child count rather than another listing, so that
-        // neither a concurrent create nor an incomplete listing can be reported as success.
+        // listing. Verify using the server's own child count rather than another listing, so that an
+        // incomplete listing is not reported as success. This is a point-in-time read of the
+        // contacted server, not a lock, so a create racing this check can still be missed.
         Stat stat = zk.exists(pathRoot, false);
         return stat != null && stat.getNumChildren() == 0;
     }
