@@ -127,6 +127,25 @@ public class GetChildrenPaginatedTest extends ClientBase {
         Assert.assertEquals(createdChildrenMetadata.keySet(), readChildrenMetadata);
     }
 
+    @Test(timeout = 30000)
+    public void testPaginationIteratorOnRoot() throws Exception {
+        final String prefix = "/testPaginationRoot-" + UUID.randomUUID();
+        Set<String> expected = new HashSet<String>();
+        for (int i = 0; i < 10; i++) {
+            zk.create(prefix + i, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+            expected.add(prefix.substring(1) + i);
+        }
+
+        Set<String> actual = new HashSet<String>();
+        RemoteIterator<String> childrenIterator = zk.getChildrenIterator("/", null, 3, -1);
+        while (childrenIterator.hasNext()) {
+            actual.add(childrenIterator.next());
+        }
+
+        Assert.assertTrue("Missing children of root: " + expected + " vs " + actual, actual.containsAll(expected));
+        Assert.assertTrue(actual.contains("zookeeper"));
+    }
+
     /*
      * This test validates a known list of children is returned by the iterator despite server failures.
      * After the iterator is created successfully, the following logic drives the rest of the test:

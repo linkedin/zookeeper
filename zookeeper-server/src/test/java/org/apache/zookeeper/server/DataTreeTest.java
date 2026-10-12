@@ -416,6 +416,45 @@ public class DataTreeTest extends ZKTestCase {
     }
 
     @Test(timeout = 60000)
+    public void testGetChildrenPaginatedOnRoot() throws NodeExistsException, NoNodeException {
+        final int firstCzxId = 1000;
+        final int countNodes = 10;
+
+        DataTree dt = new DataTree();
+        List<String> childrenCreated = new ArrayList<>(countNodes);
+        for (int i = 0; i < countNodes; ++i) {
+            dt.createNode("/test-" + i, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, firstCzxId + i, 1);
+            childrenCreated.add("test-" + i);
+        }
+
+        // Bounded pages on "/" must return the children, in creation order
+        List<String> collected = new ArrayList<>();
+        PaginationNextPage nextPage = new PaginationNextPage();
+        long minCzxid = -1;
+        int offset = 0;
+        int watchCount = dt.getWatchCount();
+        for (int i = 0; i < countNodes + 2; ++i) {
+            List<String> page = dt.getPaginatedChildren("/", null, new DummyWatcher(), 3, minCzxid, offset, nextPage);
+            for (String child : page) {
+                if (!"zookeeper".equals(child)) {
+                    collected.add(child);
+                }
+            }
+            if (nextPage.getMinCzxid() == ZooDefs.GetChildrenPaginated.lastPageMinCzxid) {
+                break;
+            }
+            minCzxid = nextPage.getMinCzxid();
+            offset = nextPage.getMinCzxidOffset();
+        }
+        assertEquals(childrenCreated, collected);
+        assertEquals("The watch should be set once, on the last page", watchCount + 1, dt.getWatchCount());
+
+        // minCzxId > 0 skips the fast path even with an unbounded page size
+        List<String> result = dt.getPaginatedChildren("/", null, null, Integer.MAX_VALUE, firstCzxId + countNodes - 2, 0, nextPage);
+        assertEquals(java.util.Arrays.asList("test-8", "test-9"), result);
+    }
+
+    @Test(timeout = 60000)
     public void testGetChildrenPaginatedWithOffset() throws NodeExistsException, NoNodeException {
         final String rootPath = "/children";
         final int childrenCzxId = 1000;
