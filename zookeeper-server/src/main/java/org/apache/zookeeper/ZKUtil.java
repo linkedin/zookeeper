@@ -34,6 +34,7 @@ import org.apache.zookeeper.AsyncCallback.VoidCallback;
 import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.common.PathUtils;
 import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -110,33 +111,40 @@ public class ZKUtil {
      * @return true if all descendants are deleted successfully and the node has no children
      *         left afterwards, otherwise false (for example if a child was created concurrently).
      *         Returns true if the node has no children.
-     * @throws IllegalArgumentException if an invalid path is specified
+     * @throws IllegalArgumentException if an invalid path is specified, or if the path is the root
+     *         of the server's namespace ("/" on a client without a chroot): its children include the
+     *         protected /zookeeper subtree that can never be deleted, and paginated listing of "/"
+     *         is not reliable on current servers.
      */
     public static boolean deleteChildrenRecursive(
         ZooKeeper zk,
         final String pathRoot,
         final int batchSize) throws InterruptedException, KeeperException {
         PathUtils.validatePath(pathRoot);
+        if ("/".equals(pathRoot) && zk.cnxn.chrootPath == null) {
+            throw new IllegalArgumentException("Deleting all children of the root node is not supported");
+        }
 
         List<String> tree = listSubTreeBFS(zk, pathRoot, true);
         LOG.debug("Deleting children of {}: {}", pathRoot, tree);
 
         // tree.get(0) is always the root, which is kept
-        if (tree.size() <= 1) {
-            return true;
-        }
-        if (batchSize > 0) {
-            if (!deleteInBatch(zk, tree, batchSize, 1)) {
-                return false;
-            }
-        } else {
-            for (int i = tree.size() - 1; i >= 1; --i) {
-                zk.delete(tree.get(i), -1); //Delete all versions of the node with -1.
+        if (tree.size() > 1) {
+            if (batchSize > 0) {
+                if (!deleteInBatch(zk, tree, batchSize, 1)) {
+                    return false;
+                }
+            } else {
+                for (int i = tree.size() - 1; i >= 1; --i) {
+                    zk.delete(tree.get(i), -1); //Delete all versions of the node with -1.
+                }
             }
         }
         // The root is kept, so unlike deleteRecursive nothing fails if a child was created after the
-        // listing; report it instead of returning true with children left behind.
-        return zk.getAllChildrenPaginated(pathRoot, false).isEmpty();
+        // listing. Verify using the server's own child count rather than another listing, so that
+        // neither a concurrent create nor an incomplete listing can be reported as success.
+        Stat stat = zk.exists(pathRoot, false);
+        return stat != null && stat.getNumChildren() == 0;
     }
 
     private static class BatchedDeleteCbContext {

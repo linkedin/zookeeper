@@ -19,10 +19,15 @@
 package org.apache.zookeeper;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -298,5 +303,64 @@ public class ZKUtilTest extends ClientBase {
         for (String path : paginated) {
             PathUtils.validatePath(path);
         }
+    }
+
+    @Test
+    public void testDeleteChildrenRecursiveRejectsUnchrootedRoot() throws Exception {
+        TestableZooKeeper zk = createClient();
+        zk.create("/a", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/a/b", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        for (int batchSize : new int[] {0, 10}) {
+            try {
+                ZKUtil.deleteChildrenRecursive(zk, "/", batchSize);
+                fail("expected IllegalArgumentException");
+            } catch (IllegalArgumentException expected) {
+                // expected
+            }
+        }
+
+        // nothing may have been deleted
+        assertNotNull(zk.exists("/a/b", false));
+        assertEquals(2, zk.getChildren("/", false).size());
+    }
+
+    @Test
+    public void testDeleteChildrenRecursiveOnChrootedRoot() throws Exception {
+        TestableZooKeeper plain = createClient();
+        plain.create("/chroot", "keep".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        plain.create("/outside", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        TestableZooKeeper chrooted = createClient(hostPort + "/chroot");
+
+        for (int batchSize : new int[] {0, 10}) {
+            for (int i = 0; i < 3; i++) {
+                chrooted.create("/x" + i, "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                chrooted.create("/x" + i + "/y", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+            }
+
+            assertTrue(ZKUtil.deleteChildrenRecursive(chrooted, "/", batchSize));
+
+            assertEquals(0, chrooted.getChildren("/", false).size());
+            assertEquals("keep", new String(plain.getData("/chroot", false, null)));
+            assertNotNull(plain.exists("/outside", false));
+        }
+    }
+
+    @Test
+    public void testDeleteChildrenRecursiveReportsChildCreatedConcurrently() throws Exception {
+        TestableZooKeeper zk = createClient();
+        zk.create("/p", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/p/a", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        // create a new child after the subtree was listed and deleted, right before the final check
+        TestableZooKeeper spied = spy(zk);
+        doAnswer(invocation -> {
+            zk.create("/p/late", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+            return invocation.callRealMethod();
+        }).when(spied).exists(eq("/p"), eq(false));
+
+        assertFalse(ZKUtil.deleteChildrenRecursive(spied, "/p", 10));
+
+        assertEquals(1, zk.getChildren("/p", false).size());
     }
 }
