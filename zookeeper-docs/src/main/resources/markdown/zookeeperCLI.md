@@ -184,7 +184,10 @@ zkshell: 1] ls /config
 Use `-b <batch size>` to set the delete batch size (default 1000). Use `-c` to delete only the
 descendants and keep the node itself. With `-c` children are listed with pagination, so it also works on
 nodes whose children list exceeds `jute.maxbuffer`; this requires a server that supports paginated
-`getChildren`. `-c` is rejected for `/` unless the client is connected with a chroot.
+`getChildren`, and the client must be started with a `jute.maxbuffer` at least as large as the server's,
+since each page is bounded by the server's limit. `-c` is rejected for `/` unless the client is connected
+with a chroot. Quiesce writers to the subtree first: children created or deleted while the command runs
+can make it report that children remain, or abort it part-way. Re-running is safe.
 
 ```bash
 zkshell: 1] ls /config/topics
