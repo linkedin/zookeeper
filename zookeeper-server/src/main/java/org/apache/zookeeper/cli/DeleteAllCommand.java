@@ -79,7 +79,15 @@ public class DeleteAllCommand extends CliCommand {
                 ? ZKUtil.deleteChildrenRecursive(zk, path, batchSize)
                 : ZKUtil.deleteRecursive(zk, path, batchSize);
             if (!success) {
-                err.println("Failed to delete some node(s) in the subtree!");
+                if (cl.hasOption("c")) {
+                    // The node itself is kept, so "false" here means children are still present:
+                    // either a delete failed, or a writer created new children during the delete.
+                    err.println("Failed to delete all children of " + path
+                        + ": child nodes remain (a delete may have failed, or children may have "
+                        + "been created concurrently).");
+                } else {
+                    err.println("Failed to delete some node(s) in the subtree!");
+                }
             }
         } catch (IllegalArgumentException ex) {
             throw new MalformedPathException(ex.getMessage());
