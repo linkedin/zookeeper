@@ -193,6 +193,42 @@ public class ZooKeeperTest extends ClientBase {
     }
 
     @Test
+    public void testDeleteChildrenOnlyCliRejectsRoot() throws IOException, InterruptedException, KeeperException {
+        final ZooKeeper zk = createClient();
+        zk.create("/a", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/a/b", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        ZooKeeperMain zkMain = new ZooKeeperMain(zk);
+        zkMain.cl.parseCommand("deleteall / -c");
+        try {
+            zkMain.processZKCmd(zkMain.cl);
+            fail("expected a malformed path error");
+        } catch (CliException e) {
+            assertTrue(e instanceof MalformedPathException);
+        }
+
+        assertNotNull(zk.exists("/a/b", null));
+    }
+
+    @Test
+    public void testDeleteAllRootWithoutChildrenOptionIsUnchanged() throws IOException, InterruptedException, KeeperException {
+        final ZooKeeper zk = createClient();
+        zk.create("/a", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/a/b", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        ZooKeeperMain zkMain = new ZooKeeperMain(zk);
+        zkMain.cl.parseCommand("deleteall /");
+        try {
+            zkMain.processZKCmd(zkMain.cl);
+            fail("expected a malformed path error");
+        } catch (CliException e) {
+            assertTrue(e instanceof MalformedPathException);
+        }
+
+        assertNotNull(zk.exists("/a/b", null));
+    }
+
+    @Test
     public void testDeleteChildrenOnlyCliOnMissingNode() throws IOException, InterruptedException {
         final ZooKeeper zk = createClient();
         ZooKeeperMain zkMain = new ZooKeeperMain(zk);
