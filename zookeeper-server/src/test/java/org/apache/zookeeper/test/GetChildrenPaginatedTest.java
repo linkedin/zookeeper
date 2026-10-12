@@ -19,6 +19,7 @@
 package org.apache.zookeeper.test;
 
 import static org.junit.Assert.fail;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -130,20 +131,33 @@ public class GetChildrenPaginatedTest extends ClientBase {
     @Test(timeout = 30000)
     public void testPaginationIteratorOnRoot() throws Exception {
         final String prefix = "/testPaginationRoot-" + UUID.randomUUID();
-        Set<String> expected = new HashSet<String>();
+        List<String> expected = new ArrayList<String>();
         for (int i = 0; i < 10; i++) {
             zk.create(prefix + i, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
             expected.add(prefix.substring(1) + i);
         }
 
-        Set<String> actual = new HashSet<String>();
+        // Collect into a List (not a Set) so duplicated or out-of-order pages are caught.
+        List<String> actual = new ArrayList<String>();
         RemoteIterator<String> childrenIterator = zk.getChildrenIterator("/", null, 3, -1);
         while (childrenIterator.hasNext()) {
             actual.add(childrenIterator.next());
         }
 
+        Assert.assertEquals("Root pagination returned duplicates: " + actual,
+                new HashSet<String>(actual).size(), actual.size());
         Assert.assertTrue("Missing children of root: " + expected + " vs " + actual, actual.containsAll(expected));
-        Assert.assertTrue(actual.contains("zookeeper"));
+        Assert.assertTrue("Missing /zookeeper: " + actual, actual.contains("zookeeper"));
+
+        // The nodes were created in order, so they must come back in that order. Other tests may
+        // leave unrelated nodes at the root, so compare only the ones this test created.
+        List<String> actualOurs = new ArrayList<String>();
+        for (String child : actual) {
+            if (child.startsWith(prefix.substring(1))) {
+                actualOurs.add(child);
+            }
+        }
+        Assert.assertEquals("Root children returned out of creation order", expected, actualOurs);
     }
 
     /*
