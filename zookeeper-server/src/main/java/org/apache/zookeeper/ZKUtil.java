@@ -43,6 +43,17 @@ public class ZKUtil {
     private static final Logger LOG = LoggerFactory.getLogger(ZKUtil.class);
     private static final Map<Integer, String> permCache = new ConcurrentHashMap<Integer, String>();
     /**
+     * Child count above which {@link #deleteChildrenRecursive(ZooKeeper, String, int)} warns that the
+     * listing it is about to build may not fit in the client's heap. zkCli defaults to -Xmx256m
+     * (ZK_CLIENT_HEAP in bin/zkEnv.sh), and the subtree is materialized client-side before any delete
+     * is issued, so a node with enough children can exhaust that heap. The threshold is only a hint:
+     * it counts direct children, which is exact for the flat nodes this option targets but an
+     * underestimate for a deep subtree. It sits an order of magnitude above the documented guideline
+     * of under 10,000 children per parent, so it fires only for nodes already well outside it -- the
+     * pathological nodes this option exists to drain.
+     */
+    private static final int LARGE_CHILD_WARN_THRESHOLD = 100_000;
+    /**
      * Recursively delete the node with the given path.
      * <p>
      * Important: All versions, of all nodes, under the given node are deleted.
@@ -103,6 +114,11 @@ public class ZKUtil {
      * server's {@code jute.maxbuffer}, while the client enforces its own limit on the incoming
      * packet, so the client's {@code jute.maxbuffer} must be at least as large as the server's.
      * <p>
+     * The subtree is listed into client memory before the first delete is issued, so draining a node
+     * with a very large number of children needs a correspondingly large client heap. zkCli defaults
+     * to {@code -Xmx256m} ({@code ZK_CLIENT_HEAP} in {@code bin/zkEnv.sh}); raise it if the client
+     * runs out of memory. A warning is logged above {@value #LARGE_CHILD_WARN_THRESHOLD} children.
+     * <p>
      * If there is an error with deleting one of the sub-nodes in the tree,
      * this operation would abort and would be the responsibility of the app to handle the same.
      * Children created or deleted concurrently with this call can cause it to return false or to
@@ -128,6 +144,15 @@ public class ZKUtil {
         PathUtils.validatePath(pathRoot);
         if ("/".equals(pathRoot) && zk.cnxn.chrootPath == null) {
             throw new IllegalArgumentException("Deleting all children of the root node is not supported");
+        }
+
+        // The whole subtree is listed into memory before the first delete is issued, so warn before
+        // building a listing that may not fit in the client's heap. See LARGE_CHILD_WARN_THRESHOLD.
+        Stat before = zk.exists(pathRoot, false);
+        if (before != null && before.getNumChildren() > LARGE_CHILD_WARN_THRESHOLD) {
+            LOG.warn("Draining {} children of {}. The subtree is listed in client memory before any"
+                    + " delete is issued; raise ZK_CLIENT_HEAP (zkCli defaults to -Xmx256m) if the"
+                    + " client runs out of memory.", before.getNumChildren(), pathRoot);
         }
 
         List<String> tree = listSubTreeBFS(zk, pathRoot, true);
