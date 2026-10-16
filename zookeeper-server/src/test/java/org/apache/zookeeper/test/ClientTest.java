@@ -26,6 +26,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -61,7 +62,8 @@ import org.slf4j.LoggerFactory;
 public class ClientTest extends ClientBase {
 
     protected static final Logger LOG = LoggerFactory.getLogger(ClientTest.class);
-    private boolean skipACL = System.getProperty("zookeeper.skipACL", "no").equals("yes");
+    // dryrun allows requests that fail the ACL check, so reads behave the same as with skipACL=yes
+    private boolean skipACL = Arrays.asList("yes", "dryrun").contains(System.getProperty("zookeeper.skipACL", "no"));
 
     /** Verify that pings are sent, keeping the "idle" client alive */
     @Test
