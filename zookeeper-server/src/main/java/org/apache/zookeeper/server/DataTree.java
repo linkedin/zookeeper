@@ -976,8 +976,10 @@ public class DataTree {
             if (stat != null) {
                 n.copyStat(stat);
             }
+            // The root's children are keyed as "/child", not "//child"
+            final String prefix = "/".equals(path) ? path : path + "/";
             for (String child : n.getChildren()) {
-                DataNode childNode = nodes.get(path + "/" + child);
+                DataNode childNode = nodes.get(prefix + child);
                 if (null != childNode) {
                     final long czxId = childNode.stat.getCzxid();
 
