@@ -69,6 +69,19 @@ public final class LegacyServicePrincipalMatcher {
         if (applicationName == null) {
             return authenticatedId;
         }
+        // The servicePrincipal( prefix is intentionally hard-coded: SPIFFE certificates currently identify only
+        // services (v1/wl and v1/v2 application/<mp>/<app>[/<tag>]).
+        //
+        // Storing the legacy form instead of the bare SPIFFE ID does two things:
+        // 1. Removes ambiguity. Mapped URI domains are also stored as bare x509 IDs, so a bare client ACL such as
+        //    x509:kafka cannot be told apart from the ACL of a domain named "kafka" and would grant access to every
+        //    client mapped into that domain. The prefixed form cannot collide with a domain name.
+        // 2. Standardizes ACLs. Nodes created by the legacy and SPIFFE instances of the same application carry the
+        //    same ACL, so either instance can keep using them while an application migrates between certificates.
+        //
+        // When SPIFFE starts issuing other identity types (users, groups, etc.), give each its own CertificateType
+        // and map it to its matching legacy prefix (for example userPrincipal( or groupPrincipal() here, rather than
+        // reusing servicePrincipal(. Until then such identities fall through above and keep their authenticated ID.
         String legacyId = "servicePrincipal(" + applicationName;
         // Require a round trip through the matcher so the creator can still use the stored ACL.
         return matchesAuthenticatedClient(identity, authenticatedId, legacyId) ? legacyId : authenticatedId;
