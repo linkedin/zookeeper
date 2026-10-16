@@ -33,6 +33,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -413,6 +414,57 @@ public class DataTreeTest extends ZKTestCase {
         // Check next page info is returned correctly
         assertEquals(firstCzxId + 1, nextPage.getMinCzxid());
         assertEquals(0, nextPage.getMinCzxidOffset());
+    }
+
+    @Test(timeout = 60000)
+    public void testGetChildrenPaginatedOnRoot() throws NodeExistsException, NoNodeException {
+        final int firstCzxId = 1000;
+        final int countNodes = 10;
+
+        DataTree dt = new DataTree();
+        // Create the children in reverse lexical order so that ordering by czxid (correct) and
+        // ordering by name (incorrect) produce different results, and the test can tell them apart.
+        List<String> childrenCreated = new ArrayList<>(countNodes);
+        for (int i = 0; i < countNodes; ++i) {
+            final String name = "test-" + (countNodes - 1 - i);
+            dt.createNode("/" + name, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, firstCzxId + i, 1);
+            childrenCreated.add(name);
+        }
+
+        // "/zookeeper" has czxid 0, so it sorts ahead of everything created above.
+        List<String> expected = new ArrayList<>();
+        expected.add("zookeeper");
+        expected.addAll(childrenCreated);
+
+        // Bounded pages on "/" must return every child, in creation order
+        List<String> collected = new ArrayList<>();
+        PaginationNextPage nextPage = new PaginationNextPage();
+        long minCzxid = -1;
+        int offset = 0;
+        final int watchCount = dt.getWatchCount();
+        boolean reachedLastPage = false;
+        for (int i = 0; i < countNodes + 2; ++i) {
+            List<String> page = dt.getPaginatedChildren("/", null, new DummyWatcher(), 3, minCzxid, offset, nextPage);
+            collected.addAll(page);
+            if (nextPage.getMinCzxid() == ZooDefs.GetChildrenPaginated.lastPageMinCzxid) {
+                reachedLastPage = true;
+                assertEquals("The watch must be set on the last page", watchCount + 1, dt.getWatchCount());
+                break;
+            }
+            // Asserting this on every intermediate page is what catches the "//child" bug: with the
+            // bug the very first page looks like a last page and registers the watch immediately.
+            assertEquals("The watch must not be set before the last page", watchCount, dt.getWatchCount());
+            minCzxid = nextPage.getMinCzxid();
+            offset = nextPage.getMinCzxidOffset();
+        }
+        assertTrue("Pagination never reported a last page", reachedLastPage);
+        assertEquals(expected, collected);
+
+        // minCzxId > 0 skips the fast path even with an unbounded page size
+        List<String> result = dt.getPaginatedChildren("/", null, null, Integer.MAX_VALUE, firstCzxId + countNodes - 2, 0, nextPage);
+        assertEquals(Arrays.asList("test-1", "test-0"), result);
+        assertEquals("The remainder fits in one page, so it is the last page",
+                ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
     }
 
     @Test(timeout = 60000)
