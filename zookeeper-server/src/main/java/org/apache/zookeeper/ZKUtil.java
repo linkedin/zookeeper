@@ -34,6 +34,7 @@ import org.apache.zookeeper.AsyncCallback.VoidCallback;
 import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.common.PathUtils;
 import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +42,17 @@ public class ZKUtil {
 
     private static final Logger LOG = LoggerFactory.getLogger(ZKUtil.class);
     private static final Map<Integer, String> permCache = new ConcurrentHashMap<Integer, String>();
+    /**
+     * Child count above which {@link #deleteChildrenRecursive(ZooKeeper, String, int)} warns that the
+     * listing it is about to build may not fit in the client's heap. zkCli defaults to -Xmx256m
+     * (ZK_CLIENT_HEAP in bin/zkEnv.sh), and the subtree is materialized client-side before any delete
+     * is issued, so a node with enough children can exhaust that heap. The threshold is only a hint:
+     * it counts direct children, which is exact for the flat nodes this option targets but an
+     * underestimate for a deep subtree. It sits an order of magnitude above the documented guideline
+     * of under 10,000 children per parent, so it fires only for nodes already well outside it -- the
+     * pathological nodes this option exists to drain.
+     */
+    private static final int LARGE_CHILD_WARN_THRESHOLD = 100_000;
     /**
      * Recursively delete the node with the given path.
      * <p>
@@ -69,7 +81,7 @@ public class ZKUtil {
         LOG.debug("Deleting tree: {}", tree);
 
         if (batchSize > 0) {
-            return deleteInBatch(zk, tree, batchSize);
+            return deleteInBatch(zk, tree, batchSize, 0);
         } else {
             for (int i = tree.size() - 1; i >= 0; --i) {
                 //Delete the leaves first and eventually get rid of the root
@@ -92,6 +104,80 @@ public class ZKUtil {
         deleteRecursive(zk, pathRoot, 0);
     }
 
+    /**
+     * Recursively delete all descendants of the node with the given path, keeping the node itself.
+     * <p>
+     * Unlike {@link #deleteRecursive(ZooKeeper, String, int)}, the subtree is listed using
+     * {@link ZooKeeper#getAllChildrenPaginated(String, boolean)}, so it also works on nodes whose
+     * children list does not fit in a single {@code jute.maxbuffer} sized response. This requires a
+     * server that supports paginated getChildren. Note that each page is only bounded by the
+     * server's {@code jute.maxbuffer}, while the client enforces its own limit on the incoming
+     * packet, so the client's {@code jute.maxbuffer} must be at least as large as the server's.
+     * <p>
+     * The subtree is listed into client memory before the first delete is issued, so draining a node
+     * with a very large number of children needs a correspondingly large client heap. zkCli defaults
+     * to {@code -Xmx256m} ({@code ZK_CLIENT_HEAP} in {@code bin/zkEnv.sh}); raise it if the client
+     * runs out of memory. A warning is logged above {@value #LARGE_CHILD_WARN_THRESHOLD} children.
+     * <p>
+     * If there is an error with deleting one of the sub-nodes in the tree,
+     * this operation would abort and would be the responsibility of the app to handle the same.
+     * Children created or deleted concurrently with this call can cause it to return false or to
+     * abort part-way, so writers to the subtree should be quiesced first.
+     *
+     * @param zk Zookeeper client
+     * @param pathRoot path of the node whose descendants are to be deleted
+     * @param batchSize number of delete operations to be submitted in one call; see
+     *                  {@link #deleteRecursive(ZooKeeper, String, int)}.
+     * @return true if all descendants are deleted successfully and the node has no children
+     *         left afterwards, otherwise false (for example if a child was created concurrently).
+     *         Returns true if the node has no children.
+     * @throws IllegalArgumentException if an invalid path is specified, or if the path is the root
+     *         of the server's namespace ("/" on a client without a chroot). The root can never be
+     *         emptied because its children include the protected /zookeeper subtree, so this is
+     *         rejected unconditionally and the check must not be relaxed. Paginated listing of "/"
+     *         is additionally broken on servers without the root-pagination fix.
+     */
+    public static boolean deleteChildrenRecursive(
+        ZooKeeper zk,
+        final String pathRoot,
+        final int batchSize) throws InterruptedException, KeeperException {
+        PathUtils.validatePath(pathRoot);
+        if ("/".equals(pathRoot) && zk.cnxn.chrootPath == null) {
+            throw new IllegalArgumentException("Deleting all children of the root node is not supported");
+        }
+
+        // The whole subtree is listed into memory before the first delete is issued, so warn before
+        // building a listing that may not fit in the client's heap. See LARGE_CHILD_WARN_THRESHOLD.
+        Stat before = zk.exists(pathRoot, false);
+        if (before != null && before.getNumChildren() > LARGE_CHILD_WARN_THRESHOLD) {
+            LOG.warn("Draining {} children of {}. The subtree is listed in client memory before any"
+                    + " delete is issued; raise ZK_CLIENT_HEAP (zkCli defaults to -Xmx256m) if the"
+                    + " client runs out of memory.", before.getNumChildren(), pathRoot);
+        }
+
+        List<String> tree = listSubTreeBFS(zk, pathRoot, true);
+        LOG.debug("Deleting children of {}: {}", pathRoot, tree);
+
+        // tree.get(0) is always the root, which is kept
+        if (tree.size() > 1) {
+            if (batchSize > 0) {
+                if (!deleteInBatch(zk, tree, batchSize, 1)) {
+                    return false;
+                }
+            } else {
+                for (int i = tree.size() - 1; i >= 1; --i) {
+                    zk.delete(tree.get(i), -1); //Delete all versions of the node with -1.
+                }
+            }
+        }
+        // The root is kept, so unlike deleteRecursive nothing fails if a child was created after the
+        // listing. Verify using the server's own child count rather than another listing, so that an
+        // incomplete listing is not reported as success. This is a point-in-time read of the
+        // contacted server, not a lock, so a create racing this check can still be missed.
+        Stat stat = zk.exists(pathRoot, false);
+        return stat != null && stat.getNumChildren() == 0;
+    }
+
     private static class BatchedDeleteCbContext {
 
         public Semaphore sem;
@@ -104,7 +190,9 @@ public class ZKUtil {
 
     }
 
-    private static boolean deleteInBatch(ZooKeeper zk, List<String> tree, int batchSize) throws InterruptedException {
+    // Deletes tree[lastIndex..] leaves first; lastIndex 0 includes the root.
+    private static boolean deleteInBatch(ZooKeeper zk, List<String> tree, int batchSize, int lastIndex)
+        throws InterruptedException {
         int rateLimit = 10;
         List<Op> ops = new ArrayList<>();
         BatchedDeleteCbContext context = new BatchedDeleteCbContext(rateLimit);
@@ -116,11 +204,11 @@ public class ZKUtil {
         };
 
         // Delete the leaves first and eventually get rid of the root
-        for (int i = tree.size() - 1; i >= 0; --i) {
+        for (int i = tree.size() - 1; i >= lastIndex; --i) {
             // Create Op to delete all versions of the node with -1.
             ops.add(Op.delete(tree.get(i), -1));
 
-            if (ops.size() == batchSize || i == 0) {
+            if (ops.size() == batchSize || i == lastIndex) {
                 if (!context.success.get()) {
                     // fail fast
                     break;
@@ -201,15 +289,36 @@ public class ZKUtil {
     public static List<String> listSubTreeBFS(
         ZooKeeper zk,
         final String pathRoot) throws KeeperException, InterruptedException {
+        return listSubTreeBFS(zk, pathRoot, false);
+    }
+
+    /**
+     * Same as {@link #listSubTreeBFS(ZooKeeper, String)} but optionally lists the children of each
+     * node using {@link ZooKeeper#getAllChildrenPaginated(String, boolean)}, which works for nodes
+     * whose children list exceeds {@code jute.maxbuffer}. This requires a server that supports
+     * paginated getChildren.
+     * <p>
+     * Deliberately not public: with {@code paginated} set, passing the root of the server's
+     * namespace ("/" on a client without a chroot) can silently return an incomplete subtree on
+     * servers that do not handle paginated listing of "/". Callers must reject that case first, as
+     * {@link #deleteChildrenRecursive(ZooKeeper, String, int)} does.
+     *
+     * @param paginated true to list children with pagination
+     */
+    static List<String> listSubTreeBFS(
+        ZooKeeper zk,
+        final String pathRoot,
+        boolean paginated) throws KeeperException, InterruptedException {
         Queue<String> queue = new ArrayDeque<>();
         List<String> tree = new ArrayList<String>();
         queue.add(pathRoot);
         tree.add(pathRoot);
         while (!queue.isEmpty()) {
             String node = queue.poll();
-            List<String> children = zk.getChildren(node, false);
+            List<String> children = paginated ? zk.getAllChildrenPaginated(node, false) : zk.getChildren(node, false);
             for (final String child : children) {
-                final String childPath = node + "/" + child;
+                // the legacy listing builds "//child" for the root; only the paginated listing handles "/"
+                final String childPath = paginated && "/".equals(node) ? "/" + child : node + "/" + child;
                 queue.add(childPath);
                 tree.add(childPath);
             }

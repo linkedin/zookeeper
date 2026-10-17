@@ -37,6 +37,7 @@ public class DeleteAllCommand extends CliCommand {
 
     static {
         options.addOption(new Option("b", true, "batch size"));
+        options.addOption(new Option("c", false, "delete only the children, keep the node itself"));
     }
 
     public DeleteAllCommand() {
@@ -44,7 +45,7 @@ public class DeleteAllCommand extends CliCommand {
     }
 
     public DeleteAllCommand(String cmdStr) {
-        super(cmdStr, "path [-b batch size]");
+        super(cmdStr, "path [-b batch size] [-c]");
     }
 
     @Override
@@ -74,9 +75,19 @@ public class DeleteAllCommand extends CliCommand {
 
         String path = args[1];
         try {
-            boolean success = ZKUtil.deleteRecursive(zk, path, batchSize);
+            boolean success = cl.hasOption("c")
+                ? ZKUtil.deleteChildrenRecursive(zk, path, batchSize)
+                : ZKUtil.deleteRecursive(zk, path, batchSize);
             if (!success) {
-                err.println("Failed to delete some node(s) in the subtree!");
+                if (cl.hasOption("c")) {
+                    // The node itself is kept, so "false" here means children are still present:
+                    // either a delete failed, or a writer created new children during the delete.
+                    err.println("Failed to delete all children of " + path
+                        + ": child nodes remain (a delete may have failed, or children may have "
+                        + "been created concurrently).");
+                } else {
+                    err.println("Failed to delete some node(s) in the subtree!");
+                }
             }
         } catch (IllegalArgumentException ex) {
             throw new MalformedPathException(ex.getMessage());
