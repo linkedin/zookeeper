@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,14 +46,24 @@ import org.apache.zookeeper.KeeperException.SessionMovedException;
 import org.apache.zookeeper.MultiOperationRecord;
 import org.apache.zookeeper.Op;
 import org.apache.zookeeper.PortAssignment;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.ZooDefs.OpCode;
+import org.apache.zookeeper.common.SpiffeAuthTestUtil;
+import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.proto.CreateRequest;
 import org.apache.zookeeper.proto.ReconfigRequest;
 import org.apache.zookeeper.proto.RequestHeader;
+import org.apache.zookeeper.proto.SetACLRequest;
 import org.apache.zookeeper.proto.SetDataRequest;
 import org.apache.zookeeper.server.ZooKeeperServer.ChangeRecord;
+import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
+import org.apache.zookeeper.server.auth.X509QuorumAuthInfo;
+import org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
 import org.apache.zookeeper.server.quorum.Leader;
 import org.apache.zookeeper.server.quorum.LeaderBeanTest;
@@ -62,6 +73,8 @@ import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
 import org.apache.zookeeper.server.quorum.flexible.QuorumVerifier;
 import org.apache.zookeeper.test.ClientBase;
 import org.apache.zookeeper.txn.ErrorTxn;
+import org.apache.zookeeper.txn.MultiTxn;
+import org.apache.zookeeper.txn.SetACLTxn;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -80,6 +93,7 @@ public class PrepRequestProcessorTest extends ClientBase {
     private ServerCnxnFactory servcnxnf;
     private PrepRequestProcessor processor;
     private Request outcome;
+    private final Map<String, String> originalX509Properties = new HashMap<>();
 
     private boolean isReconfigEnabledPreviously;
     private boolean isStandaloneEnabledPreviously;
@@ -113,6 +127,17 @@ public class PrepRequestProcessorTest extends ClientBase {
         // reset the reconfig option
         QuorumPeerConfig.setReconfigEnabled(isReconfigEnabledPreviously);
         QuorumPeerConfig.setStandaloneEnabled(isStandaloneEnabledPreviously);
+        if (!originalX509Properties.isEmpty()) {
+            originalX509Properties.forEach((key, value) -> {
+                if (value == null) {
+                    System.clearProperty(key);
+                } else {
+                    System.setProperty(key, value);
+                }
+            });
+            X509AuthenticationConfig.reset();
+            ProviderRegistry.reset();
+        }
     }
 
     @Test
@@ -124,6 +149,100 @@ public class PrepRequestProcessorTest extends ClientBase {
 
         assertEquals("Request should have marshalling error", new ErrorTxn(KeeperException.Code.MARSHALLINGERROR.intValue()), outcome.getTxn());
         assertTrue("request hasn't been processed in chain", pLatch.await(5, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void testSpiffeAutomaticAclOnLocalAndForwardedCreates() throws Exception {
+        enableSpiffeCreatorAcls();
+        for (boolean forwarded : Arrays.asList(false, true)) {
+            for (int type : Arrays.asList(OpCode.create, OpCode.create2, OpCode.createContainer)) {
+                String path = "/spiffe-" + forwarded + "-" + type;
+                CreateMode mode = type == OpCode.createContainer ? CreateMode.CONTAINER : CreateMode.PERSISTENT;
+                Request request = createSpiffeRequest(
+                    new CreateRequest(path, new byte[0], Ids.OPEN_ACL_UNSAFE, mode.toFlag()), type, forwarded);
+                prepareSpiffeRequest(request);
+                assertEquals(legacyCreatorAcl(), zks.outstandingChangesForPath.get(path).acl);
+            }
+        }
+    }
+
+    @Test
+    public void testSpiffeAutomaticAclOnLocalAndForwardedSetAcl() throws Exception {
+        enableSpiffeCreatorAcls();
+        for (boolean forwarded : Arrays.asList(false, true)) {
+            String path = "/spiffe-reset-" + forwarded;
+            List<ACL> original = Collections.singletonList(
+                new ACL(ZooDefs.Perms.ALL, new Id("x509", "application/example-mp/kafka")));
+            zks.getZKDatabase().dataTree.createNode(path, new byte[0], original, 0, 0, 0, 0);
+            Request request = createSpiffeRequest(new SetACLRequest(path, Ids.OPEN_ACL_UNSAFE, -1),
+                OpCode.setACL, forwarded);
+            prepareSpiffeRequest(request);
+            SetACLTxn txn = (SetACLTxn) outcome.getTxn();
+            assertEquals(legacyCreatorAcl(), txn.getAcl());
+            assertEquals(1, txn.getVersion());
+        }
+    }
+
+    @Test
+    public void testSpiffeAutomaticAclAllowsSubsequentOperationsInMulti() throws Exception {
+        enableSpiffeCreatorAcls();
+        for (boolean forwarded : Arrays.asList(false, true)) {
+            String parent = "/spiffe-multi-" + forwarded;
+            String child = parent + "/child";
+            MultiOperationRecord record = new MultiOperationRecord(Arrays.asList(
+                Op.create(parent, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
+                Op.create(child, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
+                Op.setData(child, new byte[]{1}, -1)));
+            prepareSpiffeRequest(createSpiffeRequest(record, OpCode.multi, forwarded));
+            MultiTxn txn = (MultiTxn) outcome.getTxn();
+            assertEquals(3, txn.getTxns().size());
+            assertEquals(OpCode.create, txn.getTxns().get(0).getType());
+            assertEquals(OpCode.create, txn.getTxns().get(1).getType());
+            assertEquals(OpCode.setData, txn.getTxns().get(2).getType());
+            assertEquals(legacyCreatorAcl(), zks.outstandingChangesForPath.get(parent).acl);
+            assertEquals(legacyCreatorAcl(), zks.outstandingChangesForPath.get(child).acl);
+        }
+    }
+
+    private void enableSpiffeCreatorAcls() {
+        Map<String, String> properties = new HashMap<>();
+        properties.put(ProviderRegistry.AUTHPROVIDER_PROPERTY_PREFIX + "x509", X509ZNodeGroupAclProvider.class.getName());
+        properties.put(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL, "true");
+        properties.put(X509AuthenticationConfig.DEDICATED_DOMAIN, "");
+        properties.put(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX, "");
+        properties.forEach((key, value) -> originalX509Properties.put(key, System.setProperty(key, value)));
+        X509AuthenticationConfig.reset();
+        ProviderRegistry.reset();
+        SpiffeAuthTestUtil.registerBouncyCastle();
+    }
+
+    private Request createSpiffeRequest(Record record, int type, boolean forwarded) throws Exception {
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(SpiffeAuthTestUtil.buildClientCertWithUriSans(
+            "spiffe://example.org/v1/application/example-mp/kafka"));
+        List<Id> authInfo = Collections.singletonList(new Id("x509", identity.getId()));
+        ByteBuffer buffer = createRequest(record, type).request;
+        if (forwarded) {
+            X509QuorumAuthInfo decoded = X509QuorumAuthInfo.decode(X509QuorumAuthInfo.encode(authInfo, identity));
+            return new Request(null, 1L, 0, type, buffer, decoded.getAuthInfo(), decoded.getClientIdentity());
+        }
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.setX509ClientIdentity(identity);
+        return new Request(cnxn, 1L, 0, type, buffer, authInfo);
+    }
+
+    private void prepareSpiffeRequest(Request request) throws Exception {
+        pLatch = new CountDownLatch(1);
+        processor = new PrepRequestProcessor(zks, new MyRequestProcessor());
+        processor.pRequest(request);
+        assertTrue("request hasn't been processed in chain", pLatch.await(5, TimeUnit.SECONDS));
+        assertNull(outcome.getException());
+        assertEquals(request.type, outcome.getHdr().getType());
+        assertEquals("application/example-mp/kafka", request.getX509ClientIdentity().getId());
+        assertEquals(Collections.singletonList(new Id("x509", "application/example-mp/kafka")), request.authInfo);
+    }
+
+    private static List<ACL> legacyCreatorAcl() {
+        return Collections.singletonList(new ACL(ZooDefs.Perms.ALL, new Id("x509", "servicePrincipal(kafka")));
     }
 
     private Request createRequest(Record record, int opCode) throws IOException {

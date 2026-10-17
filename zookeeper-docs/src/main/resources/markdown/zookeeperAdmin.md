@@ -1404,8 +1404,29 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     application names, not application-name prefixes. DN/URN-shaped strings and
     paths are not interpreted as bare application names.
     Existing exact matches remain valid, including v1/wl and legacy SAN identities.
-    Creator ACL generation is unchanged: it stores the selected original AuthInfo
-    IDs, not additional aliases or shortened application IDs.
+    With **X509ZNodeGroupAclProvider.setX509ClientIdAsAcl=true**, automatic ACL
+    replacement stores an eligible SPIFFE client's selected original AuthInfo entry
+    as **x509:servicePrincipal(\<app\>**, with ALL permissions and no closing
+    parenthesis. For example, **application/example-mp/kafka** and v1/wl **kafka**
+    produce **servicePrincipal(kafka**. Certificate identity extraction, AuthInfo,
+    URI-domain mappings and superuser selection are not changed. The formatted entry
+    replaces the original client entry in the stored ACL; it is not an additional alias.
+    Mapped-domain and cross-domain ACL entries remain unchanged. If
+    **storeAuthedClientId=false** removes the original client entry after mapping,
+    only the selected domain ACLs are stored; formatting does not reintroduce it.
+    Non-application identities, legacy SANs, Subject DNs, and application names
+    that cannot be represented by the legacy matcher retain their original IDs.
+
+    This applies to automatic ACL replacement on create operations (including multi)
+    and **setACL**, not to existing stored ACLs until they are explicitly reset.
+    With **setX509ClientIdAsAcl=false**, original-ID storage remains unchanged,
+    including explicit **CREATOR_ALL_ACL** expansion and the domain allowlist.
+    Basic-provider, dedicated-server and explicit-superuser ACL policies are unchanged.
+    **Warning:** the generated legacy ACL is application-name scoped, not product/tag
+    scoped. It grants its permissions to matching SPIFFE applications across products
+    and tags and to legacy clients with that exact service-principal identity.
+    Mixed-version servers can generate different ACL forms until all servers support
+    this formatting; deploy consistently when a uniform stored ACL format is required.
 
     Direct ACL matching uses authenticated identity context attached to the request,
     including writes forwarded by followers or observers. Quorum requests carry this
