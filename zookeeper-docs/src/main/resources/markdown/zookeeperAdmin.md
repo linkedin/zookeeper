@@ -1696,6 +1696,14 @@ the variable does.
     (Java system property: **zookeeper.skipACL**)
     Skips ACL checks. This results in a boost in throughput,
     but opens up full access to the data tree to everyone.
+    Supported values are **yes** (skip ACL checks), **dryrun** and
+    **no** (default, enforce ACL checks). In **dryrun** mode the ACL checks are
+    still evaluated, but a request that would have been rejected with
+    NOAUTH is allowed and a warning is logged instead (path, requested permission,
+    session id, client address, client credentials and node ACL). This can be used to
+    audit the impact of enforcing ACLs before turning them on. Note that
+    dryrun does not provide the throughput boost of **yes** and, like **yes**,
+    leaves the data tree open to everyone.
 
 * *quorumListenOnAllIPs* :
     When set to true the ZooKeeper server will listen
