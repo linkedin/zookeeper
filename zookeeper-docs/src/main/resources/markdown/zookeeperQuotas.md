@@ -31,7 +31,7 @@ limitations under the License.
 
 ZooKeeper has both namespace and bytes quotas. You can use the ZooKeeperMain class to set up quotas.
 This fork backports the native quota enforcement released in Apache ZooKeeper 3.8.7
-(ZOOKEEPER-3301 and ZOOKEEPER-4219). Per-namespace quota metrics
+(ZOOKEEPER-3301, ZOOKEEPER-4219, and ZOOKEEPER-4377). Per-namespace quota metrics
 (ZOOKEEPER-4211) are not included.
 Soft limits produce warnings; hard limits reject writes with `QuotaExceededException`.
 Both checks require the startup JVM property `-Dzookeeper.enforceQuota=true`, which defaults to

@@ -20,6 +20,7 @@ package org.apache.zookeeper;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import org.apache.zookeeper.cli.CliWrapperException;
 import org.junit.Test;
 
@@ -38,5 +39,15 @@ public class KeeperExceptionQuotaTest extends ZKTestCase {
         KeeperException error = KeeperException.create(KeeperException.Code.get(-128), "/session");
         assertTrue(error instanceof KeeperException.TotalEphemeralLimitExceeded);
         assertEquals("/session", error.getPath());
+    }
+
+    @Test
+    public void testUnknownWireErrorIsExplicit() {
+        try {
+            KeeperException.create(KeeperException.Code.get(Integer.MIN_VALUE), "/unknown");
+            fail("An unknown wire error must be reported explicitly");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains(Integer.toString(Integer.MIN_VALUE)));
+        }
     }
 }
