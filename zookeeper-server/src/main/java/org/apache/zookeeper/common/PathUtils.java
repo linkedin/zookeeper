@@ -109,4 +109,15 @@
          return path;
      }
 
+     /**
+      * Return the top-level namespace of a znode path, or null if none exists.
+      */
+     public static String getTopNamespace(final String path) {
+         if (path == null) {
+             return null;
+         }
+         final String[] parts = path.split("/");
+         return parts.length > 1 ? parts[1] : null;
+     }
+
  }

@@ -910,6 +910,16 @@ property, when available, is noted below.
     Does not affect the limit defined by *flushDelay*.
     Default is 1000.
 
+* *enforceQuota* :
+    (Java system property: **zookeeper.enforceQuota**)
+    Backported from Apache ZooKeeper 3.8: enable native subtree count and payload-byte quota checks.
+    The default is **false**. When enabled, writes exceeding a hard limit receive
+    `QuotaExceededException`; soft limits only produce warnings. With the flag disabled,
+    usage accounting continues but both hard rejections and soft-warning checks are disabled.
+    Configure this startup property consistently across all ensemble members.
+    See the [Quota Guide](zookeeperQuotas.html) for released limitations, the fork's required
+    client error-code migration, and safe activation and rollback procedures.
+
 * *requestThrottleLimit* :
     (Java system property: **zookeeper.request_throttle_max_requests**)
     **New in 3.6.0:**
@@ -1886,6 +1896,11 @@ options are used to configure the [AdminServer](#sc_adminserver).
  to your favourite system.
 
  Since 3.6.0 ZooKeeper binary package bundles an integration with [Prometheus.io](https://prometheus.io)
+
+ The native quota backport adds limit, usage, and rejection metrics aggregated by top-level
+ namespace; see [Quota Metrics](zookeeperQuotas.html#Quota+Metrics).
+ Custom providers must implement `CounterSet` and `GaugeSet` support in `MetricsContext`.
+ Deploy matching provider and server binaries together, even when quota enforcement is disabled.
 
 * *metricsProvider.className* :
     Set to "org.apache.zookeeper.metrics.prometheus.PrometheusMetricsProvider" to

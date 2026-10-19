@@ -20,6 +20,9 @@ package org.apache.zookeeper.compatibility;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +31,11 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.retry.RetryOneTime;
 import org.apache.curator.test.TestingServer;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.StatsTrack;
+import org.apache.zookeeper.cli.SetQuotaCommand;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 /**
@@ -36,6 +44,38 @@ import org.junit.Test;
  */
 public class TestApacheCuratorCompatibility {
     private static final int TIMEOUT_MS = 5000;
+
+    @BeforeClass
+    public static void enableQuotas() {
+        System.setProperty("zookeeper.enforceQuota", "true");
+    }
+
+    @AfterClass
+    public static void clearQuotaProperty() {
+        System.clearProperty("zookeeper.enforceQuota");
+    }
+
+    @Test
+    public void testQuotaRejectionKeepsCuratorUsable() throws Exception {
+        try (TestingServer server = new TestingServer();
+             CuratorFramework client = CuratorFrameworkFactory.newClient(
+                 server.getConnectString(), new RetryOneTime(1))) {
+            client.start();
+            assertTrue(client.blockUntilConnected(TIMEOUT_MS, TimeUnit.MILLISECONDS));
+            client.create().forPath("/limited", new byte[0]);
+            StatsTrack limits = new StatsTrack();
+            limits.setCountHardLimit(1);
+            SetQuotaCommand.createQuota(client.getZookeeperClient().getZooKeeper(), "/limited", limits);
+            try {
+                client.create().forPath("/limited/child", new byte[0]);
+                fail("Expected a native quota exception from Curator");
+            } catch (KeeperException.QuotaExceededException expected) {
+                assertEquals(-125, expected.code().intValue());
+            }
+            assertNull(client.checkExists().forPath("/limited/child"));
+            assertEquals("/unlimited", client.create().forPath("/unlimited", new byte[0]));
+        }
+    }
 
     @Test
     public void testBasicUsageOfApisAndRecipes() throws Exception {

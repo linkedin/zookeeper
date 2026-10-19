@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,7 @@ import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.apache.zookeeper.PaginationNextPage;
 import org.apache.zookeeper.Quotas;
+import org.apache.zookeeper.StatsTrack;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZKTestCase;
@@ -238,8 +240,8 @@ public class DataTreeTest extends ZKTestCase {
         DataTree dserTree = new DataTree();
 
         dserTree.createNode("/bug", new byte[20], null, -1, 1, 1, 1);
-        dserTree.createNode(Quotas.quotaZookeeper + "/bug", null, null, -1, 1, 1, 1);
-        dserTree.createNode(Quotas.quotaPath("/bug"), new byte[20], null, -1, 1, 1, 1);
+        dserTree.createNode(Quotas.quotaPath("/bug"), null, null, -1, 1, 1, 1);
+        dserTree.createNode(Quotas.limitPath("/bug"), new byte[20], null, -1, 1, 1, 1);
         dserTree.createNode(Quotas.statPath("/bug"), new byte[20], null, -1, 1, 1, 1);
 
         //deserialize a DataTree; this should clear the old /bug nodes and pathTrie
@@ -262,6 +264,40 @@ public class DataTreeTest extends ZKTestCase {
         assertEquals("/bug is still in pTrie", "/", pTrie.findMaxPrefix("/bug"));
     }
 
+
+    @Test
+    public void testQuotaAccountingUsesLongCounts() throws Exception {
+        DataTree tree = new DataTree();
+        String path = "/quota";
+        String quotaPath = Quotas.quotaPath(path);
+        String statPath = Quotas.statPath(path);
+        tree.createNode(path, new byte[2], null, 0, -1, 1, 1);
+        tree.createNode(quotaPath, null, null, 0, -1, 2, 1);
+        tree.createNode(Quotas.limitPath(path),
+            "count=-1,bytes=-1".getBytes(StandardCharsets.UTF_8), null, 0, -1, 3, 1);
+        tree.createNode(statPath, "count=0,bytes=0".getBytes(StandardCharsets.UTF_8), null, 0, -1, 4, 1);
+        tree.setData(statPath, "count=2147483647,bytes=2".getBytes(StandardCharsets.UTF_8), 1, 5, 1);
+
+        tree.createNode(path + "/child", new byte[3], null, 0, -1, 6, 1);
+        StatsTrack stats = new StatsTrack(tree.getNode(statPath).data);
+        assertEquals(2147483648L, stats.getCount());
+        assertEquals(5L, stats.getBytes());
+
+        tree.setData(path + "/child", null, 1, 7, 1);
+        stats = new StatsTrack(tree.getNode(statPath).data);
+        assertEquals(2147483648L, stats.getCount());
+        assertEquals(2L, stats.getBytes());
+
+        tree.setData(path + "/child", new byte[4], 2, 8, 1);
+        stats = new StatsTrack(tree.getNode(statPath).data);
+        assertEquals(2147483648L, stats.getCount());
+        assertEquals(6L, stats.getBytes());
+
+        tree.deleteNode(path + "/child", 9);
+        stats = new StatsTrack(tree.getNode(statPath).data);
+        assertEquals(2147483647L, stats.getCount());
+        assertEquals(2L, stats.getBytes());
+    }
 
     /* ZOOKEEPER-3531 - org.apache.zookeeper.server.DataTree#serialize calls the aclCache.serialize when doing
      * dataree serialization, however, org.apache.zookeeper.server.ReferenceCountedACLCache#serialize

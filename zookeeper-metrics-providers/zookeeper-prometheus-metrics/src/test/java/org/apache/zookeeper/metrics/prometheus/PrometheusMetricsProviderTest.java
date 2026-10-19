@@ -20,6 +20,7 @@ package org.apache.zookeeper.metrics.prometheus;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
@@ -30,11 +31,16 @@ import io.prometheus.client.CollectorRegistry;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import org.apache.zookeeper.metrics.Counter;
+import org.apache.zookeeper.metrics.CounterSet;
 import org.apache.zookeeper.metrics.Gauge;
 import org.apache.zookeeper.metrics.MetricsContext;
 import org.apache.zookeeper.metrics.Summary;
@@ -101,6 +107,49 @@ public class PrometheusMetricsProviderTest {
         String res = callServlet();
         assertThat(res, CoreMatchers.containsString("# TYPE cc counter"));
         assertThat(res, CoreMatchers.containsString("cc 10.0"));
+    }
+
+    @Test
+    public void testCounterSets() throws Exception {
+        MetricsContext context = provider.getRootContext();
+        CounterSet counterSet = context.getCounterSet("quota_exceeded_error_per_namespace");
+        counterSet.inc("apps");
+        counterSet.add("apps", 2);
+        counterSet.add("services", 5);
+        context.getCounterSet("other_errors").inc("apps");
+
+        Map<String, Object> expected = new HashMap<>();
+        expected.put("quota_exceeded_error_per_namespace{key=\"apps\"}", 3.0);
+        expected.put("quota_exceeded_error_per_namespace{key=\"services\"}", 5.0);
+        expected.put("other_errors{key=\"apps\"}", 1.0);
+        assertEquals(expected, dump());
+        assertSame(counterSet, context.getCounterSet("quota_exceeded_error_per_namespace"));
+
+        provider.resetAllValues();
+        assertEquals(expected, dump());
+
+        String response = callServlet();
+        assertThat(response, containsString("# TYPE quota_exceeded_error_per_namespace counter"));
+        assertThat(response, containsString("quota_exceeded_error_per_namespace{key=\"apps\",} 3.0"));
+        assertThat(response, containsString("quota_exceeded_error_per_namespace{key=\"services\",} 5.0"));
+        assertThat(response, containsString("# TYPE other_errors counter"));
+        assertThat(response, containsString("other_errors{key=\"apps\",} 1.0"));
+    }
+
+    @Test
+    public void testCounterSetInvalidUpdatesDoNotChangeValues() {
+        CounterSet counterSet = provider.getRootContext().getCounterSet("errors");
+        counterSet.add("apps", 3);
+        counterSet.add("apps", -1);
+        counterSet.inc(null);
+        counterSet.add(null, 2);
+        counterSet.inc("apps");
+        assertEquals(Collections.singletonMap("errors{key=\"apps\"}", 4.0), dump());
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void testCounterSetRejectsNullName() {
+        provider.getRootContext().getCounterSet(null);
     }
 
     @Test
@@ -173,6 +222,99 @@ public class PrometheusMetricsProviderTest {
         assertEquals(1, count[0]);
         assertEquals(3, callCounts[0]);
         assertEquals(2, callCounts[1]);
+    }
+
+    @Test
+    public void testGaugeSetsSampleForDumpAndScrape() throws Exception {
+        Map<String, Number> values = new HashMap<>();
+        values.put("apps", 12L);
+        values.put("unset", null);
+        AtomicInteger calls = new AtomicInteger();
+        provider.getRootContext().registerGaugeSet("quota_limit", () -> {
+            calls.incrementAndGet();
+            return values;
+        });
+        provider.getRootContext().registerGaugeSet("quota_usage", () -> Collections.singletonMap("apps", 7));
+        assertEquals(0, calls.get());
+
+        Map<String, Object> expected = new HashMap<>();
+        expected.put("quota_limit{key=\"apps\"}", 12.0);
+        expected.put("quota_limit{key=\"unset\"}", 0.0);
+        expected.put("quota_usage{key=\"apps\"}", 7.0);
+        assertEquals(expected, dump());
+        assertEquals(1, calls.get());
+
+        values.put("apps", -8.5);
+        String response = callServlet();
+        assertThat(response, containsString("# TYPE quota_limit gauge"));
+        assertThat(response, containsString("quota_limit{key=\"apps\",} -8.5"));
+        assertThat(response, containsString("quota_limit{key=\"unset\",} 0.0"));
+        assertThat(response, containsString("# TYPE quota_usage gauge"));
+        assertThat(response, containsString("quota_usage{key=\"apps\",} 7.0"));
+        assertEquals(2, calls.get());
+    }
+
+    @Test
+    public void testGaugeSetReplacementAndUnregister() throws Exception {
+        MetricsContext context = provider.getRootContext();
+        AtomicInteger originalCalls = new AtomicInteger();
+        AtomicInteger replacementCalls = new AtomicInteger();
+        context.registerGaugeSet("quota_limit", () -> {
+            originalCalls.incrementAndGet();
+            return Collections.singletonMap("apps", 10);
+        });
+        assertEquals(Collections.singletonMap("quota_limit{key=\"apps\"}", 10.0), dump());
+
+        context.registerGaugeSet("quota_limit", () -> {
+            replacementCalls.incrementAndGet();
+            return Collections.singletonMap("apps", 30);
+        });
+        assertEquals(Collections.singletonMap("quota_limit{key=\"apps\"}", 30.0), dump());
+        assertEquals(1, originalCalls.get());
+        assertEquals(1, replacementCalls.get());
+
+        context.unregisterGaugeSet("quota_limit");
+        context.unregisterGaugeSet("quota_limit");
+        assertTrue(dump().isEmpty());
+        assertTrue(callServlet().isEmpty());
+        assertEquals(1, originalCalls.get());
+        assertEquals(1, replacementCalls.get());
+
+        context.registerGaugeSet("quota_limit", () -> Collections.singletonMap("services", 5));
+        assertEquals(Collections.singletonMap("quota_limit{key=\"services\"}", 5.0), dump());
+        String response = callServlet();
+        assertThat(response, containsString("quota_limit{key=\"services\",} 5.0"));
+        assertFalse(response.contains("key=\"apps\""));
+    }
+
+    @Test
+    public void testGaugeSetRejectsNullKeysWhenSampled() throws Exception {
+        provider.getRootContext().registerGaugeSet("quota_limit", () -> Collections.singletonMap(null, 1));
+        try {
+            dump();
+            fail("Gauge set dump must reject null keys");
+        } catch (IllegalArgumentException expected) {
+        }
+        try {
+            callServlet();
+            fail("Gauge set scrape must reject null keys");
+        } catch (IllegalArgumentException expected) {
+        }
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void testGaugeSetRejectsNullCallback() {
+        provider.getRootContext().registerGaugeSet("quota_limit", null);
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void testGaugeSetRejectsNullName() {
+        provider.getRootContext().registerGaugeSet(null, Collections::emptyMap);
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void testGaugeSetUnregisterRejectsNullName() {
+        provider.getRootContext().unregisterGaugeSet(null);
     }
 
     @Test
@@ -279,6 +421,12 @@ public class PrometheusMetricsProviderTest {
         assertThat(res, CoreMatchers.containsString("cc{quantile=\"0.5\",} 10.0"));
         assertThat(res, CoreMatchers.containsString("cc{quantile=\"0.9\",} 10.0"));
         assertThat(res, CoreMatchers.containsString("cc{quantile=\"0.99\",} 10.0"));
+    }
+
+    private Map<String, Object> dump() {
+        Map<String, Object> values = new HashMap<>();
+        provider.dump(values::put);
+        return values;
     }
 
     private String callServlet() throws ServletException, IOException {
