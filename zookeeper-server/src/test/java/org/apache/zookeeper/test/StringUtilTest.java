@@ -19,6 +19,8 @@
 package org.apache.zookeeper.test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.common.StringUtils;
 import org.junit.Test;
@@ -37,6 +39,14 @@ public class StringUtilTest extends ZKTestCase {
         String s3 = "1, , 2";
         assertEquals("[1, 2]", StringUtils.split(s3, ",").toString());
 
+    }
+
+    @Test
+    public void testIsEmptyDoesNotTreatWhitespaceAsEmpty() {
+        assertTrue(StringUtils.isEmpty(null));
+        assertTrue(StringUtils.isEmpty(""));
+        assertFalse(StringUtils.isEmpty(" "));
+        assertFalse(StringUtils.isEmpty("count"));
     }
 
 }
