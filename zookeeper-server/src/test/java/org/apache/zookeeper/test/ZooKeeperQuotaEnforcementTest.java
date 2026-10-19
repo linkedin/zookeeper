@@ -24,11 +24,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.Op;
 import org.apache.zookeeper.Quotas;
 import org.apache.zookeeper.StatsTrack;
 import org.apache.zookeeper.ZooDefs.Ids;
@@ -94,6 +96,30 @@ public class ZooKeeperQuotaEnforcementTest extends ClientBase {
         expectQuotaExceeded(() -> zk.setData("/limited", new byte[5], -1));
         zk.setData("/limited", new byte[4], -1);
         assertEquals(4L, usage(zk, "/limited").getBytes());
+    }
+
+    @Test
+    public void testMultiCreateThenSetDataUsesPendingData() throws Exception {
+        ZooKeeper zk = createClient();
+        createQuota(zk, "/limited", -1, 5, new byte[0]);
+        zk.multi(Arrays.asList(
+            Op.create("/limited/child", new byte[1], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT.toFlag()),
+            Op.setData("/limited/child", new byte[4], -1)));
+        assertArrayEquals(new byte[4], zk.getData("/limited/child", false, null));
+        assertEquals(4L, usage(zk, "/limited").getBytes());
+    }
+
+    @Test
+    public void testRejectedMultiDoesNotApplyEarlierOperations() throws Exception {
+        ZooKeeper zk = createClient();
+        createQuota(zk, "/limited", -1, 5, new byte[0]);
+        expectQuotaExceeded(() -> zk.multi(Arrays.asList(
+            Op.create("/limited/child", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT.toFlag()),
+            Op.setData("/limited/child", new byte[6], -1))));
+        assertNull(zk.exists("/limited/child", false));
+        assertEquals(1L, usage(zk, "/limited").getCount());
+        assertEquals(0L, usage(zk, "/limited").getBytes());
+        zk.create("/limited/after", new byte[5], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
     }
 
     @Test

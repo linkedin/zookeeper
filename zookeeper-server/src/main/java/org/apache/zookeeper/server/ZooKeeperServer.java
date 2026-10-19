@@ -2081,10 +2081,11 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
      * Check committed quota usage before preparing a create or setData transaction.
      *
      * @param path path being modified
+     * @param lastData previous data from the prepared change record
      * @param data proposed data
      * @param type create or setData opcode
      */
-    public void checkQuota(String path, byte[] data, int type) throws KeeperException.QuotaExceededException {
+    public void checkQuota(String path, byte[] lastData, byte[] data, int type) throws KeeperException.QuotaExceededException {
         if (!enforceQuota) {
             return;
         }
@@ -2098,11 +2099,6 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             checkQuota(lastPrefix, dataBytes, 1);
             break;
         case OpCode.setData:
-            DataNode node = getZKDatabase().getDataTree().getNode(path);
-            byte[] lastData;
-            synchronized (node) {
-                lastData = node.getData();
-            }
             checkQuota(lastPrefix, dataBytes - (lastData == null ? 0 : lastData.length), 0);
             break;
         default:
