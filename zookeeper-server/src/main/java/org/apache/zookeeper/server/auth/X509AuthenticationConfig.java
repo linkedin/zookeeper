@@ -56,7 +56,7 @@ public class X509AuthenticationConfig {
     return instance;
   }
 
-  // The following System Property keys are used to extract clientId from the client cert.
+  // Shared X509 authentication settings.
 
   /**
    * Config prefix for x509-related config properties.
@@ -83,6 +83,7 @@ public class X509AuthenticationConfig {
   public static final String SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX =
       SSL_X509_CONFIG_PREFIX + "clientCertIdSanExtractMatcherGroupIndex";
   public static final String SUBJECT_ALTERNATIVE_NAME_SHORT = "SAN";
+
   private static final String DEFAULT_REGEX = ".*";
   private String clientCertIdType;
   private int clientCertIdSanMatchType = -1;
@@ -101,10 +102,12 @@ public class X509AuthenticationConfig {
    * Enables/disables whether znodes created by auth'ed clients.
    * Should be enabled if znode group acl feature is desired; otherwise, it should be disabled.
    * When this property is enabled:
-   *    1. Should have ACL fields populated with the client Id given by the authentication provider.
+   *    1. Should have ACL fields populated with the selected AuthInfo IDs. Eligible SPIFFE client
+   *       entries use the legacy servicePrincipal(app form without changing AuthInfo.
    *    2. Users do not have the right to manually operate on znode ACLs
    *    3. {@value ZOOKEEPER_ZNODEGROUPACL_SUPERUSER_ID} has the ability to operate on znode ACLs
-   * Has the same effect as the ZK client using ZooDefs.Ids.CREATOR_ALL_ACL.
+   * Unlike explicit ZooDefs.Ids.CREATOR_ALL_ACL expansion, automatic replacement formats eligible
+   * SPIFFE client entries and assigns ALL permissions.
    */
   public static final String SET_X509_CLIENT_ID_AS_ACL =
       ZNODE_GROUP_ACL_CONFIG_PREFIX + "setX509ClientIdAsAcl";
@@ -482,4 +485,5 @@ public class X509AuthenticationConfig {
       instance = null;
     }
   }
+
 }

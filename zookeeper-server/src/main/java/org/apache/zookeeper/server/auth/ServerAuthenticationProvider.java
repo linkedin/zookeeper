@@ -23,6 +23,7 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.ZooKeeperServer;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 
 /**
  * A variation on {@link AuthenticationProvider} that provides additional
@@ -34,6 +35,7 @@ public abstract class ServerAuthenticationProvider implements AuthenticationProv
 
         private final ZooKeeperServer zks;
         private final ServerCnxn cnxn;
+        private final ClientIdentity x509ClientIdentity;
 
         /**
          * @param zks
@@ -42,8 +44,13 @@ public abstract class ServerAuthenticationProvider implements AuthenticationProv
          *                the cnxn that received the authentication information.
          */
         public ServerObjs(ZooKeeperServer zks, ServerCnxn cnxn) {
+            this(zks, cnxn, cnxn == null ? null : cnxn.getX509ClientIdentity());
+        }
+
+        public ServerObjs(ZooKeeperServer zks, ServerCnxn cnxn, ClientIdentity x509ClientIdentity) {
             this.zks = zks;
             this.cnxn = cnxn;
+            this.x509ClientIdentity = x509ClientIdentity;
         }
 
         public ZooKeeperServer getZks() {
@@ -52,6 +59,10 @@ public abstract class ServerAuthenticationProvider implements AuthenticationProv
 
         public ServerCnxn getCnxn() {
             return cnxn;
+        }
+
+        public ClientIdentity getX509ClientIdentity() {
+            return x509ClientIdentity;
         }
 
     }

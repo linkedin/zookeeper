@@ -19,9 +19,9 @@
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.net.ssl.X509KeyManager;
@@ -31,9 +31,11 @@ import org.apache.zookeeper.common.ZKConfig;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.ZooKeeperServer;
+import org.apache.zookeeper.server.auth.LegacyServicePrincipalMatcher;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -98,6 +100,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
     try {
       X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
     } catch (KeeperException.AuthFailedException e) {
+      cnxn.setX509ClientIdentity(null);
       return KeeperException.Code.AUTHFAILED;
     } catch (Exception e) {
       // Failed to extract clientId from certificate
@@ -122,7 +125,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   public boolean matches(ServerObjs serverObjs, MatchValues matchValues) {
     // Not checking for super user here because the check is already covered
     // in checkAcl() in ZookeeperServer.class
-    return matchValues.getId().equals(matchValues.getAclExpr());
+    return matchValues.getId().equals(matchValues.getAclExpr())
+        || LegacyServicePrincipalMatcher.matchesAuthenticatedClient(
+            serverObjs == null ? null : serverObjs.getX509ClientIdentity(), matchValues.getId(), matchValues.getAclExpr());
   }
 
   @Override
@@ -164,15 +169,21 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
           // Set up AuthInfo updater to refresh connection AuthInfo on any client domain changes.
           // TODO Making the anonymous class to a separate updater implementation class if any other Acl provider shares
           // the same logic.
-          helper.setDomainAuthUpdater((cnxn, clientUriToDomainNames) -> {
+          // Route through helper.getDomains(clientId) so SPIFFE multi-segment principals resolve
+          // via the segment-prefix walk-up (operator can register an MP-level leaf to grant all
+          // apps under that MP; see ZkClientUriDomainMappingHelper class javadoc). The map passed
+          // into the lambda is ignored — kept in the interface signature for backward compat.
+          helper.setDomainAuthUpdater((cnxn, ignoredMap) -> {
             try {
-              String clientId = X509AuthenticationUtil.getClientId(cnxn, trustManager);
-              assignAuthInfo(cnxn, clientId,
-                  clientUriToDomainNames.getOrDefault(clientId, Collections.emptySet()));
+              ClientIdentity identity = X509AuthenticationUtil.getClientId(cnxn, trustManager);
+              cnxn.setX509ClientIdentity(identity);
+              assignAuthInfo(cnxn, identity,
+                  helper.getDomains(identity.getCertificateType(), identity.getId()));
             } catch (UnsupportedOperationException unsupportedEx) {
               LOG.info("Cannot update AuthInfo for session 0x{} since the operation is not supported.",
                   Long.toHexString(cnxn.getSessionId()));
             } catch (KeeperException.AuthFailedException authEx) {
+              cnxn.setX509ClientIdentity(null);
               LOG.error("Failed to authenticate session 0x{} for AuthInfo update. Revoking all of its ZNodeGroupAcl AuthInfo.",
                   Long.toHexString(cnxn.getSessionId()), authEx);
               try {
@@ -204,17 +215,14 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
    * concurrency control is required to prevent inconsistent update.
    *
    * @param cnxn Client connection to be updated
-   * @param clientId ClientId to be potentially used as the AuthInfo Id if the client is super user.
-   *                 The clientId can be any string matched and extracted using regex from Subject Distinguished
-   *                 Name or Subject Alternative Name from x509 certificate.
-   *                 The clientId string is intended to be an URI for client and map the client to certain domain.
-   *                 The user can use the properties defined in X509AuthenticationUtil to extract a desired string as
-   *                 clientId.
+   * @param identity Authenticated certificate type and original client ID.
    * @param domains Domains to be used as the AuthInfo Id.
    */
-  private void assignAuthInfo(ServerCnxn cnxn, String clientId, Set<String> domains) {
+  private void assignAuthInfo(ServerCnxn cnxn, ClientIdentity identity, Set<String> domains) {
+    String clientId = identity.getId();
     Set<String> superUserDomainNames = X509AuthenticationConfig.getInstance().getZnodeGroupAclCrossDomainAccessDomains();
     Set<String> superUsers = X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserIds();
+    Optional<String> superUserId = LegacyServicePrincipalMatcher.findMatchingSuperUserId(identity, superUsers);
 
     Set<Id> newAuthIds = new HashSet<>();
 
@@ -223,8 +231,8 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
         superUserDomainNames.stream().filter(domains::contains).collect(Collectors.toList());
 
     // Check if user belongs to super user id group
-    if (superUsers.contains(clientId)) {
-      newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, clientId));
+    if (superUserId.isPresent()) {
+      newAuthIds.add(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, superUserId.get()));
     } else if (!commonSuperUserDomains.isEmpty()) {
       // For cross domain components, add (super:domainName) in authInfo
       // "super" scheme gives access to all znodes without checking znode ACL vs authorized domain name

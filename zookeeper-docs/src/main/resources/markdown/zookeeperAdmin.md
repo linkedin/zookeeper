@@ -1378,6 +1378,75 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     authenticated client with that principal will be able to bypass
     ACL checking and have full privileges to all znodes.
 
+    Both **X509AuthenticationProvider** and **X509ZNodeGroupAclProvider**
+    automatically match an authenticated SPIFFE v1/wl identity,
+    or a v1/v2 **application/\<mp\>/\<app\>[/\<tag\>]** identity, against an
+    existing bare application-name or formatted legacy service-principal superuser ID. Exact
+    configured client-ID matches take precedence. This compatibility is always
+    enabled and does not require a separate configuration flag.
+    Supported legacy forms include **kafka**, **servicePrincipal(kafka**,
+    **servicePrincipal(kafka)**, and **urn:li:servicePrincipal(kafka;region1;instance1)**.
+    The existing superuser settings remain **zookeeper.X509AuthenticationProvider.superUser**
+    and **zookeeper.X509ZNodeGroupAclProvider.superUserId**, respectively.
+    The original certificate-derived identity is preserved; the **super** AuthInfo
+    marker uses the matched configured ID so explicit superusers remain distinct
+    from cross-domain components during ACL preparation.
+    This matching does not enable reverse legacy-to-SPIFFE superuser aliases or
+    compatibility for user, group, airflow, arbitrary v2, or Subject DN identities.
+    **Warning:** legacy application names do not distinguish products or tags;
+    configuring a bare or formatted legacy superuser grants full superuser privileges to
+    all eligible trusted identities with that app name. Use an exact full
+    application ID when product/tag-specific privileges are required.
+    Certificate trust validation and existing cross-domain grants are unchanged.
+    Treat superuser configuration as a startup setting and restart servers or
+    reconnect clients when changing it; it is not an immediate revocation
+    mechanism for already authenticated connections.
+
+    URI-domain and direct ACL compatibility follow the same one-way rules:
+    eligible SPIFFE application identities may
+    match bare application names or formatted legacy service principals, but
+    legacy clients do not acquire reverse aliases.
+    Original client IDs, exact matches and existing mapped-domain grants remain
+    unchanged. Bare compatibility targets must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`:
+    a letter or digit followed by letters, digits, dots, underscores or hyphens.
+    For example, **application/example-mp/kafka** matches both **kafka** and
+    **servicePrincipal(kafka**. Comparisons are case-sensitive and require equal
+    application names, not application-name prefixes. DN/URN-shaped strings and
+    paths are not interpreted as bare application names.
+    Existing exact matches remain valid, including v1/wl and legacy SAN identities.
+    With **X509ZNodeGroupAclProvider.setX509ClientIdAsAcl=true**, automatic ACL
+    replacement stores an eligible SPIFFE client's selected original AuthInfo entry
+    as **x509:servicePrincipal(\<app\>**, with ALL permissions and no closing
+    parenthesis. For example, **application/example-mp/kafka** and v1/wl **kafka**
+    produce **servicePrincipal(kafka**. Certificate identity extraction, AuthInfo,
+    URI-domain mappings and superuser selection are not changed. The formatted entry
+    replaces the original client entry in the stored ACL; it is not an additional alias.
+    Mapped-domain and cross-domain ACL entries remain unchanged. If
+    **storeAuthedClientId=false** removes the original client entry after mapping,
+    only the selected domain ACLs are stored; formatting does not reintroduce it.
+    Non-application identities, legacy SANs, Subject DNs, and application names
+    that cannot be represented by the legacy matcher retain their original IDs.
+
+    This applies to automatic ACL replacement on create operations (including multi)
+    and **setACL**, not to existing stored ACLs until they are explicitly reset.
+    With **setX509ClientIdAsAcl=false**, original-ID storage remains unchanged,
+    including explicit **CREATOR_ALL_ACL** expansion and the domain allowlist.
+    Basic-provider, dedicated-server and explicit-superuser ACL policies are unchanged.
+    **Warning:** the generated legacy ACL is application-name scoped, not product/tag
+    scoped. It grants its permissions to matching SPIFFE applications across products
+    and tags and to legacy clients with that exact service-principal identity.
+    Mixed-version servers can generate different ACL forms until all servers support
+    this formatting; deploy consistently when a uniform stored ACL format is required.
+
+    Direct ACL matching uses authenticated identity context attached to the request,
+    including writes forwarded by followers or observers. Quorum requests carry this
+    context in a reserved transport-only **zookeeper-internal-x509** entry, removed
+    before authorization; it is not a client authentication scheme or a stored ACL.
+    Both the receiving server and the leader must support this context for forwarded
+    compatibility matches. Missing context does not enable an alias, so do not rely
+    on this compatibility during a mixed-version rollout. Exact IDs and existing
+    domain/superuser AuthInfo continue to use their ordinary authorization rules.
+
 * *zookeeper.superUser* :
     (Java system property: **zookeeper.superUser**)
     Similar to **zookeeper.X509AuthenticationProvider.superUser**
@@ -1637,6 +1706,14 @@ the variable does.
     (Java system property: **zookeeper.skipACL**)
     Skips ACL checks. This results in a boost in throughput,
     but opens up full access to the data tree to everyone.
+    Supported values are **yes** (skip ACL checks), **dryrun** and
+    **no** (default, enforce ACL checks). In **dryrun** mode the ACL checks are
+    still evaluated, but a request that would have been rejected with
+    NOAUTH is allowed and a warning is logged instead (path, requested permission,
+    session id, client address, client credentials and node ACL). This can be used to
+    audit the impact of enforcing ACLs before turning them on. Note that
+    dryrun does not provide the throughput boost of **yes** and, like **yes**,
+    leaves the data tree open to everyone.
 
 * *quorumListenOnAllIPs* :
     When set to true the ZooKeeper server will listen

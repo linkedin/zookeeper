@@ -71,6 +71,10 @@ public class ProviderRegistry {
     }
 
     public static AuthenticationProvider getProvider(String scheme) {
+        if (X509QuorumAuthInfo.AUTH_SCHEME.equals(scheme)) {
+            // Quorum metadata must never be accepted through client auth or explicit ACLs.
+            return null;
+        }
         if (!initialized) {
             initialize();
         }

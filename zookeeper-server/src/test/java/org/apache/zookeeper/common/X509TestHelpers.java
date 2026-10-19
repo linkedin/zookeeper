@@ -130,19 +130,37 @@ public class X509TestHelpers {
      */
     public static X509Certificate newCert(
             X509Certificate caCert, KeyPair caKeyPair, X500Name certSubject, PublicKey certPublicKey, long expirationMillis) throws IOException, OperatorCreationException, GeneralSecurityException {
+        return newCertSignedBy(caCert, caKeyPair, certSubject, certPublicKey,
+                getLocalhostSubjectAltNames(), expirationMillis);
+    }
+
+    /**
+     * Variant of {@link #newCert} that installs the supplied SANs instead of the default
+     * localhost SANs. Used by tests that need certs with specific URI SANs (e.g., SPIFFE URIs).
+     */
+    public static X509Certificate newCertWithSans(
+            X509Certificate caCert, KeyPair caKeyPair, X500Name certSubject, PublicKey certPublicKey,
+            GeneralNames sans, long expirationMillis)
+            throws IOException, OperatorCreationException, GeneralSecurityException {
+        return newCertSignedBy(caCert, caKeyPair, certSubject, certPublicKey, sans, expirationMillis);
+    }
+
+    private static X509Certificate newCertSignedBy(
+            X509Certificate caCert, KeyPair caKeyPair, X500Name certSubject, PublicKey certPublicKey,
+            GeneralNames sans, long expirationMillis)
+            throws IOException, OperatorCreationException, GeneralSecurityException {
         if (!caKeyPair.getPublic().equals(caCert.getPublicKey())) {
             throw new IllegalArgumentException("CA private key does not match the public key in the CA cert");
         }
         Date now = new Date();
-        X509v3CertificateBuilder builder = initCertBuilder(new X500Name(caCert.getIssuerDN().getName()), now, new Date(
-                now.getTime()
-                        + expirationMillis), certSubject, certPublicKey);
-        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false)); // not a CA
-        builder.addExtension(Extension.keyUsage, true, new KeyUsage(KeyUsage.digitalSignature
-                                                                            | KeyUsage.keyEncipherment));
-        builder.addExtension(Extension.extendedKeyUsage, true, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth}));
-
-        builder.addExtension(Extension.subjectAlternativeName, false, getLocalhostSubjectAltNames());
+        X509v3CertificateBuilder builder = initCertBuilder(new X500Name(caCert.getIssuerDN().getName()),
+                now, new Date(now.getTime() + expirationMillis), certSubject, certPublicKey);
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+        builder.addExtension(Extension.keyUsage, true,
+                new KeyUsage(KeyUsage.digitalSignature | KeyUsage.keyEncipherment));
+        builder.addExtension(Extension.extendedKeyUsage, true,
+                new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth}));
+        builder.addExtension(Extension.subjectAlternativeName, false, sans);
         return buildAndSignCertificate(caKeyPair.getPrivate(), builder);
     }
 

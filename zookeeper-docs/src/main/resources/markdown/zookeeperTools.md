@@ -23,6 +23,8 @@ limitations under the License.
     * [zkCleanup.sh](#zkCleanup)
     * [zkTxnLogToolkit.sh](#zkTxnLogToolkit)
     * [zkSnapShotToolkit.sh](#zkSnapShotToolkit)
+    * [zkSnapshotComparer.sh](#zkSnapshotComparer)
+    * [zkSnapshotRecursiveSummaryToolkit.sh](#zkSnapshotRecursiveSummaryToolkit)
     
 * [Testing](#Testing)
     * [Jepsen Test](#jepsen-test)
@@ -211,6 +213,98 @@ USAGE: SnapshotFormatter [-d|-json] snapshot_file
 ./zkSnapShotToolkit.sh -json /data/zkdata/version-2/snapshot.fa01000186d
 [[1,0,{"progname":"SnapshotFormatter.java","progver":"0.01","timestamp":1559788148637},[{"name":"\/","asize":0,"dsize":0,"dev":0,"ino":1001},[{"name":"zookeeper","asize":0,"dsize":0,"dev":0,"ino":1002},{"name":"config","asize":0,"dsize":0,"dev":0,"ino":1003},[{"name":"quota","asize":0,"dsize":0,"dev":0,"ino":1004},[{"name":"test","asize":0,"dsize":0,"dev":0,"ino":1005},{"name":"zookeeper_limits","asize":52,"dsize":52,"dev":0,"ino":1006},{"name":"zookeeper_stats","asize":15,"dsize":15,"dev":0,"ino":1007}]]],{"name":"test","asize":0,"dsize":0,"dev":0,"ino":1008}]]
 ```
+
+<a name="zkSnapshotComparer"></a>
+
+### zkSnapshotComparer.sh
+
+Compare the subtree data sizes and descendant counts in two snapshot files.
+This is the native backport of [ZOOKEEPER-3427](https://github.com/apache/zookeeper/commit/f90060b83da4bfcca58ada93a57fedb40a069387).
+The tool reports paths found only in the left or right snapshot and size/count
+deltas for paths present in both. Deltas are **right minus left**.
+
+```bash
+bin/zkSnapshotComparer.sh --left snapshot.1 --right snapshot.2.gz --bytes 0 --nodes 0
+```
+
+All four options are required:
+
+* `-l`, `--left`: left snapshot file.
+* `-r`, `--right`: right snapshot file.
+* `-b`, `--bytes`: non-negative byte-difference threshold.
+* `-n`, `--nodes`: non-negative descendant-count-difference threshold.
+
+Thresholds are integers from 0 through 2147483647. A path is printed when
+**either** absolute difference is **strictly greater** than its threshold.
+For a path present in only one snapshot, its subtree size and descendant count
+are compared to the thresholds. Data sizes include the node's own payload and
+all descendant payloads; descendant counts exclude the node itself. Null data
+contributes zero bytes. A zero-byte leaf present in only one snapshot is
+therefore filtered even with both thresholds set to zero.
+
+Use `-d`, `--debug` to display filtered paths and comparison details. Use
+`-i`, `--interactive` to explore the snapshots interactively:
+
+* Press Enter to print the current depth and advance.
+* Enter a non-negative depth to jump to that layer (the root is depth 0).
+* Enter an absolute path, including `/`, to compare its immediate children.
+* End input or press Ctrl-C to stop before all layers have been compared.
+
+The batch report visits each depth and sorts paths alphabetically within it.
+It retains the upstream empty label for the root in comparison lines.
+
+<a name="zkSnapshotRecursiveSummaryToolkit"></a>
+
+### zkSnapshotRecursiveSummaryToolkit.sh
+
+Recursively summarize one snapshot subtree. This is the native backport of
+[ZOOKEEPER-4566](https://github.com/apache/zookeeper/commit/05b215994f5e145c2758c4089828b57ba471b329).
+
+```bash
+bin/zkSnapshotRecursiveSummaryToolkit.sh snapshot.1 /app 1
+```
+
+Usage: `SnapshotRecursiveSummary <snapshot_file> <starting_node> <max_depth>`.
+The starting node must be an existing absolute znode path. The maximum depth is
+a non-negative integer: 0 prints every non-leaf node, 1 prints the starting
+node and its non-leaf children, 2 adds another level, and so on.
+**Depth limits output only, not traversal or totals.**
+
+`children` is the number of all descendants, not just immediate children.
+`data` is the sum of payload bytes for the node itself and all descendants.
+Null data contributes zero bytes. Leaves contribute to their ancestors' totals
+but are not printed; selecting a leaf produces no summary entries.
+
+For example, if `/app` has 2 payload bytes, `/app/branch` has 3, and
+`/app/branch/leaf` has 5, the summary is:
+
+```text
+ /app
+   children: 2
+   data: 10
+-- /app/branch
+--   children: 1
+--   data: 8
+```
+
+#### Snapshot analysis limitations
+
+Both tools run offline, read files without modifying them, and support
+uncompressed, `.gz`, and `.snappy` snapshots (including mixed formats in the
+comparer). They validate snapshot checksums and report unreadable or corrupt
+input rather than silently producing a successful analysis. Invalid arguments,
+file paths or summary starting paths exit with code 2; snapshot read failures
+exit with code 1. Windows launchers with the same names and a `.cmd` extension
+are also included. The launchers use the existing `zkEnv` configuration.
+
+Both tools **include ephemeral znodes** present in the snapshot; they do not
+report session records. This reflects the upstream traversal behavior, despite
+the original comparer's description claiming that ephemerals were ignored.
+Neither tool compares payload contents, ACLs, versions or other znode metadata.
+**Equal sizes/counts do not prove identical contents.** Snapshots may be fuzzy:
+these tools do not replay transaction logs, reconstruct point-in-time state,
+or establish transaction-consistent equality. The tools load snapshots into
+memory, and recursive traversal still visits the full selected subtree.
 
 <a name="Testing"></a>
 

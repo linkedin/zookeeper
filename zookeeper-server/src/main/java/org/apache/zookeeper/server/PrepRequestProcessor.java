@@ -59,10 +59,12 @@ import org.apache.zookeeper.proto.SetACLRequest;
 import org.apache.zookeeper.proto.SetDataRequest;
 import org.apache.zookeeper.server.ZooKeeperServer.ChangeRecord;
 import org.apache.zookeeper.server.ZooKeeperServer.PrecalculatedDigest;
+import org.apache.zookeeper.server.auth.LegacyServicePrincipalMatcher;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.apache.zookeeper.server.quorum.LeaderZooKeeperServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
@@ -368,7 +370,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             String path = deleteRequest.getPath();
             String parentPath = getParentPathAndValidate(path);
             ChangeRecord parentRecord = getRecordForPath(parentPath);
-            zks.checkACL(request.cnxn, parentRecord.acl, ZooDefs.Perms.DELETE, request.authInfo, path, null);
+            zks.checkACL(request, parentRecord.acl, ZooDefs.Perms.DELETE, path, null);
             ChangeRecord nodeRecord = getRecordForPath(path);
             checkAndIncVersion(nodeRecord.stat.getVersion(), deleteRequest.getVersion(), path);
             if (nodeRecord.childCount > 0) {
@@ -396,7 +398,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             path = setDataRequest.getPath();
             validatePath(path, request.sessionId);
             nodeRecord = getRecordForPath(path);
-            zks.checkACL(request.cnxn, nodeRecord.acl, ZooDefs.Perms.WRITE, request.authInfo, path, null);
+            zks.checkACL(request, nodeRecord.acl, ZooDefs.Perms.WRITE, path, null);
             zks.checkQuota(path, nodeRecord.data, setDataRequest.getData(), OpCode.setData);
             int newVersion = checkAndIncVersion(nodeRecord.stat.getVersion(), setDataRequest.getVersion(), path);
             request.setTxn(new SetDataTxn(path, setDataRequest.getData(), newVersion));
@@ -537,7 +539,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             }
 
             nodeRecord = getRecordForPath(ZooDefs.CONFIG_NODE);
-            zks.checkACL(request.cnxn, nodeRecord.acl, ZooDefs.Perms.WRITE, request.authInfo, null, null);
+            zks.checkACL(request, nodeRecord.acl, ZooDefs.Perms.WRITE, null, null);
             SetDataTxn setDataTxn = new SetDataTxn(ZooDefs.CONFIG_NODE, request.qv.toString().getBytes(), -1);
             request.setTxn(setDataTxn);
             nodeRecord = nodeRecord.duplicate(request.getHdr().getZxid());
@@ -561,9 +563,9 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             }
             path = setAclRequest.getPath();
             validatePath(path, request.sessionId);
-            List<ACL> listACL = fixupACL(path, request.authInfo, setAclRequest.getAcl());
+            List<ACL> listACL = fixupACL(path, request.authInfo, setAclRequest.getAcl(), request.getX509ClientIdentity());
             nodeRecord = getRecordForPath(path);
-            zks.checkACL(request.cnxn, nodeRecord.acl, ZooDefs.Perms.ADMIN, request.authInfo, path, listACL);
+            zks.checkACL(request, nodeRecord.acl, ZooDefs.Perms.ADMIN, path, listACL);
             newVersion = checkAndIncVersion(nodeRecord.stat.getAversion(), setAclRequest.getVersion(), path);
             request.setTxn(new SetACLTxn(path, listACL, newVersion));
             nodeRecord = nodeRecord.duplicate(request.getHdr().getZxid());
@@ -634,7 +636,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             path = checkVersionRequest.getPath();
             validatePath(path, request.sessionId);
             nodeRecord = getRecordForPath(path);
-            zks.checkACL(request.cnxn, nodeRecord.acl, ZooDefs.Perms.READ, request.authInfo, path, null);
+            zks.checkACL(request, nodeRecord.acl, ZooDefs.Perms.READ, path, null);
             request.setTxn(new CheckVersionTxn(
                 path,
                 checkAndIncVersion(nodeRecord.stat.getVersion(), checkVersionRequest.getVersion(), path)));
@@ -680,10 +682,10 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         validateCreateRequest(path, createMode, request, ttl);
         String parentPath = validatePathForCreate(path, request.sessionId);
 
-        List<ACL> listACL = fixupACL(path, request.authInfo, acl);
+        List<ACL> listACL = fixupACL(path, request.authInfo, acl, request.getX509ClientIdentity());
         ChangeRecord parentRecord = getRecordForPath(parentPath);
 
-        zks.checkACL(request.cnxn, parentRecord.acl, ZooDefs.Perms.CREATE, request.authInfo, path, listACL);
+        zks.checkACL(request, parentRecord.acl, ZooDefs.Perms.CREATE, path, listACL);
         int parentCVersion = parentRecord.stat.getCversion();
         if (createMode.isSequential()) {
             path = path + String.format(Locale.ENGLISH, "%010d", parentCVersion);
@@ -1010,6 +1012,14 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
      * @throws KeeperException.InvalidACLException
      */
     public static List<ACL> fixupACL(String path, List<Id> authInfo, List<ACL> acls) throws KeeperException.InvalidACLException {
+        return fixupACL(path, authInfo, acls, null);
+    }
+
+    /**
+     * Prepare ACLs using the authenticated identity snapshot, including forwarded requests.
+     */
+    public static List<ACL> fixupACL(String path, List<Id> authInfo, List<ACL> acls, ClientIdentity identity)
+        throws KeeperException.InvalidACLException {
         // check for well formed ACLs
         // This resolves https://issues.apache.org/jira/browse/ZOOKEEPER-1877
         List<ACL> uniqacls = removeDuplicates(acls);
@@ -1029,7 +1039,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         // Cases where such grouping by override applies are:
         // Single domain user / cross domain components -> set (x509 : domainName) as znode ACL
         // Users whose extracted clientId is not found in the ClientURIDomainMapping
-        //      -> set (x509: clientURI) as znode ACL
+        //      -> set (x509: clientURI) as znode ACL, formatting eligible SPIFFE application IDs
+        //         as legacy service principals when setX509ClientIdAsAcl is enabled
         // Examples that will not be handled by the "following logic" are:
         //      x509 super user, plaintext port clients, any user when dedicated server is enabled
         //      -> will go through original zk fixupACL logic
@@ -1056,8 +1067,13 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                         && !X509AuthenticationConfig.getInstance().getZnodeGroupAclSuperUserIds()
                         .contains(id.getId());
                 if (isX509 || isX509CrossDomainComponent) {
+                    String aclId = id.getId();
+                    if (X509AuthenticationConfig.getInstance().isX509ClientIdAsAclEnabled()
+                        && X509AuthenticationUtil.X509_SCHEME.equals(id.getScheme())) {
+                        aclId = LegacyServicePrincipalMatcher.getClientAclId(identity, aclId);
+                    }
                     rv.add(new ACL(ZooDefs.Perms.ALL,
-                        new Id(X509AuthenticationUtil.X509_SCHEME, id.getId())));
+                        new Id(X509AuthenticationUtil.X509_SCHEME, aclId)));
                     isUserProvidedAclOverriden = true;
                 }
             }
@@ -1071,7 +1087,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                 // for others should continue to original fixupACL logic. This variable is necessary
                 // because if path is open read path, its open read ACL will be added to the list,
                 // regardless of user category, so rv's size won't be a good indicator here.
-                return rv;
+                return removeDuplicates(rv);
             }
         }
 
