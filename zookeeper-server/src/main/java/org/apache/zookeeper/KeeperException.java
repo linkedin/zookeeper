@@ -148,6 +148,8 @@ public abstract class KeeperException extends Exception {
             return new SessionClosedRequireAuthException();
         case REQUESTTIMEOUT:
             return new RequestTimeoutException();
+        case QUOTAEXCEEDED:
+            return new QuotaExceededException();
         case TOTALEPHEMERALLIMITEXCEEDED:
             return new TotalEphemeralLimitExceeded();
         case OK:
@@ -407,9 +409,11 @@ public abstract class KeeperException extends Exception {
          *  but client is not configured with SASL authentication or configuted with SASL but failed
          *  (i.e. wrong credential used.). */
         SESSIONCLOSEDREQUIRESASLAUTH(-124),
+        /** Exceeded the quota that was set on the path. */
+        QUOTAEXCEEDED(-125),
         /** Request to create ephemeral node was rejected because the total byte limit for the session was exceeded.
          * This limit is manually set through the "zookeeper.ephemeralNodes.total.byte.limit" system property. */
-        TOTALEPHEMERALLIMITEXCEEDED(-125);
+        TOTALEPHEMERALLIMITEXCEEDED(-128);
 
         private static final Map<Integer, Code> lookup = new HashMap<Integer, Code>();
 
@@ -500,6 +504,8 @@ public abstract class KeeperException extends Exception {
             return "Reconfig is disabled";
         case SESSIONCLOSEDREQUIRESASLAUTH:
             return "Session closed because client failed to authenticate";
+        case QUOTAEXCEEDED:
+            return "Quota has exceeded";
         case TOTALEPHEMERALLIMITEXCEEDED:
             return "Ephemeral count exceeded for session";
         default:
@@ -945,6 +951,19 @@ public abstract class KeeperException extends Exception {
             super(Code.REQUESTTIMEOUT);
         }
 
+    }
+
+    /**
+     * @see Code#QUOTAEXCEEDED
+     */
+    @InterfaceAudience.Public
+    public static class QuotaExceededException extends KeeperException {
+        public QuotaExceededException() {
+            super(Code.QUOTAEXCEEDED);
+        }
+        public QuotaExceededException(String path) {
+            super(Code.QUOTAEXCEEDED, path);
+        }
     }
 
     public static class TotalEphemeralLimitExceeded extends KeeperException {
