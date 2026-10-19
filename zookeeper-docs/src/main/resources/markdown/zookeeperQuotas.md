@@ -22,17 +22,24 @@ limitations under the License.
     * [Setting Quotas](#Setting+Quotas)
     * [Listing Quotas](#Listing+Quotas)
     * [Deleting Quotas](#Deleting+Quotas)
+    * [Enforcement and Limitations](#Enforcement)
+    * [Fork Compatibility and Rollout](#Compatibility)
 
 <a name="zookeeper_quotas"></a>
 
 ## Quotas
 
-ZooKeeper has both namespace and bytes quotas. You can use the ZooKeeperMain class to setup quotas.
-ZooKeeper prints _WARN_ messages if users exceed the quota assigned to them. The messages
-are printed in the log of the ZooKeeper.
+ZooKeeper has both namespace and bytes quotas. You can use the ZooKeeperMain class to set up quotas.
+This fork backports the native quota enforcement released in Apache ZooKeeper 3.8.7
+(ZOOKEEPER-3301, ZOOKEEPER-4219, and ZOOKEEPER-4377). Per-namespace quota metrics
+(ZOOKEEPER-4211) are not included.
+Soft limits produce warnings; hard limits reject writes with `QuotaExceededException`.
+Both checks require the startup JVM property `-Dzookeeper.enforceQuota=true`, which defaults to
+`false`. Usage accounting continues when enforcement is disabled.
 
 Notice: What the `namespace` quota means is the count quota which limits the number of children
-under the path(included itself).
+under the path (including itself). Bytes quotas count znode payload bytes, not path names,
+heap overhead, or disk usage.
 
     $ bin/zkCli.sh -server host:port**
 
@@ -43,10 +50,14 @@ The above command gives you a command line option of using quotas.
 ### Setting Quotas
 
 - You can use `setquota` to set a quota on a ZooKeeper node. It has an option of setting quota with
-`-n` (for namespace/count) and `-b` (for bytes/data length).
+`-n` (soft count), `-b` (soft bytes), `-N` (hard count), or `-B` (hard bytes).
+Count limits must be positive integers; byte limits may be zero. Set one dimension per command.
+When a hard limit is present, it takes precedence over the soft limit for that dimension.
 
-- The ZooKeeper quota is stored in ZooKeeper itself in **/zookeeper/quota**. To disable other people from
-changing the quotas, users can set the ACL for **/zookeeper/quota** ,so that only admins are able to read and write to it.
+- Quotas are stored under **/zookeeper/quota** in `zookeeper_limits` and `zookeeper_stats` znodes.
+Restrict administrative access to the management hierarchy and its descendant metadata znodes.
+ACLs are not inherited: securing only **/zookeeper/quota** does not protect existing children.
+The CLI can create children with open ACLs, so protect newly created metadata before relying on enforcement.
 
 - If the quota doesn't exist in the specified path,create the quota, otherwise update the quota.
 
@@ -67,6 +78,9 @@ according to specific circumstances.
 
 - Users cannot set the quota on the path under **/zookeeper/quota**
 
+- The target path must already exist. A quota on `/` is not enforced.
+Setting a limit below current usage warns but does not remove data or reject the quota configuration.
+
 <a name="Listing+Quotas"></a>
 
 ### Listing Quotas
@@ -79,4 +93,71 @@ You can use _listquota_ to list a quota on a ZooKeeper node.
 
 You can use _delquota_ to delete quota on a ZooKeeper node.
 
+Use `delquota -n`, `-b`, `-N`, or `-B` to unset just the selected limit and preserve the other
+settings. Without a flag, `delquota` removes the quota metadata.
 
+<a name="Enforcement"></a>
+
+### Enforcement and Limitations
+
+Enable `-Dzookeeper.enforceQuota=true` on every ensemble member before relying on hard limits.
+This is a startup property, not a dynamic switch. With only soft limits configured, enabling it
+produces warnings without introducing hard rejections. Unlike this fork's older soft-only
+implementation, disabling this property also disables soft-warning checks.
+
+Checks run before create and `setData` transactions are prepared. All create modes use the same
+check, including ephemeral, sequential, container, and TTL nodes. Deletes are not quota-rejected,
+so they can release capacity. A same-size update skips the byte check; a shrinking update can
+still be rejected if the resulting usage remains above the hard byte limit.
+
+The backport preserves the released 3.8 limitations. Admission uses committed usage, not
+reservations for outstanding writes. Individually admissible operations in a single `multi()`
+can collectively exceed a limit; a delete followed by a create can also be rejected even if the
+combined result would fit. Pipelined requests can exceed limits for the same reason. Do not treat
+these quotas as a strict no-overshoot guarantee. Quota metadata is not automatically removed
+when the application subtree is deleted.
+
+<a name="Compatibility"></a>
+
+### Fork Compatibility and Rollout
+
+The native quota error uses `QUOTAEXCEEDED = -125`. This fork's separate per-session ephemeral
+serialized-path byte limiter now uses `TOTALEPHEMERALLIMITEXCEEDED = -128`, matching the existing
+LinkedIn 3.8-based fork. Its limit configuration, accounting, and violation metric are unchanged.
+
+This mapping requires client migration even when native quota enforcement is disabled:
+
+| Combination | Error interpretation |
+|---|---|
+| Old fork client and old server | `-125` is the ephemeral limit |
+| New fork client and new server | `-125` is native quota; `-128` is the ephemeral limit |
+| New fork client and old server | An old ephemeral rejection is decoded as `QuotaExceededException` |
+| Old fork client and new server | Quota errors can be misclassified, and `-128` is unknown |
+
+There is no information in a numeric `-125` response that distinguishes the old and new meanings.
+Migrate application handling to tolerate both resource-limit exception types during a mixed-version
+transition, or use a controlled cutover. An unmodified upstream 3.8 client understands native
+quotas but not the fork-only ephemeral error.
+
+Rebuild consumers of quota helper APIs: `StatsTrack` count accessors now use `long`,
+`Quotas.quotaPath()` now returns the management directory (use `limitPath()` for the limit leaf),
+and the set/delete quota helpers accept `StatsTrack`. Use the matching admin CLI; an older CLI
+can discard hard-limit fields when rewriting quota records.
+
+After migrating clients, roll all servers with enforcement disabled.
+Secure quota metadata, inspect usage, and establish soft limits first. Then enable the property
+on all members and verify the ensemble before adding hard limits to a controlled subtree:
+
+```text
+setquota -n 80000 /apps/example
+setquota -b 83886080 /apps/example
+listquota /apps/example
+setquota -N 100000 /apps/example
+setquota -B 104857600 /apps/example
+```
+
+The path must exist; these values are examples, not production recommendations. Before a rollback,
+remove hard fields with `delquota -N` and `delquota -B` using the new CLI. Preserve the client
+migration during mixed-version rollback.
+Disabling the startup flag requires restarting members; restarting one member is not an
+ensemble-wide disablement.

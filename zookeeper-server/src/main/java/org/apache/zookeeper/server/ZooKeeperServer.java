@@ -45,10 +45,13 @@ import org.apache.zookeeper.Environment;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.KeeperException.SessionExpiredException;
+import org.apache.zookeeper.Quotas;
+import org.apache.zookeeper.StatsTrack;
 import org.apache.zookeeper.Version;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.ZookeeperBanner;
+import org.apache.zookeeper.common.StringUtils;
 import org.apache.zookeeper.common.Time;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
@@ -95,12 +98,14 @@ import org.slf4j.LoggerFactory;
 public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
     protected static final Logger LOG;
+    private static final RateLogger RATE_LOGGER;
 
     public static final String GLOBAL_OUTSTANDING_LIMIT = "zookeeper.globalOutstandingLimit";
 
     public static final String ENABLE_EAGER_ACL_CHECK = "zookeeper.enableEagerACLCheck";
     public static final String SKIP_ACL = "zookeeper.skipACL";
     public static final String SKIP_ACL_DRYRUN = "dryrun";
+    public static final String ENFORCE_QUOTA = "zookeeper.enforceQuota";
     public static final String EPHEMERAL_NODES_TOTAL_BYTE_LIMIT_KEY = "zookeeper.ephemeralNodes.total.byte.limit";
     public static final int DEFAULT_EPHEMERAL_NODES_TOTAL_BYTE_LIMIT = -1;
     private static int ephemeralCountLimit;
@@ -116,6 +121,8 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     // is only logged and the request is allowed. Used to audit the impact of enforcing ACLs.
     static final boolean skipACLDryRun;
 
+    public static final boolean enforceQuota;
+
     public static final String ALLOW_SASL_FAILED_CLIENTS = "zookeeper.allowSaslFailedClients";
     public static final String SESSION_REQUIRE_CLIENT_SASL_AUTH = "zookeeper.sessionRequireClientSASLAuth";
     public static final String SASL_AUTH_SCHEME = "sasl";
@@ -130,6 +137,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
     static {
         LOG = LoggerFactory.getLogger(ZooKeeperServer.class);
+        RATE_LOGGER = new RateLogger(LOG);
 
         ZookeeperBanner.printBanner(LOG);
 
@@ -146,6 +154,11 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         } else if (skipACLDryRun) {
             LOG.info("{}==\"{}\", ACL checks will be evaluated but failures will only be logged, requests will not be rejected",
                     SKIP_ACL, SKIP_ACL_DRYRUN);
+        }
+
+        enforceQuota = Boolean.parseBoolean(System.getProperty(ENFORCE_QUOTA, "false"));
+        if (enforceQuota) {
+            LOG.info("{} = {}, Quota Enforce enables", ENFORCE_QUOTA, enforceQuota);
         }
 
         digestEnabled = Boolean.parseBoolean(System.getProperty(ZOOKEEPER_DIGEST_ENABLED, "true"));
@@ -2062,6 +2075,88 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             return;
         }
         throw new KeeperException.NoAuthException();
+    }
+
+    /**
+     * Check committed quota usage before preparing a create or setData transaction.
+     *
+     * @param path path being modified
+     * @param lastData previous data from the prepared change record
+     * @param data proposed data
+     * @param type create or setData opcode
+     */
+    public void checkQuota(String path, byte[] lastData, byte[] data, int type) throws KeeperException.QuotaExceededException {
+        if (!enforceQuota) {
+            return;
+        }
+        long dataBytes = data == null ? 0 : data.length;
+        String lastPrefix = getZKDatabase().getDataTree().getMaxPrefixWithQuota(path);
+        if (StringUtils.isEmpty(lastPrefix)) {
+            return;
+        }
+        switch (type) {
+        case OpCode.create:
+            checkQuota(lastPrefix, dataBytes, 1);
+            break;
+        case OpCode.setData:
+            checkQuota(lastPrefix, dataBytes - (lastData == null ? 0 : lastData.length), 0);
+            break;
+        default:
+            throw new IllegalArgumentException("Unsupported OpCode for checkQuota: " + type);
+        }
+    }
+
+    private void checkQuota(String lastPrefix, long bytesDiff, long countDiff) throws KeeperException.QuotaExceededException {
+        String limitPath = Quotas.limitPath(lastPrefix);
+        DataNode node = getZKDatabase().getNode(limitPath);
+        if (node == null) {
+            LOG.error("Missing limit node for quota {}", limitPath);
+            return;
+        }
+        StatsTrack limitStats;
+        synchronized (node) {
+            limitStats = new StatsTrack(node.data);
+        }
+        boolean checkCountQuota = countDiff != 0 && (limitStats.getCount() > -1 || limitStats.getCountHardLimit() > -1);
+        boolean checkByteQuota = bytesDiff != 0 && (limitStats.getBytes() > -1 || limitStats.getByteHardLimit() > -1);
+        if (!checkCountQuota && !checkByteQuota) {
+            return;
+        }
+
+        String statPath = Quotas.statPath(lastPrefix);
+        node = getZKDatabase().getNode(statPath);
+        if (node == null) {
+            LOG.error("Missing node for stat {}", statPath);
+            return;
+        }
+        StatsTrack currentStats;
+        synchronized (node) {
+            currentStats = new StatsTrack(node.data);
+        }
+        if (checkCountQuota) {
+            long newCount = currentStats.getCount() + countDiff;
+            boolean hardLimit = limitStats.getCountHardLimit() > -1;
+            long countLimit = hardLimit ? limitStats.getCountHardLimit() : limitStats.getCount();
+            if (newCount > countLimit) {
+                RATE_LOGGER.rateLimitLog("Quota exceeded: " + lastPrefix + " [current count=" + newCount
+                    + ", " + (hardLimit ? "hard" : "soft") + "CountLimit=" + countLimit + "]");
+                if (hardLimit) {
+                    throw new KeeperException.QuotaExceededException(lastPrefix);
+                }
+            }
+        }
+        if (checkByteQuota) {
+            long newBytes = currentStats.getBytes() + bytesDiff;
+            boolean hardLimit = limitStats.getByteHardLimit() > -1;
+            long byteLimit = hardLimit ? limitStats.getByteHardLimit() : limitStats.getBytes();
+            if (newBytes > byteLimit) {
+                RATE_LOGGER.rateLimitLog("Quota exceeded: " + lastPrefix + " [current bytes=" + newBytes
+                    + ", " + (hardLimit ? "hard" : "soft") + "ByteLimit=" + byteLimit + "]");
+                if (hardLimit) {
+                    throw new KeeperException.QuotaExceededException(lastPrefix);
+                }
+            }
+        }
     }
 
     // Formats an id as scheme:user so that credentials (e.g. digest password hashes) are not logged

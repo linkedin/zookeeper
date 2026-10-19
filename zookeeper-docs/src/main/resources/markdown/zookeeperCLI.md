@@ -44,7 +44,7 @@ ZooKeeper -server host:port cmd args
 	create [-s] [-e] [-c] [-t ttl] path [data] [acl]
 	delete [-v version] path
 	deleteall path
-	delquota [-n|-b] path
+	delquota [-n|-b|-N|-B] path
 	get [-s] [-w] path
 	getAcl [-s] path
 	getAllChildrenNumber path
@@ -59,7 +59,7 @@ ZooKeeper -server host:port cmd args
 	removewatches path [-c|-d|-a] [-l]
 	set [-s] [-v version] path data
 	setAcl [-s] [-v version] [-R] path acl
-	setquota -n|-b val path
+	setquota -n|-b|-N|-B val path
 	stat [-w] path
 	sync path
 	version
@@ -182,9 +182,16 @@ zkshell: 1] ls /config
 ```
 
 ## delquota
-Delete the quota under a path
+Delete the quota under a path. Use `-n` or `-b` to unset only the soft count
+or byte limit, or `-N` or `-B` to unset only the corresponding hard limit.
+Other limits and the usage statistics are preserved. An unset limit is
+displayed as `-1`.
+
+Without an option, remove all quota metadata for the path, not the application
+znodes themselves.
 
 ```bash
+[zkshell: 0] delquota -N /quota_test
 [zkshell: 1] delquota /quota_test
 [zkshell: 2] listquota /quota_test
 	absolute path is /zookeeper/quota/quota_test/zookeeper_limits
@@ -280,13 +287,16 @@ Showing the history about the recent 11 commands that you have executed
 ```
 
 ## listquota
-Listing the quota of one path
+List the limits and current usage of a path and its subtree. `count` and
+`bytes` are soft limits; `countHardLimit` and `byteHardLimit` are hard limits.
+`-1` means that a limit is unset. The extra `=` before the semicolon-separated
+fields preserves compatibility with older quota parsers.
 
 ```bash
 [zkshell: 1] listquota /quota_test
 	absolute path is /zookeeper/quota/quota_test/zookeeper_limits
-	Output quota for /quota_test count=2,bytes=-1
-	Output stat for /quota_test count=4,bytes=0
+	Output quota for /quota_test count=2,bytes=5=;byteHardLimit=8;countHardLimit=3
+	Output stat for /quota_test count=1,bytes=0
 ```
 
 ## ls
@@ -479,26 +489,38 @@ Set the Acl permission for one node.
 ```
 
 ## setquota
-Set the quota in one path.
+Set one quota field on an existing path and its subtree:
+
+| Option | Limit | Accepted CLI value |
+| --- | --- | --- |
+| `-n` | Soft znode count | Positive integer, at most 2147483647 |
+| `-b` | Soft data bytes | Nonnegative long, at most 9223372036854775807 |
+| `-N` | Hard znode count | Positive integer, at most 2147483647 |
+| `-B` | Hard data bytes | Nonnegative long, at most 9223372036854775807 |
+
+Counts include the path itself and every descendant. Bytes count their znode
+data, not path names or metadata. Each command changes only its selected field.
+Use `delquota` to unset a field rather than passing `-1` to `setquota`.
+
+Quota checks are enabled on the server with the JVM system property
+`-Dzookeeper.enforceQuota=true` and are disabled by default. When enabled, a
+hard limit takes precedence over the corresponding soft limit: exceeding a hard
+limit rejects the write, while exceeding a soft limit only logs a warning.
+Setting a limit below current usage prints a warning and still saves the limit.
+
+Quotas cannot overlap a parent or child quota, and the CLI does not allow quotas
+under `/zookeeper/quota`.
 
 ```bash
-# -n to limit the number of child nodes(included itself)
-[zkshell: 18] setquota -n 2 /quota_test
-[zkshell: 19] create /quota_test/child_1
-	Created /quota_test/child_1
-[zkshell: 20] create /quota_test/child_2
-	Created /quota_test/child_2
-[zkshell: 21] create /quota_test/child_3
-	Created /quota_test/child_3
-# Notice:don't have a hard constraint,just log the warning info
-	2019-03-07 11:22:36,680 [myid:1] - WARN  [SyncThread:0:DataTree@374] - Quota exceeded: /quota_test count=3 limit=2
-	2019-03-07 11:22:41,861 [myid:1] - WARN  [SyncThread:0:DataTree@374] - Quota exceeded: /quota_test count=4 limit=2
-
-# -b to limit the bytes(data length) of one path
-[zkshell: 22] setquota -b 5 /brokers
-[zkshell: 23] set /brokers "I_love_zookeeper"
-# Notice:don't have a hard constraint,just log the warning info
-	WARN  [CommitProcWorkThread-7:DataTree@379] - Quota exceeded: /brokers bytes=4206 limit=5
+# /quota_test already exists
+[zkshell: 1] setquota -n 2 /quota_test
+[zkshell: 2] setquota -b 5 /quota_test
+[zkshell: 3] setquota -N 3 /quota_test
+[zkshell: 4] setquota -B 8 /quota_test
+[zkshell: 5] listquota /quota_test
+	absolute path is /zookeeper/quota/quota_test/zookeeper_limits
+	Output quota for /quota_test count=2,bytes=5=;byteHardLimit=8;countHardLimit=3
+	Output stat for /quota_test count=1,bytes=0
 ```
 
 ## stat
