@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.zookeeper.common.PathUtils;
 import org.apache.zookeeper.data.Stat;
@@ -352,10 +353,15 @@ public class ZKUtilTest extends ClientBase {
         zk.create("/p", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
         zk.create("/p/a", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
-        // create a new child after the subtree was listed and deleted, right before the final check
+        // deleteChildrenRecursive calls exists("/p", false) twice: once for the large-child warning
+        // before the subtree is listed, and once for the final check. Create the child only before
+        // the final one, so the new child is not picked up by the listing.
+        AtomicInteger existsCalls = new AtomicInteger();
         TestableZooKeeper spied = spy(zk);
         doAnswer(invocation -> {
-            zk.create("/p/late", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+            if (existsCalls.incrementAndGet() == 2) {
+                zk.create("/p/late", "".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+            }
             return invocation.callRealMethod();
         }).when(spied).exists(eq("/p"), eq(false));
 

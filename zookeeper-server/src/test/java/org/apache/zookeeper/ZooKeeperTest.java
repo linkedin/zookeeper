@@ -24,6 +24,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -176,6 +179,37 @@ public class ZooKeeperTest extends ClientBase {
         assertNotNull(zk.exists("/a", null));
         assertEquals(0, zk.getChildren("/a", false).size());
         assertEquals("keep", new String(zk.getData("/a", false, null)));
+    }
+
+    @Test
+    public void testDeleteChildrenOnlyCliFailsWhenChildrenRemain()
+        throws IOException, InterruptedException, KeeperException {
+        final TestableZooKeeper zk = createClient();
+        zk.create("/a", "keep".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/a/b", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        // exists("/a", false) is called once for the large-child warning and once for the final
+        // check; create a child just before the final check so the listing misses it.
+        AtomicInteger existsCalls = new AtomicInteger();
+        TestableZooKeeper spied = spy(zk);
+        doAnswer(invocation -> {
+            if (existsCalls.incrementAndGet() == 2) {
+                zk.create("/a/late", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+            }
+            return invocation.callRealMethod();
+        }).when(spied).exists(eq("/a"), eq(false));
+
+        ZooKeeperMain zkMain = new ZooKeeperMain(spied);
+        zkMain.cl.parseCommand("deleteall /a -c");
+        try {
+            zkMain.processZKCmd(zkMain.cl);
+            fail("expected a CliException so that zkCli exits non-zero");
+        } catch (CliException e) {
+            assertTrue("exit code must be non-zero", e.getExitCode() != 0);
+            assertTrue(e.getMessage().contains("child nodes remain"));
+        }
+
+        assertEquals(1, zk.getChildren("/a", false).size());
     }
 
     @Test

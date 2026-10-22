@@ -119,6 +119,9 @@ public class ZKUtil {
      * to {@code -Xmx256m} ({@code ZK_CLIENT_HEAP} in {@code bin/zkEnv.sh}); raise it if the client
      * runs out of memory. A warning is logged above {@value #LARGE_CHILD_WARN_THRESHOLD} children.
      * <p>
+     * The listing also costs one sequential round trip per node, leaves included, so the time to
+     * drain a node grows with the number of descendants rather than with the data they hold.
+     * <p>
      * If there is an error with deleting one of the sub-nodes in the tree,
      * this operation would abort and would be the responsibility of the app to handle the same.
      * Children created or deleted concurrently with this call can cause it to return false or to
@@ -190,8 +193,8 @@ public class ZKUtil {
 
     }
 
-    // Deletes tree[lastIndex..] leaves first; lastIndex 0 includes the root.
-    private static boolean deleteInBatch(ZooKeeper zk, List<String> tree, int batchSize, int lastIndex)
+    // Deletes tree[minIndex..] leaves first; minIndex 0 includes the root.
+    private static boolean deleteInBatch(ZooKeeper zk, List<String> tree, int batchSize, int minIndex)
         throws InterruptedException {
         int rateLimit = 10;
         List<Op> ops = new ArrayList<>();
@@ -204,11 +207,11 @@ public class ZKUtil {
         };
 
         // Delete the leaves first and eventually get rid of the root
-        for (int i = tree.size() - 1; i >= lastIndex; --i) {
+        for (int i = tree.size() - 1; i >= minIndex; --i) {
             // Create Op to delete all versions of the node with -1.
             ops.add(Op.delete(tree.get(i), -1));
 
-            if (ops.size() == batchSize || i == lastIndex) {
+            if (ops.size() == batchSize || i == minIndex) {
                 if (!context.success.get()) {
                     // fail fast
                     break;
