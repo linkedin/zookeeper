@@ -43,7 +43,7 @@ ZooKeeper -server host:port cmd args
 	connect host:port
 	create [-s] [-e] [-c] [-t ttl] path [data] [acl]
 	delete [-v version] path
-	deleteall path
+	deleteall path [-b batch size] [-c]
 	delquota [-n|-b] path
 	get [-s] [-w] path
 	getAcl [-s] path
@@ -179,6 +179,26 @@ zkshell: 1] ls /config
 [zkshell: 2] deleteall /config
 [zkshell: 3] ls /config
 	Node does not exist: /config
+```
+
+Use `-b <batch size>` to set the delete batch size (default 1000). Use `-c` to delete only the
+descendants and keep the node itself. With `-c` children are listed with pagination, so it also works on
+nodes whose children list exceeds `jute.maxbuffer`; this requires a server that supports paginated
+`getChildren`, and the client must be started with a `jute.maxbuffer` at least as large as the server's,
+since each page is bounded by the server's limit. `-c` is rejected for `/` unless the client is connected
+with a chroot. Quiesce writers to the subtree first: children created or deleted while the command runs
+can make it report that children remain, or abort it part-way. Re-running is safe. If children remain
+when the command finishes, `-c` reports an error and exits non-zero. The subtree is listed in client
+memory before the first delete, at one round trip per node, so draining a node with very many
+descendants needs a larger client heap (`ZK_CLIENT_HEAP`, default `-Xmx256m`) and takes time
+proportional to the number of descendants.
+
+```bash
+zkshell: 1] ls /config/topics
+	[a, b]
+[zkshell: 2] deleteall /config/topics -c
+[zkshell: 3] ls /config/topics
+	[]
 ```
 
 ## delquota
