@@ -46,7 +46,10 @@ jobs:
             args: '-Pfull-build verify -Dtest=_ -DfailIfNoTests=false'
       fail-fast: false
     timeout-minutes: 360
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is migrating to 26.04, whose toolchain and OpenSSL
+    # break the C client build and the cppunit SSL tests. Certifying 26.04 is a
+    # separate effort; until then pin so CI is reproducible.
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v3
     - name: Set up JDK ${{ matrix.profile.jdk }}

@@ -24,7 +24,9 @@ on:
 jobs:
   deploy:
     name: deploy
-    runs-on: ubuntu-latest
+    # Pinned alongside ci.yaml; see the note there. This is the release path,
+    # so an unannounced image change here is worse than in CI.
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK 1.8
