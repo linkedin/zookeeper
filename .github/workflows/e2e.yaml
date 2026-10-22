@@ -29,7 +29,8 @@ jobs:
         zk: [3.5.9, 3.6.3, 3.7.0, nightly]
       fail-fast: false
     timeout-minutes: 360
-    runs-on: ubuntu-latest
+    # Pinned alongside ci.yaml; see the note there.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v3
       - name: Set up JDK ${{ matrix.jdk }}
