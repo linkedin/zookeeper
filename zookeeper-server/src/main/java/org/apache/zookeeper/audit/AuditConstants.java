@@ -18,6 +18,8 @@
 package org.apache.zookeeper.audit;
 
 public final class AuditConstants {
+    public static final String SCHEMA_VERSION = "2";
+
     private AuditConstants() {
         //Utility classes should not have public constructors
     }
