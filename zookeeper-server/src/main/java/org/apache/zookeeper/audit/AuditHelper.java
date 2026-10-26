@@ -153,11 +153,11 @@ public final class AuditHelper {
         List<Op> ops = getMultiOps(request);
         Map<String, String> createModes = AuditHelper.getCreateModes(ops);
         // Request ops and results are positional; skip data lengths if they cannot be paired.
-        boolean pairedOps = ZKAuditProvider.isDataLengthEnabled() && ops.size() == rc.multiResult.size();
+        boolean canLogDataLength = ZKAuditProvider.isDataLengthEnabled() && ops.size() == rc.multiResult.size();
         boolean multiFailed = false;
         for (int i = 0; i < rc.multiResult.size(); i++) {
             ProcessTxnResult subTxnResult = rc.multiResult.get(i);
-            Integer dataLength = pairedOps ? getDataLength(ops.get(i)) : null;
+            Integer dataLength = canLogDataLength ? getDataLength(ops.get(i)) : null;
             switch (subTxnResult.type) {
                 case ZooDefs.OpCode.create:
                 case ZooDefs.OpCode.create2:
