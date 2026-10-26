@@ -88,7 +88,7 @@ public final class AuditEvent {
     }
 
     public enum FieldName {
-        USER, OPERATION, IP, ACL, ZNODE, SESSION, ZNODE_TYPE
+        USER, OPERATION, IP, ACL, ZNODE, SESSION, ZNODE_TYPE, DATA_LENGTH
     }
 
     public enum Result {
