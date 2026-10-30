@@ -18,16 +18,28 @@
 
 package org.apache.zookeeper.server;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import io.netty.channel.Channel;
+import io.netty.handler.ssl.SslHandler;
+import io.netty.util.concurrent.Future;
 import java.net.InetSocketAddress;
+import java.security.cert.Certificate;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLSession;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.PortAssignment;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.common.ClientX509Util;
+import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.metric.SimpleCounter;
 import org.apache.zookeeper.test.ClientBase;
 import org.apache.zookeeper.test.SSLAuthTest;
@@ -167,6 +179,71 @@ public class NettyServerCnxnFactoryTest extends ClientBase {
                 + "after all cnxns established", outstandingHandshakeNum, Matchers.is(0));
     }
 
+    @Test
+    public void testServerAuthProviderNotInvokedBeforeServerIsReady() throws Exception {
+        String authProviderProperty = new ClientX509Util().getSslAuthProviderProperty();
+        String providerClassProperty = ProviderRegistry.AUTHPROVIDER_PROPERTY_PREFIX + CountingServerAuthProvider.SCHEME;
+        System.setProperty(authProviderProperty, CountingServerAuthProvider.SCHEME);
+        System.setProperty(providerClassProperty, CountingServerAuthProvider.class.getName());
+        ProviderRegistry.reset();
+        CountingServerAuthProvider.CALLS.set(0);
+        try {
+            SSLSession session = mock(SSLSession.class);
+            when(session.getPeerCertificates()).thenReturn(new Certificate[0]);
+            SSLEngine engine = mock(SSLEngine.class);
+            when(engine.getNeedClientAuth()).thenReturn(true);
+            when(engine.getSession()).thenReturn(session);
+            SslHandler sslHandler = mock(SslHandler.class);
+            when(sslHandler.engine()).thenReturn(engine);
+            @SuppressWarnings("unchecked")
+            Future<Channel> handshake = mock(Future.class);
+            when(handshake.isSuccess()).thenReturn(true);
+            NettyServerCnxn cnxn = mock(NettyServerCnxn.class);
+
+            // No ZooKeeperServer is attached yet, as on a quorum peer that is still electing/syncing.
+            NettyServerCnxnFactory factory = new NettyServerCnxnFactory();
+            factory.new CertificateVerifier(sslHandler, cnxn).operationComplete(handshake);
+
+            Assert.assertEquals(0, CountingServerAuthProvider.CALLS.get());
+            verify(cnxn).close(ServerCnxn.DisconnectReason.SERVER_NOT_READY);
+            Assert.assertTrue(factory.cnxns.isEmpty());
+        } finally {
+            System.clearProperty(authProviderProperty);
+            System.clearProperty(providerClassProperty);
+            ProviderRegistry.reset();
+        }
+    }
+
+    public static class CountingServerAuthProvider extends ServerAuthenticationProvider {
+        static final String SCHEME = "countingserverauth";
+        static final AtomicInteger CALLS = new AtomicInteger();
+
+        @Override
+        public KeeperException.Code handleAuthentication(ServerObjs serverObjs, byte[] authData) {
+            CALLS.incrementAndGet();
+            return KeeperException.Code.OK;
+        }
+
+        @Override
+        public boolean matches(ServerObjs serverObjs, MatchValues matchValues) {
+            return false;
+        }
+
+        @Override
+        public String getScheme() {
+            return SCHEME;
+        }
+
+        @Override
+        public boolean isAuthenticated() {
+            return true;
+        }
+
+        @Override
+        public boolean isValid(String id) {
+            return true;
+        }
+    }
 
     private final class ClientConnectionWatcher implements Watcher {
 

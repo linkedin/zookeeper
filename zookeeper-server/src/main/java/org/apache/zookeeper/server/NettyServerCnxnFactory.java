@@ -188,6 +188,12 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
 
     }
 
+    private static void incrementAuthFailedCount(ZooKeeperServer zks) {
+        if (zks != null) {
+            zks.serverStats().incrementAuthFailedCount();
+        }
+    }
+
     private void updateHandshakeCountIfStarted(NettyServerCnxn cnxn) {
         if (cnxn != null && cnxn.getHandshakeState() == HandshakeState.STARTED) {
             cnxn.setHandshakeState(HandshakeState.FINISHED);
@@ -447,14 +453,25 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
                         return;
                     }
 
+                    // Snapshot zkServer: a quorum peer attaches/detaches it as it changes role.
+                    final ZooKeeperServer zks = zkServer;
                     KeeperException.Code code = KeeperException.Code.AUTHFAILED;
                     if (authProvider != null) {
                         code = authProvider.handleAuthentication(cnxn, null);
                     } else if (serverAuthProvider != null) {
-                        code = serverAuthProvider.handleAuthentication(new ServerAuthenticationProvider.ServerObjs(zkServer, cnxn), null);
+                        // The listener is accepting connections before a quorum peer has a running server
+                        // (e.g. during startup/leader election). Server auth providers need the server to
+                        // authorize, and the session would be rejected anyway, so close and let the client retry.
+                        if (zks == null) {
+                            LOG.warn("ZooKeeper server not ready, closing TLS connection 0x{} from address '{}'",
+                                Long.toHexString(cnxn.getSessionId()), cnxn.getRemoteSocketAddress());
+                            cnxn.close(ServerCnxn.DisconnectReason.SERVER_NOT_READY);
+                            return;
+                        }
+                        code = serverAuthProvider.handleAuthentication(new ServerAuthenticationProvider.ServerObjs(zks, cnxn), null);
                     }
                     if (KeeperException.Code.OK != code) {
-                        zkServer.serverStats().incrementAuthFailedCount();
+                        incrementAuthFailedCount(zks);
                         LOG.error("Authentication failed for session 0x{} from address '{}'", Long.toHexString(cnxn.getSessionId()), cnxn.getRemoteSocketAddress());
                         cnxn.close(ServerCnxn.DisconnectReason.SASL_AUTH_FAILURE);
                         return;
@@ -465,7 +482,7 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
                 allChannels.add(Objects.requireNonNull(futureChannel));
                 addCnxn(cnxn);
             } else {
-                zkServer.serverStats().incrementAuthFailedCount();
+                incrementAuthFailedCount(zkServer);
                 LOG.error("Unsuccessful handshake with session 0x{} from address '{}'", Long.toHexString(cnxn.getSessionId()), cnxn.getRemoteSocketAddress());
                 cnxn.close(ServerCnxn.DisconnectReason.FAILED_HANDSHAKE);
             }
