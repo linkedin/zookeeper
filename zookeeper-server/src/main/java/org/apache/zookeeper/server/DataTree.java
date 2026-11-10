@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -37,6 +38,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.InputArchive;
@@ -105,6 +107,8 @@ import org.slf4j.LoggerFactory;
 public class DataTree {
 
     private static final Logger LOG = LoggerFactory.getLogger(DataTree.class);
+
+    private static final Pattern QUOTA_VALUE = Pattern.compile("count=-?[0-9]+,bytes=-?[0-9]+");
 
     private final RateLogger RATE_LOGGER = new RateLogger(LOG, 15 * 60 * 1000);
 
@@ -758,6 +762,100 @@ public class DataTree {
         } else {
             return lastPrefix;
         }
+    }
+
+    /**
+     * Samples only the exact namespace's existing quota metadata, without traversing
+     * or updating the tree. The two metadata reads are not an atomic snapshot.
+     *
+     * @param path a validated absolute, non-root, non-reserved namespace path
+     */
+    public QuotaStats getQuotaStats(String path) {
+        DataNode namespace = getNode(path);
+        if (namespace == null) {
+            return new QuotaStats(null, null, "namespace_missing");
+        }
+        String statPath = Quotas.statPath(path);
+        String limitPath = Quotas.quotaPath(path);
+        DataNode statNode = getNode(statPath);
+        DataNode limitNode = getNode(limitPath);
+        if (statNode == null && limitNode == null) {
+            return new QuotaStats(null, null, "quota_missing");
+        }
+        if (statNode == null || limitNode == null) {
+            return new QuotaStats(null, null, "quota_incomplete");
+        }
+        StatsTrack usage = readQuotaMetadata(statNode, 0);
+        StatsTrack limits = readQuotaMetadata(limitNode, -1);
+        if (getNode(path) != namespace || getNode(statPath) != statNode || getNode(limitPath) != limitNode) {
+            return new QuotaStats(null, null, "quota_changed");
+        }
+        if (usage == null) {
+            return new QuotaStats(null, null, "invalid_quota_stats");
+        }
+        if (limits == null) {
+            return new QuotaStats(null, null, "invalid_quota_limits");
+        }
+        return new QuotaStats(usage, limits, null);
+    }
+
+    private static StatsTrack readQuotaMetadata(DataNode node, int minimum) {
+        byte[] data = node.getData();
+        if (data == null) {
+            return null;
+        }
+        String value = new String(data, StandardCharsets.UTF_8);
+        // StatsTrack accepts arbitrary field names; validate the metadata format first.
+        if (!QUOTA_VALUE.matcher(value).matches()) {
+            return null;
+        }
+        try {
+            StatsTrack stats = new StatsTrack(value);
+            return stats.getCount() < minimum || stats.getBytes() < minimum ? null : stats;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * A quota metadata sample; unavailable samples expose no numeric values.
+     */
+    public static final class QuotaStats {
+
+        private final StatsTrack usage;
+        private final StatsTrack limits;
+        private final String reason;
+
+        private QuotaStats(StatsTrack usage, StatsTrack limits, String reason) {
+            this.usage = usage;
+            this.limits = limits;
+            this.reason = reason;
+        }
+
+        public Integer getCountUsed() {
+            return usage == null ? null : usage.getCount();
+        }
+
+        public Long getBytesUsed() {
+            return usage == null ? null : usage.getBytes();
+        }
+
+        public Integer getCountLimit() {
+            return limits == null || limits.getCount() == -1 ? null : limits.getCount();
+        }
+
+        public Long getBytesLimit() {
+            return limits == null || limits.getBytes() == -1 ? null : limits.getBytes();
+        }
+
+        public boolean isAvailable() {
+            return reason == null;
+        }
+
+        public String getReason() {
+            return reason;
+        }
+
     }
 
     public void addWatch(String basePath, Watcher watcher, int mode) {
