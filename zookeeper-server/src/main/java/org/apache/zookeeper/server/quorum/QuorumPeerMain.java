@@ -35,6 +35,7 @@ import org.apache.zookeeper.server.ZKDatabase;
 import org.apache.zookeeper.server.ZooKeeperServerMain;
 import org.apache.zookeeper.server.admin.AdminServer.AdminServerException;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.backup.BackupManager;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog.DatadirException;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig.ConfigException;
@@ -132,6 +133,13 @@ public class QuorumPeerMain {
             config.getSnapRetainCount(),
             config.getPurgeInterval());
         purgeMgr.start();
+
+        if (config.backupEnabled && config.getBackupConfig() != null) {
+            // Backup is enabled and the backup config is not null
+            BackupManager backupManager = new BackupManager(config.dataDir, config.dataLogDir,
+                config.getServerId(), config.getBackupConfig());
+            backupManager.start();
+        }
 
         if (args.length == 1 && config.isDistributed()) {
             runFromConfig(config);
