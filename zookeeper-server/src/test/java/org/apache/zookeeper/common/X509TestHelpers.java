@@ -130,6 +130,12 @@ public class X509TestHelpers {
      */
     public static X509Certificate newCert(
             X509Certificate caCert, KeyPair caKeyPair, X500Name certSubject, PublicKey certPublicKey, long expirationMillis) throws IOException, OperatorCreationException, GeneralSecurityException {
+        return newCert(caCert, caKeyPair, certSubject, certPublicKey, expirationMillis, getLocalhostSubjectAltNames());
+    }
+
+    public static X509Certificate newCert(
+            X509Certificate caCert, KeyPair caKeyPair, X500Name certSubject, PublicKey certPublicKey,
+            long expirationMillis, GeneralNames subjectAltNames) throws IOException, OperatorCreationException, GeneralSecurityException {
         if (!caKeyPair.getPublic().equals(caCert.getPublicKey())) {
             throw new IllegalArgumentException("CA private key does not match the public key in the CA cert");
         }
@@ -142,7 +148,7 @@ public class X509TestHelpers {
                                                                             | KeyUsage.keyEncipherment));
         builder.addExtension(Extension.extendedKeyUsage, true, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth}));
 
-        builder.addExtension(Extension.subjectAlternativeName, false, getLocalhostSubjectAltNames());
+        builder.addExtension(Extension.subjectAlternativeName, false, subjectAltNames);
         return buildAndSignCertificate(caKeyPair.getPrivate(), builder);
     }
 
