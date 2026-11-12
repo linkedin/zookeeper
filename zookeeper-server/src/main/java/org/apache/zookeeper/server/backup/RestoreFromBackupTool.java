@@ -569,7 +569,9 @@ public class RestoreFromBackupTool {
 
     Range<Long> fullRange = oldestLog.getRange().span(newestLog.getRange());
 
-    if (fullRange.lowerEndpoint() > snap.getRange().lowerEndpoint()) {
+    // The empty initial snapshot has zxid 0, but transaction logs start at zxid 1.
+    long firstRequiredZxid = Math.max(1, snap.getRange().lowerEndpoint());
+    if (fullRange.lowerEndpoint() > firstRequiredZxid) {
       LOG.error("Could not find logs to make snap '" + snap.getBackedUpFile()
           + "' valid. Logs start at zxid " + ZxidUtils.zxidToString(fullRange.lowerEndpoint())
           + ".");

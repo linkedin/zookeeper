@@ -18,6 +18,7 @@
 
 package org.apache.zookeeper.server.backup;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 import java.io.File;
 import java.io.FilenameFilter;
@@ -26,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -135,7 +137,7 @@ public class RestorationToolTest extends ZKTestCase {
         zks.getTxnLogFactory().rollLog();
         backupManager.getLogBackup().run(1);
       }
-      if (getRandomBoolean(0.2f)) {
+      if (i == 1 || getRandomBoolean(0.2f)) {
         zks.takeSnapshot();
       }
       // Record a timestamp that's in the valid backup timestamp range, used to test restoration to timestamp
@@ -182,7 +184,7 @@ public class RestorationToolTest extends ZKTestCase {
   @Test
   public void testSuccessfulRestorationToZxid() throws IOException, InterruptedException {
     for (int i = 0; i < 5; i++) {
-      int restoreZxid = random.nextInt(txnCnt);
+      int restoreZxid = i == 0 ? 1 : 1 + random.nextInt(txnCnt);
       File restoreTempDir = ClientBase.createTmpDir();
       RestoreFromBackupTool restoreTool =
           new RestoreFromBackupTool(backupStorage, restoreSnapLog, restoreZxid, false,
@@ -202,6 +204,20 @@ public class RestorationToolTest extends ZKTestCase {
         }
       });
     }
+  }
+
+  @Test
+  public void testInitialSnapshotRejectsMissingFirstTransaction() throws IOException {
+    BackupStorageProvider storage = Mockito.mock(BackupStorageProvider.class);
+    when(storage.getBackupFileInfos(null, Util.SNAP_PREFIX))
+        .thenReturn(Collections.singletonList(new BackupFileInfo(new File("snapshot.0-1"), 0, 0)));
+    when(storage.getBackupFileInfos(null, Util.TXLOG_PREFIX))
+        .thenReturn(Collections.singletonList(new BackupFileInfo(new File("log.2-3"), 0, 0)));
+    when(storage.getBackupFileInfos(null, BackupUtil.LOST_LOG_PREFIX))
+        .thenReturn(Collections.emptyList());
+    RestoreFromBackupTool tool =
+        new RestoreFromBackupTool(storage, restoreSnapLog, 3, true, restoreTempDir);
+    assertThrows(IllegalArgumentException.class, tool::run);
   }
 
   @Test
@@ -303,7 +319,7 @@ public class RestorationToolTest extends ZKTestCase {
       }
     }
 
-    for (int i = (int) snapZxidRange.getLow(); i <= restoreZxid; i++) {
+    for (int i = Math.max(1, (int) snapZxidRange.getLow()); i <= restoreZxid; i++) {
       Assert.assertTrue("Zxid " + Long.toHexString(i) + " is not covered in the restoration.",
           coveredZxid[i]);
     }
@@ -316,7 +332,7 @@ public class RestorationToolTest extends ZKTestCase {
   @Test
   public void testRestoreToZxidByCommandLine() throws IOException {
     //Restore to a random zxid
-    int restoreZxid = random.nextInt(txnCnt);
+    int restoreZxid = 1 + random.nextInt(txnCnt);
     RestoreFromBackupTool restoreTool = new RestoreFromBackupTool();
     CommandLine cl = Mockito.mock(CommandLine.class);
     when(cl.hasOption(RestoreCommand.OptionShortForm.RESTORE_ZXID)).thenReturn(true);
