@@ -23,9 +23,9 @@ name: CI
 
 on:
   push:
-    branches: [ '*' ]
+    branches: [ '**' ]
   pull_request:
-    branches: [ '*' ]
+    branches: [ '**' ]
 
 jobs:
   mvn:
@@ -46,7 +46,7 @@ jobs:
             args: '-Pfull-build verify -Dtest=_ -DfailIfNoTests=false'
       fail-fast: false
     timeout-minutes: 360
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
     - name: Set up JDK ${{ matrix.profile.jdk }}
@@ -57,6 +57,8 @@ jobs:
         cache: 'maven'
     - name: Show the first log message
       run: git log -n1
+    - name: Check LinkedIn build configuration
+      run: python3 tools/ci/test_fork_build.py
     - name: Install C Dependencies
       run: |
         sudo apt update

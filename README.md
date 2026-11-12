@@ -44,6 +44,26 @@ is voted on and approved by the Apache ZooKeeper PMC:
 If you are going to compile with Java 1.8, you should use a
 recent release at u211 or above.
 
+## LinkedIn fork builds
+
+This fork builds Maven artifacts under `com.linkedin.zookeeper`. Java package
+names remain `org.apache.zookeeper`. The binary assembly keeps the
+`apache-zookeeper-[version]-bin.tar.gz` layout expected by the launch scripts.
+
+Run `python3 tools/ci/test_fork_build.py` to check the fork's Maven coordinates
+and release-version validation. Build locally with `mvn clean verify`; this does
+not publish artifacts. The upstream dependency versions and test suites are
+retained.
+
+Publishing uses `.github/workflows/ci-jfrog-workflow.yml` on a published,
+non-prerelease GitHub release in `linkedin/zookeeper`. The tag must be the
+checked-out base version followed by a positive LinkedIn release number
+(for example, `3.8.8-1`). The version script updates reactor versions using
+Maven, rather than replacing dependency versions with text substitution.
+The workflow uses the existing `MVN_DEPLOY_JFROG_USER` and
+`MVN_DEPLOY_JFROG_KEY` repository secrets. Ordinary pushes and pull requests
+do not publish artifacts.
+
 # Contributing
 We always welcome new contributors to the project! See [How to Contribute](https://cwiki.apache.org/confluence/display/ZOOKEEPER/HowToContribute) for details on how to submit patches as pull requests and other aspects of our contribution workflow.
 
