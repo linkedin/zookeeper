@@ -640,6 +640,17 @@ public class Learner {
                 case Leader.COMMIT:
                 case Leader.COMMITANDACTIVATE:
                     pif = packetsNotCommitted.peekFirst();
+                    if (pif == null) {
+                        // ZOOKEEPER-4394: NEWLEADER logs and clears packetsNotCommitted, so the COMMIT of a
+                        // proposal that was still in flight can arrive with nothing queued. The proposal is already
+                        // logged, so only record the commit. Failing here makes the follower sync again and append
+                        // the same DIFF txns to its txn log a second time.
+                        if (writeToTxnLog && qp.getType() == Leader.COMMIT) {
+                            packetsCommitted.add(qp.getZxid());
+                            break;
+                        }
+                        throw new Exception("Got " + LearnerHandler.packetToString(qp) + " with no proposal to commit");
+                    }
                     if (pif.hdr.getZxid() == qp.getZxid() && qp.getType() == Leader.COMMITANDACTIVATE) {
                         QuorumVerifier qv = self.configFromString(new String(((SetDataTxn) pif.rec).getData()));
                         boolean majorChange = self.processReconfig(
