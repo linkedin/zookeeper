@@ -33,6 +33,8 @@
 FQDN=`hostname -f`
 FQDN=${1:-$FQDN}
 FQDN=${FQDN:-"zookeeper.apache.org"}
+# X.509 common names are limited to 64 characters, including on long-name CI hosts.
+FQDN=${FQDN:0:64}
 
 # Generate the root key
 openssl genrsa -out rootkey.pem 2048

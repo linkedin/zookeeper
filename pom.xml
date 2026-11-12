@@ -27,13 +27,15 @@
     <relativePath />
     <!-- no parent resolution -->
   </parent>
-  <groupId>org.apache.zookeeper</groupId>
+  <groupId>com.linkedin.zookeeper</groupId>
   <artifactId>parent</artifactId>
   <packaging>pom</packaging>
   <!-- to change version: mvn -B release:update-versions -DdevelopmentVersion=3.6.0-SNAPSHOT -->
   <version>3.8.8</version>
   <name>Apache ZooKeeper</name>
   <description>
+    This ZooKeeper artifact is maintained by LinkedIn.
+
     ZooKeeper is a centralized service for maintaining configuration information, naming,
     providing distributed synchronization, and providing group services. All of these kinds
     of services are used in some form or another by distributed applications. Each time they
@@ -68,18 +70,18 @@
   </modules>
 
   <scm>
-    <connection>scm:git:https://gitbox.apache.org/repos/asf/zookeeper.git</connection>
-    <developerConnection>scm:git:https://gitbox.apache.org/repos/asf/zookeeper.git</developerConnection>
-    <url>https://gitbox.apache.org/repos/asf/zookeeper.git</url>
+    <connection>scm:git:https://github.com/linkedin/zookeeper.git</connection>
+    <developerConnection>scm:git:https://github.com/linkedin/zookeeper.git</developerConnection>
+    <url>https://github.com/linkedin/zookeeper</url>
     <tag>release-3.8.8-1</tag>
   </scm>
   <issueManagement>
-    <system>JIRA</system>
-    <url>http://issues.apache.org/jira/browse/ZOOKEEPER</url>
+    <system>GitHub Issues</system>
+    <url>https://github.com/linkedin/zookeeper/issues</url>
   </issueManagement>
   <ciManagement>
-    <system>jenkins</system>
-    <url>https://ci-hadoop.apache.org/view/ZooKeeper/</url>
+    <system>GitHub Actions</system>
+    <url>https://github.com/linkedin/zookeeper/actions</url>
   </ciManagement>
   <mailingLists>
     <mailingList>
@@ -1162,4 +1164,16 @@
     </plugins>
   </reporting>
 
+  <distributionManagement>
+    <repository>
+      <id>jfrog-linkedin</id>
+      <name>LinkedIn ZooKeeper releases</name>
+      <url>https://linkedin.jfrog.io/artifactory/zookeeper</url>
+    </repository>
+    <snapshotRepository>
+      <id>jfrog-linkedin</id>
+      <name>LinkedIn ZooKeeper snapshots</name>
+      <url>https://linkedin.jfrog.io/artifactory/zookeeper</url>
+    </snapshotRepository>
+  </distributionManagement>
 </project>
