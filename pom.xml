@@ -1170,10 +1170,5 @@
       <name>LinkedIn ZooKeeper releases</name>
       <url>https://linkedin.jfrog.io/artifactory/zookeeper</url>
     </repository>
-    <snapshotRepository>
-      <id>jfrog-linkedin</id>
-      <name>LinkedIn ZooKeeper snapshots</name>
-      <url>https://linkedin.jfrog.io/artifactory/zookeeper</url>
-    </snapshotRepository>
   </distributionManagement>
 </project>

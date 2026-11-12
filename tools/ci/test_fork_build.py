@@ -59,14 +59,14 @@ class ForkBuildTest(unittest.TestCase):
         for artifact in ("zookeeper-client", "zookeeper-docs", "zookeeper-recipes"):
             self.assertIn("<exclude>{}:{}</exclude>".format(GROUP, artifact), assembly)
 
-    def test_deploy_destinations(self):
+    def test_release_deploy_destination(self):
         pom = ET.parse(ROOT / "pom.xml")
-        for kind in ("repository", "snapshotRepository"):
-            repository = pom.find("m:distributionManagement/m:" + kind, NS)
-            self.assertIsNotNone(repository)
-            self.assertEqual(repository.findtext("m:id", namespaces=NS), "jfrog-linkedin")
-            self.assertEqual(repository.findtext("m:url", namespaces=NS),
-                             "https://linkedin.jfrog.io/artifactory/zookeeper")
+        repository = pom.find("m:distributionManagement/m:repository", NS)
+        self.assertIsNotNone(repository)
+        self.assertEqual(repository.findtext("m:id", namespaces=NS), "jfrog-linkedin")
+        self.assertEqual(repository.findtext("m:url", namespaces=NS),
+                         "https://linkedin.jfrog.io/artifactory/zookeeper")
+        self.assertIsNone(pom.find("m:distributionManagement/m:snapshotRepository", NS))
 
     def invoke_version_script(self, arguments, group=GROUP):
         with tempfile.TemporaryDirectory() as directory:
