@@ -823,6 +823,93 @@ public class Zab1_0Test extends ZKTestCase {
     }
 
     /**
+     * ZOOKEEPER-4394: the COMMIT of a proposal that was still in flight when the leader sent NEWLEADER arrives after
+     * NEWLEADER. The follower has to record the commit instead of failing the sync with a NullPointerException.
+     */
+    @Test
+    public void testFollowerRunWithCommitAfterNewLeader() throws Exception {
+        testFollowerConversation(new FollowerConversation() {
+            @Override
+            public void converseWithFollower(InputArchive ia, OutputArchive oa, Follower f) throws Exception {
+                File logDir = f.fzk.getTxnLogFactory().getDataDir().getParentFile();
+                File snapDir = f.fzk.getTxnLogFactory().getSnapDir().getParentFile();
+
+                QuorumPacket qp = new QuorumPacket();
+                readPacketSkippingPing(ia, qp);
+                assertEquals(Leader.FOLLOWERINFO, qp.getType());
+
+                qp.setType(Leader.LEADERINFO);
+                qp.setZxid(ZxidUtils.makeZxid(1, 0));
+                byte[] protoBytes = new byte[4];
+                ByteBuffer.wrap(protoBytes).putInt(0x10000);
+                qp.setData(protoBytes);
+                oa.writeRecord(qp, null);
+
+                readPacketSkippingPing(ia, qp);
+                assertEquals(Leader.ACKEPOCH, qp.getType());
+
+                // The proposal is sent before NEWLEADER and its COMMIT after it.
+                final long createSessionZxid = ZxidUtils.makeZxid(1, 2);
+                qp.setType(Leader.DIFF);
+                qp.setData(new byte[0]);
+                qp.setZxid(ZxidUtils.makeZxid(1, 1));
+                oa.writeRecord(qp, null);
+                proposeNewSession(qp, createSessionZxid);
+                oa.writeRecord(qp, null);
+                qp.setType(Leader.NEWLEADER);
+                qp.setZxid(ZxidUtils.makeZxid(1, 0));
+                qp.setData(null);
+                oa.writeRecord(qp, null);
+                qp.setType(Leader.COMMIT);
+                qp.setZxid(createSessionZxid);
+                oa.writeRecord(qp, null);
+                qp.setType(Leader.UPTODATE);
+                qp.setZxid(0);
+                oa.writeRecord(qp, null);
+
+                // A dropped connection fails these reads. The follower may also ack the proposal.
+                int syncAcks = 0;
+                for (int i = 0; i < 10 && syncAcks < 2; i++) {
+                    readPacketSkippingPing(ia, qp);
+                    assertEquals(Leader.ACK, qp.getType());
+                    if (qp.getZxid() == ZxidUtils.makeZxid(1, 0)) {
+                        syncAcks++;
+                    }
+                }
+                assertEquals(2, syncAcks);
+                assertEquals(1, f.self.getCurrentEpoch());
+
+                long deadline = System.currentTimeMillis() + 5000;
+                while (createSessionZxid != f.fzk.getLastProcessedZxid() && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(10);
+                }
+                assertEquals(createSessionZxid, f.fzk.getLastProcessedZxid());
+
+                ZKDatabase zkDb = new ZKDatabase(new FileTxnSnapLog(logDir, snapDir));
+                deadline = System.currentTimeMillis() + 5000;
+                zkDb.loadDataBase();
+                while (zkDb.getSessionWithTimeOuts().isEmpty() && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(10);
+                    zkDb.loadDataBase();
+                }
+                assertNotNull(zkDb.getSessionWithTimeOuts().get(4L));
+            }
+
+            private void proposeNewSession(QuorumPacket qp, long zxid) throws IOException {
+                qp.setType(Leader.PROPOSAL);
+                qp.setZxid(zxid);
+                TxnHeader hdr = new TxnHeader(4, 1414, qp.getZxid(), 55, ZooDefs.OpCode.createSession);
+                CreateSessionTxn cst = new CreateSessionTxn(30000);
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                OutputArchive boa = BinaryOutputArchive.getArchive(baos);
+                boa.writeRecord(hdr, null);
+                boa.writeRecord(cst, null);
+                qp.setData(baos.toByteArray());
+            }
+        });
+    }
+
+    /**
      * Test that leader election skips snapshot in loadData() when
      * skipLeaderStartupSnapshot is enabled. This verifies the fix for
      * ZOOKEEPER-4766: leader election time should not scale with tree size.
