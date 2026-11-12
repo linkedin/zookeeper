@@ -44,6 +44,38 @@ is voted on and approved by the Apache ZooKeeper PMC:
 If you are going to compile with Java 1.8, you should use a
 recent release at u211 or above.
 
+## LinkedIn fork builds
+
+This fork builds Maven artifacts under `com.linkedin.zookeeper`. Java package
+names remain `org.apache.zookeeper`. The binary assembly keeps the
+`apache-zookeeper-[version]-bin.tar.gz` layout expected by the launch scripts.
+
+Run `python3 tools/ci/test_fork_build.py` to check the fork's Maven coordinates
+and release-version updates (requires GNU sed, as on the Ubuntu CI runners).
+Build locally with `mvn clean verify`; this does
+not publish artifacts. The upstream dependency versions and test suites are
+retained.
+
+Publishing uses `.github/workflows/ci-jfrog-workflow.yml` on a published GitHub
+release in `linkedin/zookeeper`, including prereleases, with Zulu Java 8.
+The release script retains the `branch-3.6` text-substitution behavior. From the
+repository root, pass the new version alone to infer the old version from
+`pom.xml`, or pass both the old and new versions:
+
+```sh
+sh .github/workflows/version-upgrade.sh 3.8.7-1
+# Alternatively, specify the old version explicitly:
+sh .github/workflows/version-upgrade.sh 3.8.7 3.8.7-1
+```
+
+These are alternative invocations, not successive steps. The script uses GNU
+`sed` to replace matching text in all `pom.xml` files, as in `branch-3.6`.
+The workflow uses the existing `MVN_DEPLOY_JFROG_USER` and
+`MVN_DEPLOY_JFROG_KEY` repository secrets. Its active `artifactory` settings
+profile resolves dependencies and plugins through the LinkedIn JFrog
+`open-source` repository. Ordinary pushes and pull requests do not publish
+artifacts.
+
 # Contributing
 We always welcome new contributors to the project! See [How to Contribute](https://cwiki.apache.org/confluence/display/ZOOKEEPER/HowToContribute) for details on how to submit patches as pull requests and other aspects of our contribution workflow.
 
