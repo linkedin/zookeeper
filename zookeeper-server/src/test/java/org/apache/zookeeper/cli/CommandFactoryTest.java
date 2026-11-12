@@ -18,6 +18,8 @@
 
 package org.apache.zookeeper.cli;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
@@ -34,5 +36,21 @@ public class CommandFactoryTest {
         CliCommand cliCommand =
                 CommandFactory.getInstance(CommandFactory.Command.CREATE);
         assertTrue(cliCommand instanceof CreateCommand);
+    }
+
+    @Test
+    public void testRestoreCommandRegistrationAndMissingArguments() {
+        CliCommand command = CommandFactory.getInstance(CommandFactory.Command.RESTORE);
+        assertTrue(command instanceof RestoreCommand);
+        assertThrows(CliParseException.class, () -> command.parse(new String[]{"restore"}));
+        assertThrows(CliParseException.class,
+            () -> command.parse(new String[]{"restore", "--unknown-option"}));
+    }
+
+    @Test
+    public void testRestoreInvalidStorageReturnsFailure() throws CliException {
+        CliCommand command = CommandFactory.getInstance(CommandFactory.Command.RESTORE);
+        command.parse(new String[]{"restore", "-z", "latest", "-b", "invalid"});
+        assertFalse(command.exec());
     }
 }

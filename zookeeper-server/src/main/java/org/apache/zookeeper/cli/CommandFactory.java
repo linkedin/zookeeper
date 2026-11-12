@@ -33,6 +33,7 @@ public class CommandFactory {
         CREATE(CreateCommand::new),
         DELETE(DeleteCommand::new),
         DELETE_ALL(DeleteAllCommand::new),
+        RESTORE(RestoreCommand::new),
         SET(SetCommand::new),
         GET(GetCommand::new),
         LS(LsCommand::new),
