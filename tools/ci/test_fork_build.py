@@ -19,6 +19,7 @@
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -68,43 +69,61 @@ class ForkBuildTest(unittest.TestCase):
                          "https://linkedin.jfrog.io/artifactory/zookeeper")
         self.assertIsNone(pom.find("m:distributionManagement/m:snapshotRepository", NS))
 
-    def invoke_version_script(self, arguments, group=GROUP):
+    def test_jfrog_resolution_profile(self):
+        ns = {"s": "http://maven.apache.org/SETTINGS/1.1.0"}
+        settings = ET.parse(ROOT / ".github/workflows/settings.xml")
+        active = settings.findall("s:activeProfiles/s:activeProfile", ns)
+        self.assertIn("artifactory", [profile.text for profile in active])
+        profiles = settings.findall("s:profiles/s:profile", ns)
+        profile = next(p for p in profiles if p.findtext("s:id", namespaces=ns) == "artifactory")
+        for path in ("s:repositories/s:repository", "s:pluginRepositories/s:pluginRepository"):
+            repository = profile.find(path, ns)
+            self.assertIsNotNone(repository)
+            self.assertEqual(repository.findtext("s:id", namespaces=ns), "jfrog-linkedin")
+            self.assertEqual(repository.findtext("s:url", namespaces=ns),
+                             "https://linkedin.jfrog.io/artifactory/open-source")
+            self.assertEqual(repository.findtext("s:snapshots/s:enabled", namespaces=ns), "false")
+
+    def invoke_version_script(self, arguments, expected_version):
+        sed = shutil.which("gsed") or shutil.which("sed")
+        self.assertIsNotNone(sed, "GNU sed is required for the branch-3.6 release script")
+        probe = subprocess.run([sed, "--version"], text=True, capture_output=True)
+        self.assertIn("GNU sed", probe.stdout, "Run on Linux or put GNU sed on PATH")
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
-            (work / "pom.xml").write_text(
-                '<project xmlns="{}"><groupId>{}</groupId><version>3.8.8</version></project>'.format(
-                    NS["m"], group))
-            executable = work / "mvn"
-            executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > maven-arguments.txt\n')
-            executable.chmod(0o755)
+            (work / "sed").symlink_to(sed)
+            (work / "module").mkdir()
+            fixture = (
+                '<project xmlns="{}">\n'
+                '  <groupId>{}</groupId>\n'
+                '  <artifactId>fixture</artifactId>\n'
+                '  <version>3.8.7</version>\n'
+                '  <properties><external.version>1.2.3</external.version></properties>\n'
+                '</project>\n'
+            ).format(NS["m"], GROUP)
+            for path in ("pom.xml", "module/pom.xml"):
+                (work / path).write_text(fixture)
             env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ["PATH"])
             result = subprocess.run(
                 ["sh", str(ROOT / ".github/workflows/version-upgrade.sh")] + arguments,
                 cwd=work, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            log = work / "maven-arguments.txt"
-            return result, log.read_text().splitlines() if log.exists() else None
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, "")
+            for path in ("pom.xml", "module/pom.xml"):
+                pom = ET.parse(work / path)
+                self.assertEqual(pom.findtext("m:version", namespaces=NS), expected_version, path)
+                self.assertEqual(pom.findtext("m:properties/m:external.version", namespaces=NS), "1.2.3")
 
-    def test_valid_release_uses_maven_versioning(self):
-        result, arguments = self.invoke_version_script(["3.8.8-12"])
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(arguments, [
-            "-B", "-ntp", "org.codehaus.mojo:versions-maven-plugin:2.16.2:set",
-            "-DnewVersion=3.8.8-12", "-DprocessAllModules=true", "-DgenerateBackupPoms=false"])
+    def test_release_version_inferred_from_pom(self):
+        self.invoke_version_script(["3.8.7-12"], "3.8.7-12")
 
-    def test_invalid_release_is_rejected_before_maven(self):
-        for arguments in ([], ["3.8.8-1", "extra"], ["3.8.7-1"], ["3.8.8"],
-                          ["3.8.8-0"], ["3.8.8-01"], ["3.8.8-SNAPSHOT"],
-                          ["3.8.8-1\n"], ["3.8.8-1;echo unexpected"], ["../3.8.8-1"]):
-            with self.subTest(arguments=arguments):
-                result, invoked = self.invoke_version_script(arguments)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIsNone(invoked)
-                self.assertTrue(result.stderr)
+    def test_release_version_explicit_old_and_new(self):
+        self.invoke_version_script(["3.8.7", "3.8.7-12"], "3.8.7-12")
 
-    def test_apache_coordinates_are_not_published(self):
-        result, invoked = self.invoke_version_script(["3.8.8-1"], "org.apache.zookeeper")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIsNone(invoked)
+    def test_legacy_version_names_are_not_restricted(self):
+        for version in ("3.8.7-rc1", "3.8.7-SNAPSHOT", "3.8.7"):
+            with self.subTest(version=version):
+                self.invoke_version_script([version], version)
 
 
 if __name__ == "__main__":

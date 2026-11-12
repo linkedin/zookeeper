@@ -1,5 +1,6 @@
 #!/bin/sh
 
+#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -16,28 +17,36 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+#
 
-set -eu
+# Enable below when using locally/manually
+# cd ../../
 
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 <base-version>-<positive-release-number> (run from repository root)" >&2
-    exit 1
+echo There are $# arguments to $0: $*
+if [ "$#" -eq 2 ]; then
+  version=$1
+  new_version=$2
+else
+  version=`grep -A 4 "<groupId>com.linkedin.zookeeper</groupId>" pom.xml | grep "<version>" | awk 'BEGIN {FS="[<,>]"};{print $3}'`
+
+# just use the given version as the new version
+  new_version=$1
+
+# Below version upgrade logic is left here just in case
+
+#  minor_version=`echo $version | cut -d'.' -f3`
+#  major_version=`echo $version | cut -d'.' -f1` # should be 0
+#  submajor_version=`echo $version | cut -d'.' -f2`
+
+#  new_minor_version=`expr $minor_version + 1`
+#  new_version=`echo $version | sed -e "s/${minor_version}/${new_minor_version}/g"`
+#  new_version="$major_version.$submajor_version.$new_minor_version"
 fi
+echo "bump up: $version -> $new_version"
 
-python3 - "$1" <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-
-ns = {"m": "http://maven.apache.org/POM/4.0.0"}
-pom = ET.parse("pom.xml").getroot()
-base = pom.findtext("m:version", namespaces=ns)
-group = pom.findtext("m:groupId", namespaces=ns)
-if group != "com.linkedin.zookeeper":
-    sys.exit("Refusing to version a non-LinkedIn reactor")
-if base is None or re.fullmatch(re.escape(base) + r"-[1-9][0-9]*", sys.argv[1]) is None:
-    sys.exit("Release tag must match the checked-out base version: {}-<positive-release-number>".format(base))
-PY
-
-exec mvn -B -ntp org.codehaus.mojo:versions-maven-plugin:2.16.2:set \
-    "-DnewVersion=$1" -DprocessAllModules=true -DgenerateBackupPoms=false
+for MODULE in $(find . -name 'pom.xml')
+do
+  echo "bump up $MODULE"
+  sed -i "s/${version}/${new_version}/g" $MODULE
+  grep -C 1 "$new_version" $MODULE
+done

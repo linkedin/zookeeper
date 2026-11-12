@@ -27,4 +27,32 @@
       <password>${env.MVN_DEPLOY_JFROG_KEY}</password>
     </server>
   </servers>
+  <profiles>
+    <profile>
+      <repositories>
+        <repository>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+          <id>jfrog-linkedin</id>
+          <name>jfrog</name>
+          <url>https://linkedin.jfrog.io/artifactory/open-source</url>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+          <id>jfrog-linkedin</id>
+          <name>jfrog-plugins</name>
+          <url>https://linkedin.jfrog.io/artifactory/open-source</url>
+        </pluginRepository>
+      </pluginRepositories>
+      <id>artifactory</id>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>artifactory</activeProfile>
+  </activeProfiles>
 </settings>
