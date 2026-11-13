@@ -1578,6 +1578,65 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     Then set this property **zookeeper.ssl.authProvider=[scheme]** and that provider
     will be used for secure authentication.
 
+##### LinkedIn X509 znode-group ACL support
+
+The optional group provider maps an authenticated certificate identity to domains
+stored under `/zookeeper/uri-domain-map/<domain>/<clientId>`. Each client ID is
+one znode name; lookup is exact, and a client can belong to multiple domains.
+The server does **not** create this mapping root. An absent root is supported:
+clients initially receive their certificate identity, and a persistent recursive
+watch updates connected clients when operators create, change or remove mappings.
+Updates cover both secure and unified-port TLS connections.
+
+Configure the provider in `zoo.cfg`:
+
+```
+authProvider.x509=org.apache.zookeeper.server.auth.znode.groupacl.X509ZNodeGroupAclProvider
+ssl.x509.clientCertIdType=SAN
+ssl.x509.clientCertIdSanMatchType=6
+ssl.x509.clientCertIdSanMatchRegex=^urn:example:
+```
+
+Use the usual TLS key/trust store settings and leave `ssl.authProvider` unset;
+that separate setting selects an X509 provider supplying custom TLS managers.
+The group provider uses the configured stores, including password-file settings,
+and does not change hostname verification, reverse DNS or FIPS policy.
+
+The following names are `zoo.cfg` keys; Java system properties add `zookeeper.`.
+SAN selection also works with the ordinary X509 provider.
+
+| Key | Default / meaning |
+| --- | --- |
+| `ssl.x509.clientCertIdType` | Subject DN; `SAN` selects a subject alternative name. |
+| `ssl.x509.clientCertIdSanMatchType` | Unset; SAN type 0–8, for example 6 for URI. |
+| `ssl.x509.clientCertIdSanMatchRegex` | `.*`; must select exactly one SAN of the configured type. |
+| `ssl.x509.clientCertIdSanExtractRegex` | `.*`; extracts from that SAN using a regex match. |
+| `ssl.x509.clientCertIdSanExtractMatcherGroupIndex` | `0`; regex capture group to use as the identity. |
+| `X509ZNodeGroupAclProvider.setX509ClientIdAsAcl` | `false`; replace supplied ACLs with authenticated domain/client IDs, each with ALL permissions. |
+| `X509ZNodeGroupAclProvider.allowedClientIdAsAclDomains` | Empty; comma-separated IDs to use for automatic ACLs when the global switch is off. |
+| `X509ZNodeGroupAclProvider.superUserId` | Empty; comma-separated certificate identities with unrestricted access and permission to choose ACLs. |
+| `X509ZNodeGroupAclProvider.crossDomainAccessDomainName` | Empty; comma-separated domains with cross-domain access. Automatic ACLs for their writes use `x509:<domain>`. |
+| `X509ZNodeGroupAclProvider.openReadAccessPathPrefix` | Empty; comma-separated literal path prefixes receiving `world:anyone` READ permission when automatic ACL replacement applies. |
+| `X509ZNodeGroupAclProvider.storeAuthedClientId` | `false`; retain the certificate ID alongside mapped domains on non-dedicated servers. |
+| `X509ZNodeGroupAclProvider.dedicatedDomain` | Unset; restrict TLS connections to one domain instead of applying automatic group ACLs. |
+| `X509ZNodeGroupAclProvider.enforceDedicatedDomain` | `true`; when false, log a domain mismatch without disconnecting it. |
+
+Unsuccessful SAN selection falls back to Subject DN. Unknown but trusted clients
+receive `x509:<clientId>` rather than a mapped domain. Explicit creator ACLs expand
+the authenticated identities normally; no SPIFFE or legacy-identity translation
+is performed. Automatic ACL replacement applies to both create and setACL, not
+just creation. Explicit superusers, plaintext clients and dedicated-domain mode
+retain ordinary ACL handling. Cross-domain users and explicit superusers are
+exempt from dedicated-domain connection filtering.
+
+Treat mapping writes as privilege changes: bootstrap the root deliberately and
+protect its subtree's ACLs against unauthorized create/delete operations. The
+feature does not secure plaintext listeners or make existing znodes private.
+READ/watch checks and existing ACLs remain enforced. Configure the same policy
+on every server before startup; configuration is cached, whereas mapping znodes
+are watched dynamically. Enabling automatic ACLs or dedicated-domain enforcement
+is an intentional access-policy change and should be qualified before rollout.
+
 * *zookeeper.ensembleAuthName* :
     (Java system property only: **zookeeper.ensembleAuthName**)
     **New in 3.6.0:**

@@ -191,7 +191,7 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
      * @return Identifier string to be associated with the client.
      */
     protected String getClientId(X509Certificate clientCert) {
-        return clientCert.getSubjectX500Principal().getName();
+        return X509AuthenticationUtil.getClientId(clientCert);
     }
 
     @Override
