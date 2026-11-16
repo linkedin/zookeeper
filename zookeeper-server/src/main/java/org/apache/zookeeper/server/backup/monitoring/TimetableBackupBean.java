@@ -50,6 +50,11 @@ public class TimetableBackupBean implements ZKMBeanInfo, TimetableBackupMXBean {
   }
 
   @Override
+  public long getMinutesSinceLastSuccessfulTimetableIterationAcrossRestarts() {
+    return backupStats.getMinutesSinceLastSuccessfulTimetableIterationAcrossRestarts();
+  }
+
+  @Override
   public boolean getTimetableBackupActiveStatus() {
     return backupStats.getTimetableBackupActiveStatus();
   }

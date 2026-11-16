@@ -592,7 +592,7 @@ public class BackupManager {
 
   public synchronized void initialize() throws IOException {
     try {
-      backupStats = new BackupStats();
+      backupStats = new BackupStats(backupConfig.getStatusDir());
       backupBean = new BackupBean(backupStats, serverId);
       MBeanRegistry.getInstance().register(backupBean, null);
       LOG.info("Registered BackupBean {} with JMX.", backupBean.getName());
@@ -640,7 +640,7 @@ public class BackupManager {
       }
 
       // create metric-related classes for timetable backup
-      TimetableBackupStats timetableBackupStats = new TimetableBackupStats();
+      TimetableBackupStats timetableBackupStats = new TimetableBackupStats(backupConfig.getStatusDir());
       timetableBackupBean = new TimetableBackupBean(timetableBackupStats);
       try {
         // Put timetable backup bean under backup bean, so that they are coupled. this is

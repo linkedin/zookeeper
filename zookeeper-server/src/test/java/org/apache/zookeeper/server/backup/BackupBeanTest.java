@@ -223,6 +223,15 @@ public class BackupBeanTest extends ZKTestCase {
     Assert.assertTrue(backupBean.getMinutesSinceLastSuccessfulTxnLogIteration() > 0L);
 
     backupManager.stop();
+
+    // A restarted backup manager starts the existing gauges over but keeps the persisted ones.
+    MockBackupManager restarted = new MockBackupManager(dataDir, dataDir, 0, backupConfig);
+    BackupBean restartedBean = restarted.getBackupBean();
+    Assert.assertEquals(0, restartedBean.getMinutesSinceLastSuccessfulSnapshotIteration());
+    Assert.assertEquals(0, restartedBean.getMinutesSinceLastSuccessfulTxnLogIteration());
+    Assert.assertTrue(restartedBean.getMinutesSinceLastSuccessfulSnapshotIterationAcrossRestarts() > 0L);
+    Assert.assertTrue(restartedBean.getMinutesSinceLastSuccessfulTxnLogIterationAcrossRestarts() > 0L);
+    restarted.stop();
   }
 
   @Test
@@ -247,6 +256,13 @@ public class BackupBeanTest extends ZKTestCase {
     Assert.assertEquals(0, numConsecutiveFailedTimetableIterations);
 
     bm.stop();
+
+    // A restarted backup manager starts the existing gauge over but keeps the persisted one.
+    MockBackupManager restarted = new MockBackupManager(dataDir, dataDir, 0, backupConfig);
+    TimetableBackupBean restartedTimetableBean = restarted.getTimetableBackupBean();
+    Assert.assertEquals(0, restartedTimetableBean.getMinutesSinceLastSuccessfulTimetableIteration());
+    Assert.assertTrue(restartedTimetableBean.getMinutesSinceLastSuccessfulTimetableIterationAcrossRestarts() > 0L);
+    restarted.stop();
   }
 
   private void createNode(ZooKeeper zk, String path) throws Exception {

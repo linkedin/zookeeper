@@ -54,6 +54,11 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
   }
 
   @Override
+  public long getMinutesSinceLastSuccessfulSnapshotIterationAcrossRestarts() {
+    return backupStats.getMinutesSinceLastSuccessfulSnapshotIterationAcrossRestarts();
+  }
+
+  @Override
   public boolean getSnapshotBackupActiveStatus() {
     return backupStats.getSnapshotBackupActiveStatus();
   }
@@ -77,6 +82,11 @@ public class BackupBean implements ZKMBeanInfo, BackupMXBean {
   @Override
   public long getMinutesSinceLastSuccessfulTxnLogIteration() {
     return backupStats.getMinutesSinceLastSuccessfulTxnLogIteration();
+  }
+
+  @Override
+  public long getMinutesSinceLastSuccessfulTxnLogIterationAcrossRestarts() {
+    return backupStats.getMinutesSinceLastSuccessfulTxnLogIterationAcrossRestarts();
   }
 
   @Override
