@@ -33,12 +33,14 @@ import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.PrepRequestProcessor;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
+import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
 import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -169,13 +171,47 @@ public class TestFixupACL {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
-  public void testOpenReadDoesNotChangeNonOverriddenAcl(boolean superUser) throws KeeperException.InvalidACLException {
+  public void testOpenReadPreservesNonOverriddenOwnershipAcl(boolean superUser) throws KeeperException.InvalidACLException {
     withProperty(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX, testPath, () -> {
-      List<ACL> privateAcl = Collections.singletonList(new ACL(ZooDefs.Perms.ALL, singleDomainAuthInfo.get(0)));
+      List<ACL> privateAcl = Collections.singletonList(new ACL(ZooDefs.Perms.ALL, new Id("x509", "CN=owner")));
       List<ACL> returned = PrepRequestProcessor.fixupACL(
           testPath, superUser ? superUserAuthInfo : nonX509AuthInfo, privateAcl);
-      assertACLsEqual(privateAcl, returned);
+      List<ACL> expected = new ArrayList<>(privateAcl);
+      expected.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+      assertACLsEqual(expected, returned);
     });
+  }
+
+  @Test
+  public void testOpenReadStillValidatesAndExpandsNonX509Acl() throws KeeperException.InvalidACLException {
+    withProperty(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX, "/", () -> {
+      Id owner = new Id("digest", "example:hash");
+      List<Id> authInfo = Collections.singletonList(owner);
+      List<ACL> expected = new ArrayList<>();
+      expected.add(new ACL(ZooDefs.Perms.ALL, owner));
+      expected.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+      assertACLsEqual(expected, PrepRequestProcessor.fixupACL(testPath, authInfo, ZooDefs.Ids.CREATOR_ALL_ACL));
+      Assert.assertThrows(KeeperException.InvalidACLException.class, () -> PrepRequestProcessor.fixupACL(
+          testPath, authInfo, Collections.singletonList(new ACL(ZooDefs.Perms.ALL, new Id("unknown", "owner")))));
+    });
+  }
+
+  @ParameterizedTest
+  @CsvSource({"true,true,false,/private", "true,false,false,/", "false,true,false,/", "true,true,true,/"})
+  public void testOpenReadRequiresMatchingPathAndActiveGroupProcessing(
+      boolean groupProvider, boolean automatic, boolean dedicated, String prefix) throws KeeperException.InvalidACLException {
+    withProperty("zookeeper.authProvider.x509",
+        (groupProvider ? X509ZNodeGroupAclProvider.class : X509AuthenticationProvider.class).getCanonicalName(), () -> {
+          ProviderRegistry.reset();
+          withProperty(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL, Boolean.toString(automatic), () -> {
+            withProperty(X509AuthenticationConfig.DEDICATED_DOMAIN, dedicated ? dedicatedDomain : "", () -> {
+              withProperty(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX, prefix, () -> {
+                List<ACL> privateAcl = Collections.singletonList(new ACL(ZooDefs.Perms.ALL, new Id("x509", "CN=owner")));
+                assertACLsEqual(privateAcl, PrepRequestProcessor.fixupACL(testPath, superUserAuthInfo, privateAcl));
+              });
+            });
+          });
+        });
   }
 
   @Test
