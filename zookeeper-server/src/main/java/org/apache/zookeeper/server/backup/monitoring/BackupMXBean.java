@@ -41,6 +41,15 @@ public interface BackupMXBean {
   long getMinutesSinceLastSuccessfulSnapshotIteration();
 
   /**
+   * Gauge, kept in the backup status directory so that it continues after a server restart.
+   * Unlike getMinutesSinceLastSuccessfulSnapshotIteration(), a backup that never succeeds while
+   * the server keeps restarting still shows a growing value. This metric can be used for alerts.
+   * @return Time passed (minutes) since last successful snapshot backup iteration, including
+   *         iterations that finished before the latest server restart
+   */
+  long getMinutesSinceLastSuccessfulSnapshotIterationAcrossRestarts();
+
+  /**
    * Gauge
    * @return If snapshot backup is currently actively ongoing
    */
@@ -73,6 +82,15 @@ public interface BackupMXBean {
    * @return Time passed (minutes) since last successful txn log backup iteration
    */
   long getMinutesSinceLastSuccessfulTxnLogIteration();
+
+  /**
+   * Gauge, kept in the backup status directory so that it continues after a server restart.
+   * Unlike getMinutesSinceLastSuccessfulTxnLogIteration(), a backup that never succeeds while
+   * the server keeps restarting still shows a growing value. This metric can be used for alerts.
+   * @return Time passed (minutes) since last successful txn log backup iteration, including
+   *         iterations that finished before the latest server restart
+   */
+  long getMinutesSinceLastSuccessfulTxnLogIterationAcrossRestarts();
 
   /**
    * Gauge

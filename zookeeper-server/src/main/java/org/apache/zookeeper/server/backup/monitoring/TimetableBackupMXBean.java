@@ -39,6 +39,15 @@ public interface TimetableBackupMXBean {
   long getMinutesSinceLastSuccessfulTimetableIteration();
 
   /**
+   * Gauge, kept in the backup status directory so that it continues after a server restart.
+   * Unlike getMinutesSinceLastSuccessfulTimetableIteration(), a backup that never succeeds while
+   * the server keeps restarting still shows a growing value. This metric can be used for alerts.
+   * @return Time passed (minutes) since last successful timetable backup iteration, including
+   *         iterations that finished before the latest server restart
+   */
+  long getMinutesSinceLastSuccessfulTimetableIterationAcrossRestarts();
+
+  /**
    * Gauge
    * @return If timetable backup is currently in progress
    */

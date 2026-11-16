@@ -18,6 +18,8 @@
 
 package org.apache.zookeeper.server.backup.monitoring;
 
+import java.io.File;
+import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,25 +29,68 @@ import org.slf4j.LoggerFactory;
 public class BackupStats {
   private static final Logger LOG = LoggerFactory.getLogger(BackupStats.class);
 
+  /**
+   * Files in the backup status directory holding the finish time of the last successful iteration.
+   */
+  static final String LAST_SUCCESSFUL_SNAPSHOT_ITERATION_FILENAME = "zkBackupLastSuccessfulSnapshotIteration";
+  static final String LAST_SUCCESSFUL_TXNLOG_ITERATION_FILENAME = "zkBackupLastSuccessfulTxnLogIteration";
+
+  private final LongSupplier clock;
+  private final PersistedTimestamp persistedSnapshotSuccess;
+  private final PersistedTimestamp persistedTxnLogSuccess;
+
   /*
     Snapshot backup metric declarations
    */
   private int failedSnapshotIterationCount = 0;
-  private long lastSuccessfulSnapshotBackupIterationFinishTime = System.currentTimeMillis();
+  private long lastSuccessfulSnapshotBackupIterationFinishTime;
+  private volatile long lastSuccessfulSnapshotIterationFinishTimeAcrossRestarts;
   private boolean snapshotBackupActive = false;
   private long snapshotIterationDuration = 0L;
   private int numberOfSnapshotFilesBackedUpLastIteration = 0;
   private int numberOfSnapshotFilesBackedUpThisIteration = 0;
-  private long lastSnapshotBackupIterationStartTime = System.currentTimeMillis();
+  private long lastSnapshotBackupIterationStartTime;
 
   /*
     TxLog backup metric declarations
    */
   private int failedTxnLogIterationCount = 0;
-  private long lastSuccessfulTxnLogBackupIterationFinishTime = System.currentTimeMillis();
+  private long lastSuccessfulTxnLogBackupIterationFinishTime;
+  private volatile long lastSuccessfulTxnLogIterationFinishTimeAcrossRestarts;
   private boolean txnLogBackupActive = false;
   private long txnLogIterationDuration = 0L;
-  private long lastTxnLogBackupIterationStartTime = System.currentTimeMillis();
+  private long lastTxnLogBackupIterationStartTime;
+
+  /**
+   * Create stats that start over with the process; nothing is persisted.
+   */
+  public BackupStats() {
+    this(null, System::currentTimeMillis);
+  }
+
+  /**
+   * Create stats that keep the last successful iteration times in the backup status directory, so
+   * the "AcrossRestarts" gauges continue after a restart.
+   * @param statusDir the backup status directory; null disables persistence
+   */
+  public BackupStats(File statusDir) {
+    this(statusDir, System::currentTimeMillis);
+  }
+
+  BackupStats(File statusDir, LongSupplier clock) {
+    this.clock = clock;
+    long now = clock.getAsLong();
+    lastSuccessfulSnapshotBackupIterationFinishTime = now;
+    lastSnapshotBackupIterationStartTime = now;
+    lastSuccessfulTxnLogBackupIterationFinishTime = now;
+    lastTxnLogBackupIterationStartTime = now;
+    persistedSnapshotSuccess = new PersistedTimestamp(statusDir, LAST_SUCCESSFUL_SNAPSHOT_ITERATION_FILENAME);
+    persistedTxnLogSuccess = new PersistedTimestamp(statusDir, LAST_SUCCESSFUL_TXNLOG_ITERATION_FILENAME);
+    lastSuccessfulSnapshotIterationFinishTimeAcrossRestarts =
+        Math.min(now, persistedSnapshotSuccess.readOrDefault(now));
+    lastSuccessfulTxnLogIterationFinishTimeAcrossRestarts =
+        Math.min(now, persistedTxnLogSuccess.readOrDefault(now));
+  }
 
   // Snapshot backup metrics
 
@@ -64,8 +109,17 @@ public class BackupStats {
    * @return Time passed (minutes) since last successful snapshot backup iteration
    */
   public long getMinutesSinceLastSuccessfulSnapshotIteration() {
-    return (System.currentTimeMillis() - lastSuccessfulSnapshotBackupIterationFinishTime) / (60
+    return (clock.getAsLong() - lastSuccessfulSnapshotBackupIterationFinishTime) / (60
         * 1000);
+  }
+
+  /**
+   * Gauge
+   * @return Time passed (minutes) since last successful snapshot backup iteration, including
+   *         iterations that finished before the latest server restart
+   */
+  public long getMinutesSinceLastSuccessfulSnapshotIterationAcrossRestarts() {
+    return (clock.getAsLong() - lastSuccessfulSnapshotIterationFinishTimeAcrossRestarts) / (60 * 1000);
   }
 
   /**
@@ -96,7 +150,7 @@ public class BackupStats {
    * Record the status and timestamp when a snapshot backup iteration starts
    */
   public void setSnapshotBackupIterationStart() {
-    lastSnapshotBackupIterationStartTime = System.currentTimeMillis();
+    lastSnapshotBackupIterationStartTime = clock.getAsLong();
     snapshotBackupActive = true;
     numberOfSnapshotFilesBackedUpThisIteration = 0;
   }
@@ -106,13 +160,15 @@ public class BackupStats {
    * @param errorFree If this iteration finishes without error
    */
   public void setSnapshotBackupIterationDone(boolean errorFree) {
-    long finishTime = System.currentTimeMillis();
+    long finishTime = clock.getAsLong();
     snapshotIterationDuration = finishTime - lastSnapshotBackupIterationStartTime;
     snapshotBackupActive = false;
     numberOfSnapshotFilesBackedUpLastIteration = numberOfSnapshotFilesBackedUpThisIteration;
     numberOfSnapshotFilesBackedUpThisIteration = 0;
     if (errorFree) {
       lastSuccessfulSnapshotBackupIterationFinishTime = finishTime;
+      lastSuccessfulSnapshotIterationFinishTimeAcrossRestarts = finishTime;
+      persistedSnapshotSuccess.write(finishTime);
       failedSnapshotIterationCount = 0;
     } else {
       failedSnapshotIterationCount++;
@@ -144,8 +200,17 @@ public class BackupStats {
    * @return Time passed (minutes) since last successful txn log backup iteration
    */
   public long getMinutesSinceLastSuccessfulTxnLogIteration() {
-    return (System.currentTimeMillis() - lastSuccessfulTxnLogBackupIterationFinishTime) / (60
+    return (clock.getAsLong() - lastSuccessfulTxnLogBackupIterationFinishTime) / (60
         * 1000);
+  }
+
+  /**
+   * Gauge
+   * @return Time passed (minutes) since last successful txn log backup iteration, including
+   *         iterations that finished before the latest server restart
+   */
+  public long getMinutesSinceLastSuccessfulTxnLogIterationAcrossRestarts() {
+    return (clock.getAsLong() - lastSuccessfulTxnLogIterationFinishTimeAcrossRestarts) / (60 * 1000);
   }
 
   /**
@@ -168,7 +233,7 @@ public class BackupStats {
    * Record the status and timestamp when a txn log backup iteration starts
    */
   public void setTxnLogBackupIterationStart() {
-    lastTxnLogBackupIterationStartTime = System.currentTimeMillis();
+    lastTxnLogBackupIterationStartTime = clock.getAsLong();
     txnLogBackupActive = true;
   }
 
@@ -177,11 +242,13 @@ public class BackupStats {
    * @param errorFree If this iteration finishes without error
    */
   public void setTxnLogBackupIterationDone(boolean errorFree) {
-    long finishTime = System.currentTimeMillis();
+    long finishTime = clock.getAsLong();
     txnLogBackupActive = false;
     txnLogIterationDuration = finishTime - lastTxnLogBackupIterationStartTime;
     if (errorFree) {
       lastSuccessfulTxnLogBackupIterationFinishTime = finishTime;
+      lastSuccessfulTxnLogIterationFinishTimeAcrossRestarts = finishTime;
+      persistedTxnLogSuccess.write(finishTime);
       failedTxnLogIterationCount = 0;
     } else {
       failedTxnLogIterationCount++;

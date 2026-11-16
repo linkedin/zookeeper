@@ -18,20 +18,57 @@
 
 package org.apache.zookeeper.server.backup.monitoring;
 
+import java.io.File;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 /**
  * TimetableBackupStats contains fields that represent metrics for timetable backup.
  */
 public class TimetableBackupStats {
+  /**
+   * File in the backup status directory holding the finish time of the last successful iteration.
+   */
+  static final String LAST_SUCCESSFUL_TIMETABLE_ITERATION_FILENAME = "zkBackupLastSuccessfulTimetableIteration";
+
+  private final LongSupplier clock;
+  private final PersistedTimestamp persistedTimetableSuccess;
+
   /*
     Timetable backup metric declarations
   */
   private int failedTimetableIterationCount = 0;
   private boolean timetableBackupActive = false;
-  private long lastSuccessfulTimetableBackupIterationFinishTime = System.currentTimeMillis();
+  private long lastSuccessfulTimetableBackupIterationFinishTime;
+  private volatile long lastSuccessfulTimetableIterationFinishTimeAcrossRestarts;
   private long timetableIterationDuration = 0L;
-  private long lastTimetableBackupIterationStartTime = System.currentTimeMillis();
+  private long lastTimetableBackupIterationStartTime;
+
+  /**
+   * Create stats that start over with the process; nothing is persisted.
+   */
+  public TimetableBackupStats() {
+    this(null, System::currentTimeMillis);
+  }
+
+  /**
+   * Create stats that keep the last successful iteration time in the backup status directory, so
+   * the "AcrossRestarts" gauge continues after a restart.
+   * @param statusDir the backup status directory; null disables persistence
+   */
+  public TimetableBackupStats(File statusDir) {
+    this(statusDir, System::currentTimeMillis);
+  }
+
+  TimetableBackupStats(File statusDir, LongSupplier clock) {
+    this.clock = clock;
+    long now = clock.getAsLong();
+    lastSuccessfulTimetableBackupIterationFinishTime = now;
+    lastTimetableBackupIterationStartTime = now;
+    persistedTimetableSuccess = new PersistedTimestamp(statusDir, LAST_SUCCESSFUL_TIMETABLE_ITERATION_FILENAME);
+    lastSuccessfulTimetableIterationFinishTimeAcrossRestarts =
+        Math.min(now, persistedTimetableSuccess.readOrDefault(now));
+  }
 
   // Timetable backup metrics
 
@@ -54,7 +91,17 @@ public class TimetableBackupStats {
    */
   public long getMinutesSinceLastSuccessfulTimetableIteration() {
     return TimeUnit.MILLISECONDS
-        .toMinutes(System.currentTimeMillis() - lastSuccessfulTimetableBackupIterationFinishTime);
+        .toMinutes(clock.getAsLong() - lastSuccessfulTimetableBackupIterationFinishTime);
+  }
+
+  /**
+   * Gauge
+   * @return Time passed (minutes) since last successful timetable backup iteration, including
+   *         iterations that finished before the latest server restart
+   */
+  public long getMinutesSinceLastSuccessfulTimetableIterationAcrossRestarts() {
+    return TimeUnit.MILLISECONDS
+        .toMinutes(clock.getAsLong() - lastSuccessfulTimetableIterationFinishTimeAcrossRestarts);
   }
 
   /**
@@ -77,7 +124,7 @@ public class TimetableBackupStats {
    * Record the status and timestamp when a timetable backup iteration starts
    */
   public void setTimetableBackupIterationStart() {
-    lastTimetableBackupIterationStartTime = System.currentTimeMillis();
+    lastTimetableBackupIterationStartTime = clock.getAsLong();
     timetableBackupActive = true;
   }
 
@@ -86,11 +133,13 @@ public class TimetableBackupStats {
    * @param errorFree If this iteration finishes without error
    */
   public void setTimetableBackupIterationDone(boolean errorFree) {
-    long finishTime = System.currentTimeMillis();
+    long finishTime = clock.getAsLong();
     timetableBackupActive = false;
     timetableIterationDuration = finishTime - lastTimetableBackupIterationStartTime;
     if (errorFree) {
       lastSuccessfulTimetableBackupIterationFinishTime = finishTime;
+      lastSuccessfulTimetableIterationFinishTimeAcrossRestarts = finishTime;
+      persistedTimetableSuccess.write(finishTime);
       failedTimetableIterationCount = 0;
     } else {
       failedTimetableIterationCount++;
