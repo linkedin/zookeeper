@@ -1616,7 +1616,7 @@ SAN selection also works with the ordinary X509 provider.
 | `X509ZNodeGroupAclProvider.allowedClientIdAsAclDomains` | Empty; comma-separated IDs to use for automatic ACLs when the global switch is off. |
 | `X509ZNodeGroupAclProvider.superUserId` | Empty; comma-separated certificate identities with unrestricted access and permission to choose ACLs. |
 | `X509ZNodeGroupAclProvider.crossDomainAccessDomainName` | Empty; comma-separated domains with cross-domain access. Automatic ACLs for their writes use `x509:<domain>`. |
-| `X509ZNodeGroupAclProvider.openReadAccessPathPrefix` | Empty; comma-separated literal path prefixes receiving `world:anyone` READ permission when automatic ACL replacement applies. |
+| `X509ZNodeGroupAclProvider.openReadAccessPathPrefix` | Empty; comma-separated literal path prefixes receiving `world:anyone` READ permission during enabled group ACL processing, even when supplied ownership ACLs are retained. |
 | `X509ZNodeGroupAclProvider.storeAuthedClientId` | `false`; retain the certificate ID alongside mapped domains on non-dedicated servers. |
 | `X509ZNodeGroupAclProvider.dedicatedDomain` | Unset; restrict TLS connections to one domain instead of applying automatic group ACLs. |
 | `X509ZNodeGroupAclProvider.enforceDedicatedDomain` | `true`; when false, log a domain mismatch without disconnecting it. |
@@ -1625,9 +1625,14 @@ Unsuccessful SAN selection falls back to Subject DN. Unknown but trusted clients
 receive `x509:<clientId>` rather than a mapped domain. Explicit creator ACLs expand
 the authenticated identities normally; no SPIFFE or legacy-identity translation
 is performed. Automatic ACL replacement applies to both create and setACL, not
-just creation. Explicit superusers, plaintext clients and dedicated-domain mode
-retain ordinary ACL handling. Cross-domain users and explicit superusers are
-exempt from dedicated-domain connection filtering.
+just creation. On non-dedicated servers using the group provider, configured
+open-read prefixes add READ permission when the global automatic-ACL switch is
+enabled or authenticated X509 IDs match the automatic-ACL allowlist. This also
+applies when a writer keeps supplied ownership ACLs: explicit X509 superusers and
+non-X509 clients still undergo ordinary ACL validation, with the configured READ
+permission added. Dedicated-domain mode, inactive group ACL processing and
+nonmatching prefixes do not add this permission. Cross-domain users and explicit
+superusers are exempt from dedicated-domain connection filtering.
 
 Treat mapping writes as privilege changes: bootstrap the root deliberately and
 protect its subtree's ACLs against unauthorized create/delete operations. The

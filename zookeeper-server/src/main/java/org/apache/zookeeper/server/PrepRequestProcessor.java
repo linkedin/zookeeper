@@ -1072,11 +1072,11 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                     isUserProvidedAclOverriden = true;
                 }
             }
+            if (X509AuthenticationConfig.getInstance().getZnodeGroupAclOpenReadAccessPathPrefixes()
+                .stream().anyMatch(path::startsWith)) {
+                rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+            }
             if (isUserProvidedAclOverriden) {
-                if (X509AuthenticationConfig.getInstance().getZnodeGroupAclOpenReadAccessPathPrefixes()
-                    .stream().anyMatch(path::startsWith)) {
-                    rv.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
-                }
                 return rv;
             }
         }

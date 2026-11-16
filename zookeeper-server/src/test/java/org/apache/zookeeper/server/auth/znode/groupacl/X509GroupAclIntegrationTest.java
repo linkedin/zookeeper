@@ -37,6 +37,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -267,6 +268,37 @@ public class X509GroupAclIntegrationTest extends ZKTestCase {
         assertArrayEquals(new byte[]{4}, alice.getData("/owned", false, null));
         superUser.setACL("/owned", ZooDefs.Ids.OPEN_ACL_UNSAFE, -1);
         assertArrayEquals(new byte[]{4}, bob.getData("/owned", false, null));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testSuperUserOpenReadPreservesOwnershipOnCreateAndSetAcl(boolean unified) throws Exception {
+        property(X509AuthenticationConfig.OPEN_READ_ACCESS_PATH_PREFIX, "/");
+        start(unified, true);
+        map("teamA", "alice");
+        map("teamB", "bob");
+        ZooKeeper superUser = connect("super");
+        ZooKeeper alice = connect("alice");
+        ZooKeeper bob = connect("bob");
+        List<ACL> ownerAcl = acl("teamA");
+        List<ACL> expected = new ArrayList<>(ownerAcl);
+        expected.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+        superUser.create("/owned", new byte[]{1}, ownerAcl, CreateMode.PERSISTENT);
+        assertEquals(new HashSet<>(expected), new HashSet<>(superUser.getACL("/owned", null)));
+        assertArrayEquals(new byte[]{1}, bob.getData("/owned", false, null));
+        assertThrows(KeeperException.NoAuthException.class, () -> bob.setData("/owned", new byte[]{2}, -1));
+        assertThrows(KeeperException.NoAuthException.class, () -> bob.setACL("/owned", ownerAcl, -1));
+        alice.setData("/owned", new byte[]{3}, -1);
+
+        superUser.setACL("/owned", acl("teamB"), -1);
+        expected = new ArrayList<>(acl("teamB"));
+        expected.add(new ACL(ZooDefs.Perms.READ, ZooDefs.Ids.ANYONE_ID_UNSAFE));
+        assertEquals(new HashSet<>(expected), new HashSet<>(superUser.getACL("/owned", null)));
+        assertArrayEquals(new byte[]{3}, alice.getData("/owned", false, null));
+        assertThrows(KeeperException.NoAuthException.class, () -> alice.setData("/owned", new byte[]{4}, -1));
+        assertThrows(KeeperException.NoAuthException.class, () -> alice.setACL("/owned", ownerAcl, -1));
+        bob.setData("/owned", new byte[]{5}, -1);
+        assertArrayEquals(new byte[]{5}, alice.getData("/owned", false, null));
     }
 
     @ParameterizedTest
