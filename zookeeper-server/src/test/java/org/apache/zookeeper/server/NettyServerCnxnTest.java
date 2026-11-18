@@ -176,6 +176,29 @@ public class NettyServerCnxnTest extends ClientBase {
     }
 
     @Test
+    @Timeout(value = 40)
+    public void testConnectionCloseCountedOncePerConnection() throws Exception {
+        ServerStats serverStats = serverFactory.getZooKeeperServer().serverStats();
+        waitFor("server-side connections from startup probes should close",
+            () -> serverFactory.getNumAliveConnections() == 0
+                && serverStats.getConnectionCloseCount() >= serverStats.getConnectionCreateCount(), 30);
+        serverStats.resetConnectionCounters();
+
+        try (ZooKeeper zk = createClient()) {
+            assertEquals(1, serverStats.getConnectionCreateCount());
+            assertEquals(1, serverStats.getSessionCreateCount());
+            ServerCnxn serverCnxn = serverFactory.getConnections().iterator().next();
+
+            // channelInactive closes the connection again after a server-side close.
+            serverCnxn.close(ServerCnxn.DisconnectReason.CONNECTION_CLOSE_FORCED);
+            serverCnxn.close(ServerCnxn.DisconnectReason.CHANNEL_DISCONNECTED);
+
+            assertEquals(1, serverStats.getConnectionCloseCount());
+            assertEquals(1, serverStats.getSessionCloseCount());
+        }
+    }
+
+    @Test
     public void testNonMTLSRemoteConn() throws Exception {
         LeaderZooKeeperServer zks = mock(LeaderZooKeeperServer.class);
         when(zks.isRunning()).thenReturn(true);
