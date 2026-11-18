@@ -128,3 +128,20 @@ standalone is only used in development situations.
 | ZooKeeperServer | StandaloneServer_port<#> | Statistics on the running server, also operations to reset these attributes. Note that the object name includes the client port of the server (name suffix). |
 | DataTree | InMemoryDataTree | Statistics on the in memory znode database, also operations to access finer (and more computationally intensive) statistics on the data (such as ephemeral count). |
 | ServerCnxn | < session_id > | Statistics on each client connection, also operations on those connections (such as termination). Note the object name is the session id of the connection in hex form. |
+
+### Request and connection counters
+
+The ZooKeeperServer MBean (including its Leader, Follower and Observer
+subclasses) also exposes the following `long` attributes. Latencies are in
+milliseconds and are measured for requests received from this server's clients.
+
+| Attribute | Description |
+|-----------|-------------|
+| ReadRequestCount / WriteRequestCount | Requests counted as reads (exists, getData, getChildren, getChildren2, getACL) or writes (create, delete, setData, setACL, and multi containing a create, delete or setData result). Other operations are not counted. |
+| Min/Avg/MaxReadRequestLatency | Read latency since the last latency reset. |
+| Min/Avg/MaxWriteRequestLatency | Write latency since the last latency reset. |
+| ConnectionCreateCount / ConnectionCloseCount | Established client connections opened and closed. Connections rejected before being established, such as failed TLS handshakes, are not counted. |
+| SessionCreateCount / SessionCloseCount | Client connections that registered or unregistered a session connection MBean. A session moving to another connection or server is counted again. |
+
+`resetLatency` resets the latency attributes, `resetMaxLatency` sets each maximum
+to its current minimum, and `resetStatistics` resets all of these attributes.

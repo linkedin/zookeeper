@@ -17,6 +17,7 @@
  */
 package org.apache.zookeeper.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import org.apache.zookeeper.PortAssignment;
@@ -85,6 +86,8 @@ public class X509AuthFailureTest extends ZKTestCase {
         }
         ServerStats serverStats = mt.getSecureCnxnFactory().getZooKeeperServer().serverStats();
         assertTrue(serverStats.getAuthFailedCount() >= 1);
+        // Rejected TLS connections are never established, so they must not be counted as closed.
+        assertEquals(serverStats.getConnectionCreateCount(), serverStats.getConnectionCloseCount());
         mt.shutdown();
 
     }

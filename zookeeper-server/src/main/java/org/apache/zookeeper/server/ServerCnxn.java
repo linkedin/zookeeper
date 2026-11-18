@@ -564,6 +564,7 @@ public abstract class ServerCnxn implements Stats, ServerWatcher {
         info.put("outstanding_requests", getOutstandingRequests());
         info.put("packets_received", getPacketsReceived());
         info.put("packets_sent", getPacketsSent());
+        info.put("auth_info", getAuthInfo());
         if (!brief) {
             info.put("session_id", getSessionId());
             info.put("last_operation", getLastOperation());
