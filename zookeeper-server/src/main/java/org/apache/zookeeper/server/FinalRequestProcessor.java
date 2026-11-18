@@ -214,14 +214,14 @@ public class FinalRequestProcessor implements RequestProcessor {
             switch (request.type) {
             case OpCode.ping: {
                 lastOp = "PING";
-                updateStats(request, lastOp, lastZxid);
+                updateStats(request.type, request, lastOp, lastZxid);
 
                 responseSize = cnxn.sendResponse(new ReplyHeader(ClientCnxn.PING_XID, lastZxid, 0), null, "response");
                 return;
             }
             case OpCode.createSession: {
                 lastOp = "SESS";
-                updateStats(request, lastOp, lastZxid);
+                updateStats(request.type, request, lastOp, lastZxid);
 
                 zks.finishSessionInit(request.cnxn, true);
                 return;
@@ -612,7 +612,31 @@ public class FinalRequestProcessor implements RequestProcessor {
 
         ReplyHeader hdr = new ReplyHeader(request.cxid, lastZxid, err.intValue());
 
-        updateStats(request, lastOp, lastZxid);
+        int type = request.type;
+        if (type == OpCode.multi) {
+            // check if contains only read operation
+            boolean containsWrite = false;
+            // Throttled or failed multi requests have no sub-results.
+            if (rc != null && rc.multiResult != null) {
+                for (ProcessTxnResult subTxnResult : rc.multiResult) {
+                    switch (subTxnResult.type) {
+                        case OpCode.create:
+                        case OpCode.delete:
+                        case OpCode.setData:
+                            containsWrite = true;
+                            break;
+                        case OpCode.check:
+                        case OpCode.error:
+                        default:
+                            break;
+                    }
+                }
+            }
+            if (!containsWrite) {
+                type = OpCode.check;
+            }
+        }
+        updateStats(type, request, lastOp, lastZxid);
 
         try {
             if (path == null || rsp == null) {
@@ -693,12 +717,12 @@ public class FinalRequestProcessor implements RequestProcessor {
         LOG.info("shutdown of request processor complete");
     }
 
-    private void updateStats(Request request, String lastOp, long lastZxid) {
+    private void updateStats(int type, Request request, String lastOp, long lastZxid) {
         if (request.cnxn == null) {
             return;
         }
         long currentTime = Time.currentElapsedTime();
-        zks.serverStats().updateLatency(request, currentTime);
+        zks.serverStats().updateLatency(type, request, currentTime);
         request.cnxn.updateStatsForResponse(request.cxid, lastZxid, lastOp, request.createTime, currentTime);
     }
 

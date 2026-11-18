@@ -200,6 +200,35 @@ public abstract class ServerCnxnFactory {
 
     private final ConcurrentHashMap<ServerCnxn, ConnectionBean> connectionBeans = new ConcurrentHashMap<ServerCnxn, ConnectionBean>();
 
+    // Connection create count is increased after connection established. But this connection may not establish a session.
+    // In this case, registerConnection won't be called.
+    // So the following method need to be called in the implementation class.
+    public void increaseConnectionCreateCount() {
+        if (zkServer != null) {
+            zkServer.serverStats().incrementConnectionCreated();
+        }
+    }
+
+    // Called only when an established connection is removed from cnxns, so repeated
+    // close calls and connections rejected before being established are not counted.
+    void increaseConnectionCloseCount() {
+        if (zkServer != null) {
+            zkServer.serverStats().incrementConnectionClosed();
+        }
+    }
+
+    private void increaseSessionCreateCount() {
+        if (zkServer != null) {
+            zkServer.serverStats().incrementSessionCreated();
+        }
+    }
+
+    private void increaseSessionCloseCount() {
+        if (zkServer != null) {
+            zkServer.serverStats().incrementSessionClosed();
+        }
+    }
+
     // Connection set is relied on heavily by four letter commands
     // Construct a ConcurrentHashSet using a ConcurrentHashMap
     protected final Set<ServerCnxn> cnxns = Collections.newSetFromMap(new ConcurrentHashMap<ServerCnxn, Boolean>());
@@ -207,6 +236,7 @@ public abstract class ServerCnxnFactory {
         ConnectionBean jmxConnectionBean = connectionBeans.remove(serverCnxn);
         if (jmxConnectionBean != null) {
             MBeanRegistry.getInstance().unregister(jmxConnectionBean);
+            increaseSessionCloseCount();
         }
     }
 
@@ -216,6 +246,7 @@ public abstract class ServerCnxnFactory {
             try {
                 MBeanRegistry.getInstance().register(jmxConnectionBean, zkServer.jmxServerBean);
                 connectionBeans.put(serverCnxn, jmxConnectionBean);
+                increaseSessionCreateCount();
             } catch (JMException e) {
                 LOG.warn("Could not register connection", e);
             }
