@@ -43,6 +43,7 @@ import org.apache.zookeeper.server.backup.BackupConfig;
 import org.apache.zookeeper.server.backup.BackupFileInfo;
 import org.apache.zookeeper.server.backup.BackupManager;
 import org.apache.zookeeper.server.backup.BackupPoint;
+import org.apache.zookeeper.server.backup.BackupProcess;
 import org.apache.zookeeper.server.backup.BackupStatus;
 import org.apache.zookeeper.server.backup.BackupUtil;
 import org.apache.zookeeper.server.backup.BackupUtil.BackupFileType;
@@ -126,6 +127,23 @@ public class BackupManagerTest extends ZKTestCase implements Watcher {
     closeConnection(connection);
     connection = null;
     cleanupZk();
+  }
+
+  @Test
+  public void testStopShutsDownTimetableBackup() throws Exception {
+    BackupManager manager = new BackupManager(dataDir, dataDir, 1, backupConfig);
+    manager.initialize();
+    BackupProcess timetable = manager.getTimetableBackup();
+    Thread worker = new Thread(timetable);
+    try {
+      manager.stop();
+      worker.start();
+      worker.join(5000);
+      Assert.assertFalse("Timetable backup should terminate after stop", worker.isAlive());
+    } finally {
+      timetable.shutdown();
+      worker.join(5000);
+    }
   }
 
   @Test

@@ -553,6 +553,10 @@ public class BackupManager {
       snapBackup.shutdown();
       logBackup = null;
       snapBackup = null;
+      if (timetableBackup != null) {
+        timetableBackup.shutdown();
+        timetableBackup = null;
+      }
 
       // Unregister MBeans so they can get GC-ed
       if (backupBean != null) {
