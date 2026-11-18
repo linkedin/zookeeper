@@ -33,6 +33,9 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
@@ -44,7 +47,10 @@ import org.apache.jute.InputArchive;
 import org.apache.jute.Record;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
+import org.apache.zookeeper.PaginationNextPage;
 import org.apache.zookeeper.Quotas;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.common.PathTrie;
@@ -306,6 +312,301 @@ public class DataTreeTest extends ZKTestCase {
 
         //Let's make sure that we hit the code that ran the real assertion above
         assertTrue(ranTestCase.get(), "Didn't find the expected node");
+    }
+
+    @Test
+    @Timeout(value = 60)
+    public void testGetChildrenPaginated() throws NodeExistsException, NoNodeException {
+        final String rootPath = "/children";
+        final int firstCzxId = 1000;
+        final int countNodes = 10;
+
+        //  Create the parent node
+        DataTree dt = new DataTree();
+        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, 1, 1);
+
+        //  Create 10 child nodes
+        List<String> childrenCreated = new ArrayList<>(countNodes);
+        for (int i = 0; i < countNodes; ++i) {
+            dt.createNode(rootPath + "/test-" + i, new byte[0], null, 0, dt.getNode(rootPath).stat.getCversion() + i + 1, firstCzxId + i, 1);
+            childrenCreated.add("test-" + i);
+        }
+
+        //  Asking from a negative for 5 nodes should return the 5, and not set the watch
+        int curWatchCount = dt.getWatchCount();
+        PaginationNextPage nextPage = new PaginationNextPage();
+        List<String> result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 5, -1, 0, nextPage);
+        assertEquals(5, result.size());
+        assertEquals(firstCzxId + 5, nextPage.getMinCzxid());
+        assertEquals(0, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount, dt.getWatchCount(), "The watch not should have been set");
+        //  Verify that the list is sorted
+        String before = "";
+        for (final String path : result) {
+            assertTrue(path.compareTo(before) > 0, String.format("The next path (%s) should be > previous (%s)", path, before));
+            before = path;
+        }
+
+        //  Asking from a negative would give me all children, and set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), countNodes, -1, 0, nextPage);
+        assertEquals(countNodes, result.size());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+        //  Verify that the list is sorted
+        before = "";
+        for (final String path : result) {
+            assertTrue(path.compareTo(before) > 0, String.format("The next path (%s) should be > previous (%s)", path, before));
+            before = path;
+        }
+
+        //  Asking with maxReturned = MAX_INT would give me all children with no sorting, and set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), Integer.MAX_VALUE, 0, 0, nextPage);
+        assertEquals(countNodes, result.size());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+        //  Verify that the list is not sorted
+        assertNotEquals(childrenCreated, result, "The returned list of children should not be sorted");
+
+        // Passing a null watch when fetching all children should not set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, null, Integer.MAX_VALUE, 0, 0, nextPage);
+        assertEquals(countNodes, result.size());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount, dt.getWatchCount(), "The watch should have been set");
+
+        // Passing a null watch when fetching all children should not set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, null, countNodes, 0, 0, nextPage);
+        // Returned result is ordered
+        assertEquals(childrenCreated, result);
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount, dt.getWatchCount(), "The watch should have been set");
+
+        //  Asking from the last one should return only one node
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, 1000 + countNodes - 1, 0, nextPage);
+        assertEquals(1, result.size());
+        assertEquals("test-" + (countNodes - 1), result.get(0));
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+
+        //  Asking from the last created node+1 should return an empty list and set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, 1000 + countNodes, 0, nextPage);
+        assertTrue(result.isEmpty(), "The result should be an empty list");
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+
+        //  Asking from -1 for one node should return two, and NOT set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 1, -1, 0, nextPage);
+        assertEquals(curWatchCount, dt.getWatchCount(), "No watch should be set");
+        assertEquals(1, result.size(), "We only return up to ");
+        //  Check that we ordered correctly
+        assertEquals("test-0", result.get(0));
+        // Check next page info is returned correctly
+        assertEquals(firstCzxId + 1, nextPage.getMinCzxid());
+        assertEquals(0, nextPage.getMinCzxidOffset());
+    }
+
+    @Test
+    @Timeout(value = 60)
+    public void testGetChildrenPaginatedOnRoot() throws NodeExistsException, NoNodeException {
+        final int firstCzxId = 1000;
+        final int countNodes = 10;
+
+        DataTree dt = new DataTree();
+        // Create the children in reverse lexical order so that ordering by czxid (correct) and
+        // ordering by name (incorrect) produce different results, and the test can tell them apart.
+        List<String> childrenCreated = new ArrayList<>(countNodes);
+        for (int i = 0; i < countNodes; ++i) {
+            final String name = "test-" + (countNodes - 1 - i);
+            dt.createNode("/" + name, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, firstCzxId + i, 1);
+            childrenCreated.add(name);
+        }
+
+        // "/zookeeper" has czxid 0, so it sorts ahead of everything created above.
+        List<String> expected = new ArrayList<>();
+        expected.add("zookeeper");
+        expected.addAll(childrenCreated);
+
+        // Bounded pages on "/" must return every child, in creation order
+        List<String> collected = new ArrayList<>();
+        PaginationNextPage nextPage = new PaginationNextPage();
+        long minCzxid = -1;
+        int offset = 0;
+        final int watchCount = dt.getWatchCount();
+        boolean reachedLastPage = false;
+        for (int i = 0; i < countNodes + 2; ++i) {
+            List<String> page = dt.getPaginatedChildren("/", null, new DummyWatcher(), 3, minCzxid, offset, nextPage);
+            collected.addAll(page);
+            if (nextPage.getMinCzxid() == ZooDefs.GetChildrenPaginated.lastPageMinCzxid) {
+                reachedLastPage = true;
+                assertEquals(watchCount + 1, dt.getWatchCount(), "The watch must be set on the last page");
+                break;
+            }
+            // Asserting this on every intermediate page is what catches the "//child" bug: with the
+            // bug the very first page looks like a last page and registers the watch immediately.
+            assertEquals(watchCount, dt.getWatchCount(), "The watch must not be set before the last page");
+            minCzxid = nextPage.getMinCzxid();
+            offset = nextPage.getMinCzxidOffset();
+        }
+        assertTrue(reachedLastPage, "Pagination never reported a last page");
+        assertEquals(expected, collected);
+
+        // minCzxId > 0 skips the fast path even with an unbounded page size
+        List<String> result = dt.getPaginatedChildren("/", null, null, Integer.MAX_VALUE, firstCzxId + countNodes - 2, 0, nextPage);
+        assertEquals(Arrays.asList("test-1", "test-0"), result);
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid(), "The remainder fits in one page, so it is the last page");
+    }
+
+    @Test
+    @Timeout(value = 60)
+    public void testGetChildrenPaginatedWithOffset() throws NodeExistsException, NoNodeException {
+        final String rootPath = "/children";
+        final int childrenCzxId = 1000;
+        final int countNodes = 9;
+        final int allNodes = countNodes + 2;
+
+        //  Create the parent node
+        DataTree dt = new DataTree();
+        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, 1, 1);
+
+        int parentVersion = dt.getNode(rootPath).stat.getCversion();
+
+        //  Create a children sometimes "before"
+        dt.createNode(rootPath + "/test-0", new byte[0], null, 0, parentVersion + 1, childrenCzxId - 100, 1);
+
+        //  Create 10 child nodes, all with the same
+        for (int i = 1; i <= countNodes; ++i) {
+            dt.createNode(rootPath + "/test-" + i, new byte[0], null, 0, parentVersion + 2, childrenCzxId, 1);
+        }
+
+        //  Create a children sometimes "after"
+        dt.createNode(rootPath + "/test-999", new byte[0], null, 0, parentVersion + 3, childrenCzxId + 100, 1);
+
+        //  Asking from a negative would give me all children, and set the watch
+        int curWatchCount = dt.getWatchCount();
+        PaginationNextPage nextPage = new PaginationNextPage();
+        List<String> result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 1000, -1, 0, nextPage);
+        assertEquals(allNodes, result.size());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+        //  Verify that the list is sorted
+        String before = "";
+        for (final String path : result) {
+            assertTrue(path.compareTo(before) > 0, String.format("The next path (%s) should be > previous (%s)", path, before));
+            before = path;
+        }
+
+        // Asking with minCzxid = 0, offset = 0 should not skip anything.
+        // maxReturned = 1, the returned nextPage should be: minCzxid = next czxid, offset = 0.
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 1, 0, 0, nextPage);
+        assertEquals(1, result.size());
+        assertEquals("test-0", result.get(0));
+        assertEquals(childrenCzxId, nextPage.getMinCzxid());
+        assertEquals(0, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount, dt.getWatchCount(), "The watch should not have been set");
+
+        //  Asking with offset minCzxId below childrenCzxId should not skip anything, regardless of offset
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, childrenCzxId - 1, 3, nextPage);
+        assertEquals(2, result.size());
+        assertEquals("test-1", result.get(0));
+        assertEquals("test-2", result.get(1));
+        assertEquals(childrenCzxId, nextPage.getMinCzxid());
+        assertEquals(2, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount, dt.getWatchCount(), "The watch should not have been set");
+
+        //  Asking with offset 5 should skip nodes 1, 2, 3, 4, 5
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, childrenCzxId, 5, nextPage);
+        assertEquals(2, result.size());
+        assertEquals("test-6", result.get(0));
+        assertEquals("test-7", result.get(1));
+        assertEquals(childrenCzxId, nextPage.getMinCzxid());
+        assertEquals(7, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount, dt.getWatchCount(), "The watch should not have been set");
+
+        //  Asking with offset 5 for more nodes than are there should skip nodes 1, 2, 3, 4, 5 (plus 0 due to zxid)
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 10, childrenCzxId, 5, nextPage);
+
+        assertEquals(5, result.size());
+        assertEquals("test-6", result.get(0));
+        assertEquals("test-7", result.get(1));
+        assertEquals("test-8", result.get(2));
+        assertEquals("test-9", result.get(3));
+        assertEquals("test-999", result.get(4));
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+
+        //  Asking with offset 5 for fewer nodes than are there should skip nodes 1, 2, 3, 4, 5 (plus 0 due to zxid)
+        // Returned next page should be: minCzxid = next czxid, offset = 0
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 4, childrenCzxId, 5, nextPage);
+
+        assertEquals(4, result.size());
+        assertEquals("test-6", result.get(0));
+        assertEquals("test-7", result.get(1));
+        assertEquals("test-8", result.get(2));
+        assertEquals("test-9", result.get(3));
+        assertEquals(childrenCzxId + 100, nextPage.getMinCzxid());
+        assertEquals(0, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount, dt.getWatchCount(), "The watch should not have been set");
+
+        //  Asking from the last created node+1 should return an empty list and set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 2, 1000 + childrenCzxId, 0, nextPage);
+        assertTrue(result.isEmpty(), "The result should be an empty list");
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+    }
+
+    @Test
+    @Timeout(value = 60)
+    public void testGetChildrenPaginatedEmpty() throws NodeExistsException, NoNodeException {
+        final String rootPath = "/children";
+
+        //  Create the parent node
+        DataTree dt = new DataTree();
+        dt.createNode(rootPath, new byte[0], null, 0, dt.getNode("/").stat.getCversion() + 1, 1, 1);
+
+        // Asking from a negative would give me all children, and set the watch
+        // This goes to the pagination branch.
+        int curWatchCount = dt.getWatchCount();
+        PaginationNextPage nextPage = new PaginationNextPage();
+        List<String> result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), 100, -1, 0, nextPage);
+        assertTrue(result.isEmpty(), "The result should be empty");
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+
+        // Specify max int to fetch all children - trying to return all without sorting, and set the watch
+        curWatchCount = dt.getWatchCount();
+        result = dt.getPaginatedChildren(rootPath, null, new DummyWatcher(), Integer.MAX_VALUE, 0, 0, nextPage);
+        assertTrue(result.isEmpty(), "The result should be empty");
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageMinCzxid, nextPage.getMinCzxid());
+        assertEquals(ZooDefs.GetChildrenPaginated.lastPageCzxidOffset, nextPage.getMinCzxidOffset());
+        assertEquals(curWatchCount + 1, dt.getWatchCount(), "The watch should have been set");
+    }
+
+    private class DummyWatcher implements Watcher {
+        @Override
+        public void process(WatchedEvent ignored) {
+        }
     }
 
     /* ZOOKEEPER-3531 - similarly for aclCache.deserialize, we should not hold lock either
