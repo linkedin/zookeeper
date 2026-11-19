@@ -25,11 +25,16 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.metrics.MetricsUtils;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ServerStats;
@@ -102,6 +107,23 @@ public class CommandsTest extends ClientBase {
     @Test
     public void testConnections() throws IOException, InterruptedException {
         testCommand("connections", new Field("connections", Iterable.class), new Field("secure_connections", Iterable.class));
+    }
+
+    @Test
+    public void testConnectionsIncludeAuthInfo() throws Exception {
+        try (ZooKeeper zk = createClient()) {
+            CommandResponse response = Commands.runCommand("connections", serverFactory.getZooKeeperServer(), new HashMap<>());
+            StringWriter output = new StringWriter();
+            new JsonOutputter().output(response, new PrintWriter(output));
+
+            boolean found = false;
+            for (JsonNode connection : new ObjectMapper().readTree(output.toString()).get("connections")) {
+                for (JsonNode id : connection.get("auth_info")) {
+                    found |= "ip".equals(id.get("scheme").asText()) && "127.0.0.1".equals(id.get("id").asText());
+                }
+            }
+            assertTrue(found, "connection auth_info should include the client's ip identity: " + output);
+        }
     }
 
     @Test
