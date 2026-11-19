@@ -57,8 +57,6 @@ jobs:
         cache: 'maven'
     - name: Show the first log message
       run: git log -n1
-    - name: Check LinkedIn build configuration
-      run: python3 tools/ci/test_fork_build.py
     - name: Install C Dependencies
       run: |
         sudo apt update

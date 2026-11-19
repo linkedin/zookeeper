@@ -70,9 +70,9 @@
   </modules>
 
   <scm>
-    <connection>scm:git:https://github.com/linkedin/zookeeper.git</connection>
-    <developerConnection>scm:git:https://github.com/linkedin/zookeeper.git</developerConnection>
-    <url>https://github.com/linkedin/zookeeper</url>
+    <connection>scm:git:https://gitbox.apache.org/repos/asf/zookeeper.git</connection>
+    <developerConnection>scm:git:https://gitbox.apache.org/repos/asf/zookeeper.git</developerConnection>
+    <url>https://gitbox.apache.org/repos/asf/zookeeper.git</url>
     <tag>release-3.8.7-0</tag>
   </scm>
   <issueManagement>

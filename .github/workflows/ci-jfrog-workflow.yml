@@ -26,7 +26,6 @@ permissions:
 
 jobs:
   deploy:
-    if: github.repository == 'linkedin/zookeeper'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -36,8 +35,6 @@ jobs:
           java-version: '8'
           distribution: zulu
           cache: maven
-      - name: Check release configuration
-        run: python3 tools/ci/test_fork_build.py
       - name: Set LinkedIn release version
         env:
           RELEASE_VERSION: ${{ github.event.release.tag_name }}

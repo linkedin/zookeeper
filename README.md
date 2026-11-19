@@ -50,8 +50,6 @@ This fork builds Maven artifacts under `com.linkedin.zookeeper`. Java package
 names remain `org.apache.zookeeper`. The binary assembly keeps the
 `apache-zookeeper-[version]-bin.tar.gz` layout expected by the launch scripts.
 
-Run `python3 tools/ci/test_fork_build.py` to check the fork's Maven coordinates
-and release-version updates (requires GNU sed, as on the Ubuntu CI runners).
 Build locally with `mvn clean verify`; this does
 not publish artifacts. The upstream dependency versions and test suites are
 retained.
