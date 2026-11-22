@@ -19,7 +19,9 @@
 package org.apache.zookeeper.server.quorum;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -147,6 +149,62 @@ public class QuorumPeerConfigTest {
     }
 
     @Test
+    public void testSecureClientAddrFromSecureClientPort() throws IOException, ConfigException {
+        clearSslAuthProviderProperty();
+        long serverId = 1;
+        QuorumPeerConfig quorumPeerConfig = new MockQuorumPeerConfig(serverId);
+        Properties zkProp = getDefaultZKProperties();
+        int secureClientPort = 12346;
+        zkProp.setProperty("secureClientPort", Integer.toString(secureClientPort));
+        zkProp.setProperty("server.1", "127.0.0.1:2889:3889:participant");
+        quorumPeerConfig.parseProperties(zkProp);
+
+        QuorumServer qs = quorumPeerConfig.getQuorumVerifier().getAllMembers().get(serverId);
+        assertEquals(new InetSocketAddress("0.0.0.0", secureClientPort), quorumPeerConfig.getSecureClientPortAddress());
+        assertEquals(quorumPeerConfig.getSecureClientPortAddress(), qs.secureClientAddr);
+        assertTrue(qs.isSecureClientAddrFromStatic);
+        assertNull(quorumPeerConfig.getClientPortAddress());
+        assertNull(qs.clientAddr);
+        assertEquals("127.0.0.1:2889:3889:participant", qs.toString());
+    }
+
+    @Test
+    public void testSecureClientAddrFromDynamicServerConfig() throws IOException, ConfigException {
+        clearSslAuthProviderProperty();
+        long serverId = 1;
+        QuorumPeerConfig quorumPeerConfig = new MockQuorumPeerConfig(serverId);
+        Properties zkProp = getDefaultZKProperties();
+        zkProp.setProperty("server.1", "127.0.0.1:2889:3889:participant;;127.0.0.1:12346");
+        quorumPeerConfig.parseProperties(zkProp);
+
+        QuorumServer qs = quorumPeerConfig.getQuorumVerifier().getAllMembers().get(serverId);
+        assertEquals(new InetSocketAddress("127.0.0.1", 12346), quorumPeerConfig.getSecureClientPortAddress());
+        assertFalse(qs.isSecureClientAddrFromStatic);
+        assertNull(quorumPeerConfig.getClientPortAddress());
+        assertNull(qs.clientAddr);
+        assertEquals("127.0.0.1:2889:3889:participant;;127.0.0.1:12346", qs.toString());
+    }
+
+    @Test
+    public void testStaticSecureClientPortMustMatchDynamicServerConfig() throws IOException, ConfigException {
+        clearSslAuthProviderProperty();
+        Properties zkProp = getDefaultZKProperties();
+        zkProp.setProperty("server.1", "127.0.0.1:2889:3889:participant;;127.0.0.1:12346");
+        zkProp.setProperty("secureClientPort", "12346");
+        QuorumPeerConfig matchingPort = new MockQuorumPeerConfig(1);
+        matchingPort.parseProperties(zkProp);
+        assertEquals(new InetSocketAddress("127.0.0.1", 12346), matchingPort.getSecureClientPortAddress());
+
+        zkProp.setProperty("secureClientPort", "12347");
+        ConfigException differentPort = assertThrows(ConfigException.class, () -> new MockQuorumPeerConfig(1).parseProperties(zkProp));
+        assertTrue(differentPort.getMessage().contains("secure client address for this server (id = 1)"));
+
+        zkProp.setProperty("secureClientPort", "12346");
+        zkProp.setProperty("secureClientPortAddress", "127.0.0.2");
+        assertThrows(ConfigException.class, () -> new MockQuorumPeerConfig(1).parseProperties(zkProp));
+    }
+
+    @Test
     public void testJvmPauseMonitorConfigured() throws IOException, ConfigException {
         final Long sleepTime = 444L;
         final Long warnTH = 5555L;
@@ -197,6 +255,13 @@ public class QuorumPeerConfigTest {
             fail("Must throw exception as 'yes' is not accpetable for parseBoolean!");
         } catch (ConfigException e) {
             // expected
+        }
+    }
+
+    // testCustomSSLAuth leaves an unknown SSL auth provider configured
+    private static void clearSslAuthProviderProperty() {
+        try (ClientX509Util x509Util = new ClientX509Util()) {
+            System.clearProperty(x509Util.getSslAuthProviderProperty());
         }
     }
 
