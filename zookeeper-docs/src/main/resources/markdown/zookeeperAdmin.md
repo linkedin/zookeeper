@@ -1769,20 +1769,39 @@ is an intentional access-policy change and should be qualified before rollout.
 * *ssl.protocol* and *ssl.quorum.protocol* :
     (Java system properties: **zookeeper.ssl.protocol** and **zookeeper.ssl.quorum.protocol**)
     **New in 3.5.5:**
-    Specifies to protocol to be used in client and quorum TLS negotiation.
-    Default: TLSv1.2
+    Selects the SSLContext protocol for client and quorum TLS.
+    Default: TLSv1.3 if supported by the runtime, otherwise TLSv1.2.
+    Java 8 TLSv1.3 support depends on the vendor and update level; the default
+    is determined from runtime capabilities, not the Java major version.
+    Selecting a context does not restrict negotiation to a single protocol;
+    use `ssl.enabledProtocols` or `ssl.quorum.enabledProtocols` to do that.
+
+    The public `X509Util.DEFAULT_PROTOCOL` field is now computed at runtime.
+    Existing binaries compiled against the former constant may retain an
+    inlined TLSv1.2 value until recompiled. Upgrading the server does not
+    upgrade application client JARs; evaluate and upgrade clients separately.
 
 * *ssl.enabledProtocols* and *ssl.quorum.enabledProtocols* :
     (Java system properties: **zookeeper.ssl.enabledProtocols** and **zookeeper.ssl.quorum.enabledProtocols**)
     **New in 3.5.5:**
     Specifies the enabled protocols in client and quorum TLS negotiation.
-    Default: value of `protocol` property
+    Default: the selected SSLContext's JDK default enabled protocols.
+    For example, a TLSv1.3 context may enable both TLSv1.3 and TLSv1.2, subject
+    to the runtime's security policy. An explicit comma-separated list overrides
+    this default.
 
 * *ssl.ciphersuites* and *ssl.quorum.ciphersuites* :
     (Java system properties: **zookeeper.ssl.ciphersuites** and **zookeeper.ssl.quorum.ciphersuites**)
     **New in 3.5.5:**
     Specifies the enabled cipher suites to be used in client and quorum TLS negotiation.
-    Default: Enabled cipher suites depend on the Java runtime version being used.
+    Default: the TLS implementation's default cipher suites, including TLSv1.3
+    suites where available. JDK sockets use JDK defaults; Netty server engines
+    use Netty defaults. ZooKeeper no longer imposes a hardcoded cipher list
+    or Java-version-based ordering.
+
+    Explicit protocol and cipher lists continue to apply to quorum sockets and
+    Netty server engines. The Netty client currently uses its SSLContext's JDK
+    defaults and does not apply `ssl.enabledProtocols` or `ssl.ciphersuites`.
 
 * *ssl.context.supplier.class* and *ssl.quorum.context.supplier.class* :
     (Java system properties: **zookeeper.ssl.context.supplier.class** and **zookeeper.ssl.quorum.context.supplier.class**)
