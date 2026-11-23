@@ -26,10 +26,13 @@ import org.slf4j.LoggerFactory;
 
 public class ZKAuditProvider {
     static final String AUDIT_ENABLE = "zookeeper.audit.enable";
+    static final String AUDIT_DATA_LENGTH_ENABLE = "zookeeper.audit.dataLength.enable";
     static final String AUDIT_IMPL_CLASS = "zookeeper.audit.impl.class";
     private static final Logger LOG = LoggerFactory.getLogger(ZKAuditProvider.class);
     // By default audit logging is disabled
     private static boolean auditEnabled;
+    // By default data length is not included in audit logs
+    private static boolean dataLengthEnabled;
     private static AuditLogger auditLogger;
 
     static {
@@ -37,7 +40,9 @@ public class ZKAuditProvider {
         if (auditEnabled) {
             //initialise only when audit logging is enabled
             auditLogger = getAuditLogger();
-            LOG.info("ZooKeeper audit is enabled.");
+            dataLengthEnabled = Boolean.getBoolean(AUDIT_DATA_LENGTH_ENABLE);
+            LOG.info("ZooKeeper audit is enabled. Data length auditing is {}.",
+                    dataLengthEnabled ? "enabled" : "disabled");
         } else {
             LOG.info("ZooKeeper audit is disabled.");
         }
@@ -66,9 +71,26 @@ public class ZKAuditProvider {
         return auditEnabled;
     }
 
+    /**
+     * @return true if the payload size of create and setData operations is included in audit logs
+     */
+    public static boolean isDataLengthEnabled() {
+        return dataLengthEnabled;
+    }
+
     public static void log(String user, String operation, String znode, String acl,
                            String createMode, String session, String ip, Result result) {
-        auditLogger.logAuditEvent(createLogEvent(user, operation, znode, acl, createMode, session, ip, result));
+        log(user, operation, znode, acl, createMode, session, ip, result, null);
+    }
+
+    /**
+     * Logs an audit event. dataLength is logged only when data length auditing is enabled.
+     */
+    public static void log(String user, String operation, String znode, String acl,
+                           String createMode, String session, String ip, Result result,
+                           Integer dataLength) {
+        auditLogger.logAuditEvent(createLogEvent(user, operation, znode, acl, createMode, session, ip, result,
+                dataLength));
     }
 
     /**
@@ -86,6 +108,15 @@ public class ZKAuditProvider {
      */
     static AuditEvent createLogEvent(String user, String operation, String znode, String acl,
                                      String createMode, String session, String ip, Result result) {
+        return createLogEvent(user, operation, znode, acl, createMode, session, ip, result, null);
+    }
+
+    /**
+     * A helper api for creating an AuditEvent object.
+     */
+    static AuditEvent createLogEvent(String user, String operation, String znode, String acl,
+                                     String createMode, String session, String ip, Result result,
+                                     Integer dataLength) {
         AuditEvent event = new AuditEvent(result);
         event.addEntry(FieldName.SESSION, session);
         event.addEntry(FieldName.USER, user);
@@ -94,6 +125,9 @@ public class ZKAuditProvider {
         event.addEntry(FieldName.ZNODE, znode);
         event.addEntry(FieldName.ZNODE_TYPE, createMode);
         event.addEntry(FieldName.ACL, acl);
+        if (dataLengthEnabled && dataLength != null) {
+            event.addEntry(FieldName.DATA_LENGTH, dataLength.toString());
+        }
         return event;
     }
 
