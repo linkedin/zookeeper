@@ -2089,8 +2089,10 @@ the variable does.
     This can be used to audit the impact of enforcing ACLs before turning them on.
     Note that dryrun does not provide the throughput boost of **yes** and, like
     **yes**, leaves the data tree open to everyone.
-    Values are case-sensitive and are not trimmed: any value other than
-    **yes** or **dryrun**, including an invalid value, enforces ACL checks.
+    The Java system-property value is case-sensitive and is not trimmed.
+    Any value other than **yes** or **dryrun**, including an invalid value,
+    enforces ACL checks. When configured through **zoo.cfg**, the configuration
+    parser trims surrounding whitespace before setting this property.
     The property is read when the server class is initialized; changing it
     requires a server restart.
 
