@@ -20,6 +20,8 @@ package org.apache.zookeeper.server.auth;
 
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.Optional;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
@@ -32,6 +34,7 @@ import org.apache.zookeeper.common.X509Util;
 import org.apache.zookeeper.common.ZKConfig;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.ServerCnxn;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -148,11 +151,13 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         X509Certificate[] certChain = (X509Certificate[]) cnxn.getClientCertificateChain();
 
         if (certChain == null || certChain.length == 0) {
+            cnxn.setX509ClientIdentity(null);
             return KeeperException.Code.AUTHFAILED;
         }
 
         if (trustManager == null) {
             LOG.error("No trust manager available to authenticate session 0x{}", Long.toHexString(cnxn.getSessionId()));
+            cnxn.setX509ClientIdentity(null);
             return KeeperException.Code.AUTHFAILED;
         }
 
@@ -163,14 +168,29 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
             trustManager.checkClientTrusted(certChain, clientCert.getPublicKey().getAlgorithm());
         } catch (CertificateException ce) {
             LOG.error("Failed to trust certificate for session 0x{}", Long.toHexString(cnxn.getSessionId()), ce);
+            cnxn.setX509ClientIdentity(null);
             return KeeperException.Code.AUTHFAILED;
         }
 
         String clientId = getClientId(clientCert);
+        ClientIdentity extractedIdentity = X509AuthenticationUtil.getClientIdentity(clientCert);
+        // A subclass override of getClientId may return an ID that does not correspond to the
+        // certificate type extracted here. Only keep typed identity context, which enables legacy
+        // compatibility matching, when the selected client ID is the extracted one.
+        ClientIdentity identity = extractedIdentity.getId().equals(clientId) ? extractedIdentity : null;
+        cnxn.setX509ClientIdentity(identity);
 
-        if (clientId.equals(System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER))) {
-            cnxn.addAuthInfo(new Id("super", clientId));
-            LOG.info("Authenticated Id '{}' as super user", clientId);
+        String configuredSuperUser = System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER);
+        Optional<String> superUserId;
+        if (identity != null) {
+            superUserId = LegacyServicePrincipalMatcher.findMatchingSuperUserId(identity,
+                configuredSuperUser == null ? Collections.emptySet() : Collections.singleton(configuredSuperUser));
+        } else {
+            superUserId = clientId.equals(configuredSuperUser) ? Optional.of(clientId) : Optional.empty();
+        }
+        if (superUserId.isPresent()) {
+            cnxn.addAuthInfo(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, superUserId.get()));
+            LOG.info("Authenticated Id '{}' as configured super user '{}'", clientId, superUserId.get());
         }
 
         Id authInfo = new Id(getScheme(), clientId);
@@ -202,6 +222,13 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
         }
 
         return id.equals(aclExpr);
+    }
+
+    @Override
+    public boolean matches(ServerAuthenticationProvider.ServerObjs serverObjs, String id, String aclExpr) {
+        return matches(id, aclExpr)
+            || LegacyServicePrincipalMatcher.matchesAuthenticatedClient(
+                serverObjs == null ? null : serverObjs.getX509ClientIdentity(), id, aclExpr);
     }
 
     @Override

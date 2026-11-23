@@ -19,6 +19,9 @@
 package org.apache.zookeeper.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.common.annotations.VisibleForTesting;
 import java.math.BigInteger;
 import java.net.Socket;
@@ -39,6 +42,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import javax.net.ssl.X509KeyManager;
@@ -46,10 +50,14 @@ import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZKTestCase;
+import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.MockServerCnxn;
+import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationConfig;
 import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationUtil;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.CertificateType;
+import org.apache.zookeeper.server.auth.X509AuthenticationUtil.ClientIdentity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +66,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 
 public class X509AuthTest extends ZKTestCase {
+
+    private static final String SPIFFE_KAFKA_SAN = "spiffe://example.org/v2/application/example-mp/kafka";
 
     private static TestCertificate clientCert;
     private static TestCertificate superCert;
@@ -176,6 +186,263 @@ public class X509AuthTest extends ZKTestCase {
         assertEquals("CN=CLIENT", X509AuthenticationUtil.getClientId(certificate));
     }
 
+    @Test
+    public void testUrnMatchRegexTooBroadWithMetadataSanFallsBackToDn() {
+        // Some service certs carry two urn:li: URIs: servicePrincipal(...) and
+        // servicePrincipalMetadata(...). A loose match regex matches both, which is rejected
+        // (exactly one match is required), causing a fall back to Subject DN.
+        String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;None;i001)";
+        String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX, "^.*urn:li:.*$");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+            "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+
+        TestCertificate serviceCert = new TestCertificate("CLIENT",
+            Arrays.asList(servicePrincipalSan, servicePrincipalMetadataSan));
+        X509AuthenticationProvider provider = createProvider(serviceCert);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{serviceCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+        assertEquals(CertificateType.SUBJECT_DN, cnxn.getX509ClientIdentity().getCertificateType());
+    }
+
+    @Test
+    public void testUrnMatchRegexAnchoredToServicePrincipalExtractsCorrectlyWithMetadataSan() {
+        String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;None;i001)";
+        String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX,
+            "^.*urn:li:servicePrincipal\\(.*$");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+            "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+
+        TestCertificate serviceCert = new TestCertificate("CLIENT",
+            Arrays.asList(servicePrincipalSan, servicePrincipalMetadataSan));
+        X509AuthenticationProvider provider = createProvider(serviceCert);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{serviceCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals("servicePrincipal(zk-test-client", cnxn.getAuthInfo().get(0).getId());
+    }
+
+    @Test
+    public void testUrnWithoutSanConfigurationKeepsSubjectDn() {
+        String servicePrincipalSan = "urn:li:servicePrincipal(kafka;region1;instance1)";
+        TestCertificate serviceCert = new TestCertificate("CLIENT", servicePrincipalSan);
+        X509AuthenticationProvider provider = createProvider(serviceCert);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{serviceCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(serviceCert);
+        assertEquals(CertificateType.SUBJECT_DN, identity.getCertificateType());
+        assertEquals("CN=CLIENT", identity.getId());
+    }
+
+    @Test
+    public void testUrnWithMetadataWithoutSanConfigurationKeepsSubjectDn() {
+        String servicePrincipalSan = "urn:li:servicePrincipal(kafka;region1;instance1)";
+        String servicePrincipalMetadataSan = "urn:li:servicePrincipalMetadata(dev;1.0.0)";
+        TestCertificate serviceCert = new TestCertificate("CLIENT",
+            Arrays.asList(servicePrincipalSan, servicePrincipalMetadataSan));
+        X509AuthenticationProvider provider = createProvider(serviceCert);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{serviceCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+        assertEquals(CertificateType.SUBJECT_DN,
+            X509AuthenticationUtil.getClientIdentity(serviceCert).getCertificateType());
+    }
+
+    @Test
+    public void testClientIdentityPreservesConfiguredSanExtraction() {
+        String servicePrincipalSan = "urn:li:servicePrincipal(zk-test-client;region1;instance1)";
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX,
+            "^.*urn:li:servicePrincipal\\(.*$");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+            "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+
+        TestCertificate serviceCert = new TestCertificate("CLIENT", servicePrincipalSan);
+        X509AuthenticationProvider provider = createProvider(serviceCert);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{serviceCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals("servicePrincipal(zk-test-client", cnxn.getAuthInfo().get(0).getId());
+        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(serviceCert);
+        assertEquals(CertificateType.LEGACY_SAN, identity.getCertificateType());
+        assertEquals("servicePrincipal(zk-test-client", identity.getId());
+        assertEquals("servicePrincipal(zk-test-client", X509AuthenticationUtil.getClientId(serviceCert));
+    }
+
+    @Test
+    public void testClientIdentityPreservesSubjectDn() {
+        TestCertificate certWithoutUrnSan = new TestCertificate("CLIENT");
+        X509AuthenticationProvider provider = createProvider(certWithoutUrnSan);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{certWithoutUrnSan};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+        assertEquals(CertificateType.SUBJECT_DN,
+            X509AuthenticationUtil.getClientIdentity(certWithoutUrnSan).getCertificateType());
+    }
+
+    @Test
+    public void testUnmatchedOptionalSanCaptureFallsBackToSubjectDn() {
+        // The extract regex matches, but its selected optional group does not participate.
+        X509AuthenticationConfig config = X509AuthenticationConfig.getInstance();
+        config.setClientCertIdType("SAN");
+        config.setClientCertIdSanMatchType("6");
+        config.setClientCertIdSanMatchRegex(".*");
+        config.setClientCertIdSanExtractRegex("^a:b:c\\((missing)?.*$");
+        config.setClientCertIdSanExtractMatcherGroupIndex("1");
+
+        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(clientCert);
+        assertEquals(CertificateType.SUBJECT_DN, identity.getCertificateType());
+        assertEquals("CN=CLIENT", identity.getId());
+        assertEquals("CN=CLIENT", X509AuthenticationUtil.getClientId(clientCert));
+
+        X509AuthenticationProvider provider = createProvider(clientCert);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{clientCert};
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals(1, cnxn.getAuthInfo().size());
+        assertEquals("x509", cnxn.getAuthInfo().get(0).getScheme());
+        assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
+    }
+
+    @Test
+    public void testMissingSanFallsBackToSubjectDnWithoutSpiffeIdentity() {
+        X509AuthenticationConfig config = X509AuthenticationConfig.getInstance();
+        config.setClientCertIdType("SAN");
+        config.setClientCertIdSanMatchType("6");
+        TestCertificate certWithoutSan = new TestCertificate("CLIENT") {
+            @Override
+            public Collection<List<?>> getSubjectAlternativeNames() {
+                return null;
+            }
+        };
+        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(certWithoutSan);
+        assertEquals(CertificateType.SUBJECT_DN, identity.getCertificateType());
+        assertEquals("CN=CLIENT", identity.getId());
+    }
+
+    @Test
+    public void testSpiffeIdentityMatchesLegacySuperUserAndAcl() {
+        System.setProperty("zookeeper.X509AuthenticationProvider.superUser", "servicePrincipal(kafka");
+        TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_KAFKA_SAN);
+        X509AuthenticationProvider provider = createProvider(spiffeCert);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals(new HashSet<>(Arrays.asList(new Id("super", "servicePrincipal(kafka"),
+            new Id("x509", "application/example-mp/kafka"))), new HashSet<>(cnxn.getAuthInfo()));
+        assertEquals(CertificateType.SPIFFE_V2, cnxn.getX509ClientIdentity().getCertificateType());
+
+        ServerAuthenticationProvider.ServerObjs serverObjs = new ServerAuthenticationProvider.ServerObjs(null, cnxn);
+        assertTrue(provider.matches(serverObjs, "application/example-mp/kafka", "kafka"));
+        assertTrue(provider.matches(serverObjs, "application/example-mp/kafka",
+            "urn:li:servicePrincipal(kafka;region1;instance1)"));
+        assertFalse(provider.matches(serverObjs, "application/example-mp/kafka", "servicePrincipal(kafka-tools"));
+        assertFalse(provider.matches(serverObjs, "application/example-mp/kafka", "Kafka"));
+        assertFalse(provider.matches("application/example-mp/kafka", "kafka"));
+    }
+
+    @Test
+    public void testLegacyIdentityDoesNotMatchSpiffeOnlyAcl() {
+        TestCertificate legacyCert = new TestCertificate("CLIENT", "urn:li:servicePrincipal(kafka;region1;instance1)");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE, "SAN");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE, "6");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX,
+            "^.*urn:li:servicePrincipal\\(.*$");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+            "^.*urn:li:([a-z]+Principal\\([^;%:]+)");
+        System.setProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+        X509AuthenticationProvider provider = createProvider(legacyCert);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{legacyCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals("servicePrincipal(kafka", cnxn.getAuthInfo().get(0).getId());
+        assertEquals(CertificateType.LEGACY_SAN, cnxn.getX509ClientIdentity().getCertificateType());
+        ServerAuthenticationProvider.ServerObjs serverObjs = new ServerAuthenticationProvider.ServerObjs(null, cnxn);
+        assertFalse(provider.matches(serverObjs, "servicePrincipal(kafka", "application/example-mp/kafka"));
+        assertFalse(provider.matches(serverObjs, "servicePrincipal(kafka", "kafka"));
+        assertTrue(provider.matches(serverObjs, "servicePrincipal(kafka", "servicePrincipal(kafka"));
+    }
+
+    @Test
+    public void testClientIdHookOverrideWithDifferentIdDisablesTypedCompatibility() {
+        System.setProperty("zookeeper.X509AuthenticationProvider.superUser", "kafka");
+        TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_KAFKA_SAN);
+        X509AuthenticationProvider provider =
+            new X509AuthenticationProvider(new TestTrustManager(spiffeCert), new TestKeyManager()) {
+                @Override
+                protected String getClientId(X509Certificate clientCert) {
+                    return "custom-client";
+                }
+            };
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals(1, cnxn.getAuthInfo().size());
+        assertEquals("x509", cnxn.getAuthInfo().get(0).getScheme());
+        assertEquals("custom-client", cnxn.getAuthInfo().get(0).getId());
+        assertNull(cnxn.getX509ClientIdentity());
+        ServerAuthenticationProvider.ServerObjs serverObjs = new ServerAuthenticationProvider.ServerObjs(null, cnxn);
+        assertFalse(provider.matches(serverObjs, "custom-client", "kafka"));
+        assertTrue(provider.matches(serverObjs, "custom-client", "custom-client"));
+    }
+
+    @Test
+    public void testClientIdHookOverrideWithExtractedIdKeepsTypedIdentity() {
+        System.setProperty("zookeeper.X509AuthenticationProvider.superUser", "kafka");
+        TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_KAFKA_SAN);
+        X509AuthenticationProvider provider =
+            new X509AuthenticationProvider(new TestTrustManager(spiffeCert), new TestKeyManager()) {
+                @Override
+                protected String getClientId(X509Certificate clientCert) {
+                    return super.getClientId(clientCert);
+                }
+            };
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{spiffeCert};
+
+        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
+        assertEquals(new HashSet<>(Arrays.asList(new Id("super", "kafka"),
+            new Id("x509", "application/example-mp/kafka"))), new HashSet<>(cnxn.getAuthInfo()));
+        assertEquals(CertificateType.SPIFFE_V2, cnxn.getX509ClientIdentity().getCertificateType());
+    }
+
+    @Test
+    public void testFailedAuthenticationClearsTypedIdentity() {
+        TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_KAFKA_SAN);
+        MockServerCnxn cnxn = new MockServerCnxn();
+        cnxn.clientChain = new X509Certificate[]{spiffeCert};
+        assertEquals(KeeperException.Code.OK, createProvider(spiffeCert).handleAuthentication(cnxn, null));
+        ClientIdentity identity = cnxn.getX509ClientIdentity();
+        assertEquals(CertificateType.SPIFFE_V2, identity.getCertificateType());
+
+        assertEquals(KeeperException.Code.AUTHFAILED, createProvider(unknownCert).handleAuthentication(cnxn, null));
+        assertNull(cnxn.getX509ClientIdentity());
+    }
+
   protected static class TestPublicKey implements PublicKey {
 
         private static final long serialVersionUID = 1L;
@@ -200,17 +467,21 @@ public class X509AuthTest extends ZKTestCase {
         private byte[] encoded;
         private X500Principal principal;
         private PublicKey publicKey;
-        private String subjectAlternativeName;
+        private List<String> subjectAlternativeNames;
 
         public TestCertificate(String name) {
           this(name, TEST_SAN_STR);
         }
 
         public TestCertificate(String name, String sanVal) {
+          this(name, Collections.singletonList(sanVal));
+        }
+
+        public TestCertificate(String name, List<String> sanVals) {
           encoded = name.getBytes();
           principal = new X500Principal("CN=" + name);
           publicKey = new TestPublicKey();
-          subjectAlternativeName = sanVal;
+          subjectAlternativeNames = sanVals;
         }
           @Override
         public boolean hasUnsupportedCriticalExtension() {
@@ -318,10 +589,14 @@ public class X509AuthTest extends ZKTestCase {
         }
         @Override
         public Collection<List<?>> getSubjectAlternativeNames() {
-            List<Object> subjectAlternativeNamePair = new ArrayList<>();
-            subjectAlternativeNamePair.add(6);
-            subjectAlternativeNamePair.add(subjectAlternativeName);
-            return Collections.singletonList(subjectAlternativeNamePair);
+            List<List<?>> result = new ArrayList<>();
+            for (String san : subjectAlternativeNames) {
+                List<Object> pair = new ArrayList<>();
+                pair.add(6);
+                pair.add(san);
+                result.add(pair);
+            }
+            return result;
         }
     }
 
