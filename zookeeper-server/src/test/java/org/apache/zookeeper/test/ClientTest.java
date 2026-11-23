@@ -18,14 +18,19 @@
 
 package org.apache.zookeeper.test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -36,6 +41,7 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.KeeperException.InvalidACLException;
+import org.apache.zookeeper.Op;
 import org.apache.zookeeper.TestableZooKeeper;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
@@ -54,13 +60,15 @@ import org.apache.zookeeper.proto.RequestHeader;
 import org.apache.zookeeper.server.PrepRequestProcessor;
 import org.apache.zookeeper.server.util.OSMXBean;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ClientTest extends ClientBase {
 
     protected static final Logger LOG = LoggerFactory.getLogger(ClientTest.class);
-    private boolean skipACL = System.getProperty("zookeeper.skipACL", "no").equals("yes");
+    // dryrun allows requests that fail the ACL check, just like skipACL=yes.
+    private boolean skipACL = Arrays.asList("yes", "dryrun").contains(System.getProperty("zookeeper.skipACL", "no"));
 
     /** Verify that pings are sent, keeping the "idle" client alive */
     @Test
@@ -195,6 +203,38 @@ public class ClientTest extends ClientBase {
             if (zk != null) {
                 zk.close();
             }
+        }
+    }
+
+    @Test
+    public void testACLsAcrossOperations() throws Exception {
+        try (ZooKeeper owner = createClient(); ZooKeeper other = createClient()) {
+            owner.addAuthInfo("digest", "owner:password".getBytes(StandardCharsets.UTF_8));
+            other.addAuthInfo("digest", "owner:wrong-password".getBytes(StandardCharsets.UTF_8));
+            owner.create("/acl-modes", new byte[]{1}, Ids.CREATOR_ALL_ACL, CreateMode.PERSISTENT);
+            owner.create("/acl-modes/child", new byte[]{2}, Ids.CREATOR_ALL_ACL, CreateMode.PERSISTENT);
+            assertArrayEquals(new byte[]{1}, owner.getData("/acl-modes", true, null));
+            assertEquals(Collections.singletonList("child"), owner.getChildren("/acl-modes", true));
+            owner.setData("/acl-modes", new byte[]{3}, -1);
+            List<ACL> acl = owner.getACL("/acl-modes", null);
+            owner.setACL("/acl-modes", acl, -1);
+
+            for (Executable operation : Arrays.<Executable>asList(
+                () -> other.getData("/acl-modes", true, null),
+                () -> other.getChildren("/acl-modes", true),
+                () -> other.setData("/acl-modes", new byte[]{4}, -1),
+                () -> other.create("/acl-modes/new", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
+                () -> other.setACL("/acl-modes", acl, -1),
+                () -> other.multi(Collections.singletonList(Op.setData("/acl-modes", new byte[]{5}, -1))),
+                () -> other.delete("/acl-modes/child", -1))) {
+                if (skipACL) {
+                    assertDoesNotThrow(operation);
+                } else {
+                    assertThrows(KeeperException.NoAuthException.class, operation);
+                }
+            }
+            assertArrayEquals(new byte[]{(byte) (skipACL ? 5 : 3)}, owner.getData("/acl-modes", false, null));
+            assertEquals(Collections.singletonList(skipACL ? "new" : "child"), owner.getChildren("/acl-modes", false));
         }
     }
 

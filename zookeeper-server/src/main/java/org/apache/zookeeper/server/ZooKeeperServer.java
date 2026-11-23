@@ -81,6 +81,7 @@ import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
 import org.apache.zookeeper.server.quorum.ReadOnlyZooKeeperServer;
+import org.apache.zookeeper.server.util.AuthUtil;
 import org.apache.zookeeper.server.util.JvmPauseMonitor;
 import org.apache.zookeeper.server.util.OSMXBean;
 import org.apache.zookeeper.server.util.QuotaMetricsUtils;
@@ -106,6 +107,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
     public static final String ENABLE_EAGER_ACL_CHECK = "zookeeper.enableEagerACLCheck";
     public static final String SKIP_ACL = "zookeeper.skipACL";
+    public static final String SKIP_ACL_DRYRUN = "dryrun";
     public static final String EPHEMERAL_NODES_TOTAL_BYTE_LIMIT_KEY = "zookeeper.ephemeralNodes.total.byte.limit";
     public static final int DEFAULT_EPHEMERAL_NODES_TOTAL_BYTE_LIMIT = -1;
     private static int ephemeralCountLimit;
@@ -117,6 +119,9 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     static boolean enableEagerACLCheck;
 
     static final boolean skipACL;
+
+    // When zookeeper.skipACL=dryrun, evaluate ACL checks but only log failures.
+    static final boolean skipACLDryRun;
 
     public static final boolean enforceQuota;
 
@@ -143,9 +148,14 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         enableEagerACLCheck = Boolean.getBoolean(ENABLE_EAGER_ACL_CHECK);
         LOG.info("{} = {}", ENABLE_EAGER_ACL_CHECK, enableEagerACLCheck);
 
-        skipACL = System.getProperty(SKIP_ACL, "no").equals("yes");
+        String skipACLValue = System.getProperty(SKIP_ACL, "no");
+        skipACL = skipACLValue.equals("yes");
+        skipACLDryRun = skipACLValue.equals(SKIP_ACL_DRYRUN);
         if (skipACL) {
             LOG.info("{}==\"yes\", ACL checks will be skipped", SKIP_ACL);
+        } else if (skipACLDryRun) {
+            LOG.info("{}==\"{}\", ACL checks will be evaluated but failures will only be logged, requests will not be rejected",
+                     SKIP_ACL, SKIP_ACL_DRYRUN);
         }
 
         enforceQuota = Boolean.parseBoolean(System.getProperty(ENFORCE_QUOTA, "false"));
@@ -2026,18 +2036,20 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
      * @param setAcls : for set ACL operations, the list of ACLs being set. Otherwise null.
      */
     public void checkACL(ServerCnxn cnxn, List<ACL> acl, int perm, List<Id> ids, String path, List<ACL> setAcls) throws KeeperException.NoAuthException {
-        checkACLWithContext(new ServerAuthenticationProvider.ServerObjs(this, cnxn), acl, perm, ids, path, setAcls);
+        checkACLWithContext(new ServerAuthenticationProvider.ServerObjs(this, cnxn),
+            cnxn == null ? -1 : cnxn.getSessionId(), acl, perm, ids, path, setAcls);
     }
 
     public void checkACL(Request request, List<ACL> acl, int perm, String path, List<ACL> setAcls)
         throws KeeperException.NoAuthException {
         checkACLWithContext(
             new ServerAuthenticationProvider.ServerObjs(this, request.cnxn, request.getX509ClientIdentity()),
-            acl, perm, request.authInfo, path, setAcls);
+            request.sessionId, acl, perm, request.authInfo, path, setAcls);
     }
 
-    private void checkACLWithContext(ServerAuthenticationProvider.ServerObjs serverObjs, List<ACL> acl, int perm,
-                                    List<Id> ids, String path, List<ACL> setAcls) throws KeeperException.NoAuthException {
+    private void checkACLWithContext(ServerAuthenticationProvider.ServerObjs serverObjs, long sessionId,
+                                    List<ACL> acl, int perm, List<Id> ids, String path, List<ACL> setAcls)
+        throws KeeperException.NoAuthException {
         if (skipACL) {
             return;
         }
@@ -2073,7 +2085,33 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                 }
             }
         }
+        if (skipACLDryRun) {
+            ServerCnxn cnxn = serverObjs.getCnxn();
+            List<String> clientAuth = new ArrayList<>();
+            for (Id authId : ids) {
+                clientAuth.add(describeIdForLog(authId));
+            }
+            List<String> nodeACL = new ArrayList<>();
+            for (ACL a : acl) {
+                nodeACL.add(describeIdForLog(a.getId()) + ":" + a.getPerms());
+            }
+            LOG.warn("{}=\"{}\": ACL check would have failed, request is allowed. path={}, requestedPerm={}, "
+                     + "sessionId=0x{}, clientAddress={}, clientAuth={}, nodeACL={}",
+                     SKIP_ACL, SKIP_ACL_DRYRUN, path, perm, Long.toHexString(sessionId),
+                     cnxn == null ? null : cnxn.getRemoteSocketAddress(), clientAuth, nodeACL);
+            return;
+        }
         throw new KeeperException.NoAuthException();
+    }
+
+    // Format as scheme:user so that credentials (e.g. digest password hashes) are not logged.
+    private static String describeIdForLog(Id id) {
+        String scheme = id.getScheme();
+        if ("world".equals(scheme) || "auth".equals(scheme)) {
+            return scheme + ":" + id.getId();
+        }
+        String user = id.getId() == null ? null : AuthUtil.getUser(id);
+        return user == null ? scheme : scheme + ":" + user;
     }
 
     /**
