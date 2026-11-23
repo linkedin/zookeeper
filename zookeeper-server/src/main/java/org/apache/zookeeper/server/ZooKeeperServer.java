@@ -569,13 +569,19 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         }
 
         // Clean up dead sessions
+        AtomicInteger deadSessionCount = new AtomicInteger();
         zkDb.getSessions().stream()
                         .filter(session -> zkDb.getSessionWithTimeOuts().get(session) == null)
-                        .forEach(session -> killSession(session, zkDb.getDataTreeLastProcessedZxid()));
+                        .forEach(session -> {
+                            killSession(session, zkDb.getDataTreeLastProcessedZxid());
+                            deadSessionCount.incrementAndGet();
+                        });
 
         if (skipSnapshot) {
-            LOG.info("Skipping startup snapshot (periodic snapshot will persist state). lastProcessedZxid: 0x{}",
-                     Long.toHexString(zkDb.getDataTreeLastProcessedZxid()));
+            LOG.info("Skipping startup snapshot (periodic snapshot will persist state). "
+                     + "lastProcessedZxid: 0x{}, dead sessions cleaned: {}",
+                     Long.toHexString(zkDb.getDataTreeLastProcessedZxid()),
+                     deadSessionCount.get());
         } else {
             // Make a clean snapshot
             takeSnapshot();

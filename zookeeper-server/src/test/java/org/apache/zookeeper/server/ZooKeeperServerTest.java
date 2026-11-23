@@ -30,6 +30,7 @@ import static org.mockito.Mockito.mock;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +46,7 @@ import org.apache.zookeeper.server.persistence.Util;
 import org.apache.zookeeper.server.quorum.QuorumPeer;
 import org.apache.zookeeper.server.util.QuotaMetricsUtils;
 import org.apache.zookeeper.test.ClientBase;
+import org.apache.zookeeper.test.LoggerTestTool;
 import org.apache.zookeeper.txn.CreateTxn;
 import org.apache.zookeeper.txn.TxnHeader;
 import org.junit.jupiter.api.Test;
@@ -357,6 +359,38 @@ public class ZooKeeperServerTest extends ZKTestCase {
             } finally {
                 snapLog.close();
             }
+        }
+
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 2})
+    public void testSkippedStartupSnapshotLogsDeadSessionCount(int deadSessionCount, @TempDir File directory) throws Exception {
+        FileTxnSnapLog snapLog = new FileTxnSnapLog(directory, directory);
+        try (LoggerTestTool logger = new LoggerTestTool(ZooKeeperServer.class)) {
+            ZooKeeperServer server = new ZooKeeperServer(snapLog, 2000, null);
+            ZKDatabase database = server.getZKDatabase();
+            database.loadDataBase();
+            for (int i = 0; i <= deadSessionCount; i++) {
+                long session = i + 1;
+                assertEquals(0, database.processTxn(
+                    new TxnHeader(session, 1, session, 1, ZooDefs.OpCode.create),
+                    new CreateTxn("/session-" + session, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, true, i + 1), null).err);
+            }
+            database.getSessionWithTimeOuts().put(1L, 30000);
+
+            server.loadData(true);
+            String log = logger.readLogLine("Skipping startup snapshot");
+            assertNotNull(log);
+            assertTrue(log.endsWith(", dead sessions cleaned: " + deadSessionCount), log);
+            assertEquals(Collections.singleton(1L), database.getSessions());
+
+            server.loadData(true);
+            log = logger.readLogLine("Skipping startup snapshot");
+            assertNotNull(log);
+            assertTrue(log.endsWith(", dead sessions cleaned: 0"), log);
+        } finally {
+            snapLog.close();
         }
     }
 }
