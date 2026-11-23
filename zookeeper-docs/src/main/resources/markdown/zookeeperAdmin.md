@@ -1645,10 +1645,6 @@ and [SASL authentication for ZooKeeper](https://cwiki.apache.org/confluence/disp
     compatibility matches. Missing context does not enable an alias, so do not rely
     on this compatibility during a mixed-version rollout. Exact IDs and existing
     domain/superuser AuthInfo continue to use their ordinary authorization rules.
-    A subclass of **X509AuthenticationProvider** that overrides **getClientId**
-    keeps its selected client ID. Compatibility matching applies to that connection
-    only when the selected ID equals the certificate-derived identity; otherwise
-    only exact matches are used.
 
 * *zookeeper.superUser* :
     (Java system property: **zookeeper.superUser**)

@@ -183,7 +183,7 @@ public class X509AuthTest extends ZKTestCase {
                 }
             };
         }
-        assertEquals("CN=CLIENT", X509AuthenticationUtil.getClientId(certificate));
+        assertEquals("CN=CLIENT", X509AuthenticationUtil.getClientId(certificate).getId());
     }
 
     @Test
@@ -243,7 +243,7 @@ public class X509AuthTest extends ZKTestCase {
 
         assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
         assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
-        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(serviceCert);
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(serviceCert);
         assertEquals(CertificateType.SUBJECT_DN, identity.getCertificateType());
         assertEquals("CN=CLIENT", identity.getId());
     }
@@ -261,7 +261,7 @@ public class X509AuthTest extends ZKTestCase {
         assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
         assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
         assertEquals(CertificateType.SUBJECT_DN,
-            X509AuthenticationUtil.getClientIdentity(serviceCert).getCertificateType());
+            X509AuthenticationUtil.getClientId(serviceCert).getCertificateType());
     }
 
     @Test
@@ -282,10 +282,10 @@ public class X509AuthTest extends ZKTestCase {
 
         assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
         assertEquals("servicePrincipal(zk-test-client", cnxn.getAuthInfo().get(0).getId());
-        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(serviceCert);
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(serviceCert);
         assertEquals(CertificateType.LEGACY_SAN, identity.getCertificateType());
         assertEquals("servicePrincipal(zk-test-client", identity.getId());
-        assertEquals("servicePrincipal(zk-test-client", X509AuthenticationUtil.getClientId(serviceCert));
+        assertEquals("servicePrincipal(zk-test-client", X509AuthenticationUtil.getClientId(serviceCert).getId());
     }
 
     @Test
@@ -298,7 +298,7 @@ public class X509AuthTest extends ZKTestCase {
         assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
         assertEquals("CN=CLIENT", cnxn.getAuthInfo().get(0).getId());
         assertEquals(CertificateType.SUBJECT_DN,
-            X509AuthenticationUtil.getClientIdentity(certWithoutUrnSan).getCertificateType());
+            X509AuthenticationUtil.getClientId(certWithoutUrnSan).getCertificateType());
     }
 
     @Test
@@ -311,10 +311,10 @@ public class X509AuthTest extends ZKTestCase {
         config.setClientCertIdSanExtractRegex("^a:b:c\\((missing)?.*$");
         config.setClientCertIdSanExtractMatcherGroupIndex("1");
 
-        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(clientCert);
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(clientCert);
         assertEquals(CertificateType.SUBJECT_DN, identity.getCertificateType());
         assertEquals("CN=CLIENT", identity.getId());
-        assertEquals("CN=CLIENT", X509AuthenticationUtil.getClientId(clientCert));
+        assertEquals("CN=CLIENT", X509AuthenticationUtil.getClientId(clientCert).getId());
 
         X509AuthenticationProvider provider = createProvider(clientCert);
         MockServerCnxn cnxn = new MockServerCnxn();
@@ -336,7 +336,7 @@ public class X509AuthTest extends ZKTestCase {
                 return null;
             }
         };
-        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(certWithoutSan);
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(certWithoutSan);
         assertEquals(CertificateType.SUBJECT_DN, identity.getCertificateType());
         assertEquals("CN=CLIENT", identity.getId());
     }
@@ -384,50 +384,6 @@ public class X509AuthTest extends ZKTestCase {
         assertFalse(provider.matches(serverObjs, "servicePrincipal(kafka", "application/example-mp/kafka"));
         assertFalse(provider.matches(serverObjs, "servicePrincipal(kafka", "kafka"));
         assertTrue(provider.matches(serverObjs, "servicePrincipal(kafka", "servicePrincipal(kafka"));
-    }
-
-    @Test
-    public void testClientIdHookOverrideWithDifferentIdDisablesTypedCompatibility() {
-        System.setProperty("zookeeper.X509AuthenticationProvider.superUser", "kafka");
-        TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_KAFKA_SAN);
-        X509AuthenticationProvider provider =
-            new X509AuthenticationProvider(new TestTrustManager(spiffeCert), new TestKeyManager()) {
-                @Override
-                protected String getClientId(X509Certificate clientCert) {
-                    return "custom-client";
-                }
-            };
-        MockServerCnxn cnxn = new MockServerCnxn();
-        cnxn.clientChain = new X509Certificate[]{spiffeCert};
-
-        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
-        assertEquals(1, cnxn.getAuthInfo().size());
-        assertEquals("x509", cnxn.getAuthInfo().get(0).getScheme());
-        assertEquals("custom-client", cnxn.getAuthInfo().get(0).getId());
-        assertNull(cnxn.getX509ClientIdentity());
-        ServerAuthenticationProvider.ServerObjs serverObjs = new ServerAuthenticationProvider.ServerObjs(null, cnxn);
-        assertFalse(provider.matches(serverObjs, "custom-client", "kafka"));
-        assertTrue(provider.matches(serverObjs, "custom-client", "custom-client"));
-    }
-
-    @Test
-    public void testClientIdHookOverrideWithExtractedIdKeepsTypedIdentity() {
-        System.setProperty("zookeeper.X509AuthenticationProvider.superUser", "kafka");
-        TestCertificate spiffeCert = new TestCertificate("CLIENT", SPIFFE_KAFKA_SAN);
-        X509AuthenticationProvider provider =
-            new X509AuthenticationProvider(new TestTrustManager(spiffeCert), new TestKeyManager()) {
-                @Override
-                protected String getClientId(X509Certificate clientCert) {
-                    return super.getClientId(clientCert);
-                }
-            };
-        MockServerCnxn cnxn = new MockServerCnxn();
-        cnxn.clientChain = new X509Certificate[]{spiffeCert};
-
-        assertEquals(KeeperException.Code.OK, provider.handleAuthentication(cnxn, null));
-        assertEquals(new HashSet<>(Arrays.asList(new Id("super", "kafka"),
-            new Id("x509", "application/example-mp/kafka"))), new HashSet<>(cnxn.getAuthInfo()));
-        assertEquals(CertificateType.SPIFFE_V2, cnxn.getX509ClientIdentity().getCertificateType());
     }
 
     @Test

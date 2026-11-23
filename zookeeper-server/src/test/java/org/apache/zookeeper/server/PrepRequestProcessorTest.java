@@ -217,7 +217,7 @@ public class PrepRequestProcessorTest extends ClientBase {
     }
 
     private Request createSpiffeRequest(Record record, int type, boolean forwarded) throws Exception {
-        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(SpiffeAuthTestUtil.buildClientCertWithUriSans(
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(SpiffeAuthTestUtil.buildClientCertWithUriSans(
             "spiffe://example.org/v1/application/example-mp/kafka"));
         List<Id> authInfo = Collections.singletonList(new Id("x509", identity.getId()));
         ByteBuffer buffer = createRequest(record, type).request;

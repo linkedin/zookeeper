@@ -175,7 +175,7 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
           // into the lambda is ignored — kept in the interface signature for backward compat.
           helper.setDomainAuthUpdater((cnxn, ignoredMap) -> {
             try {
-              ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(cnxn, trustManager);
+              ClientIdentity identity = X509AuthenticationUtil.getClientId(cnxn, trustManager);
               cnxn.setX509ClientIdentity(identity);
               assignAuthInfo(cnxn, identity,
                   helper.getDomains(identity.getCertificateType(), identity.getId()));

@@ -96,7 +96,7 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
         for (int i = 0; i < paths.length; i++) {
             X509Certificate cert = SpiffeAuthTestUtil.buildClientCertWithUriSans(
                     "spiffe://example.org" + paths[i]);
-            ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(cert);
+            ClientIdentity identity = X509AuthenticationUtil.getClientId(cert);
 
             assertEquals(types[i], identity.getCertificateType(), paths[i]);
             assertEquals(ids[i], identity.getId(), paths[i]);
@@ -295,7 +295,7 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
 
             assertEquals("servicePrincipal(espresso-router", id);
             assertEquals(CertificateType.LEGACY_SAN,
-                    X509AuthenticationUtil.getClientIdentity(cert).getCertificateType());
+                    X509AuthenticationUtil.getClientId(cert).getCertificateType());
         } finally {
             System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
             System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);
@@ -338,7 +338,7 @@ public class X509SpiffeAuthIntegrationTest extends ZKTestCase {
             // SPIFFE wins — path-after-/v2/, not the URN-derived legacy-app id.
             assertEquals("application/espresso-router/espresso-router", id);
             assertEquals(CertificateType.SPIFFE_V2,
-                    X509AuthenticationUtil.getClientIdentity(cert).getCertificateType());
+                    X509AuthenticationUtil.getClientId(cert).getCertificateType());
         } finally {
             System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_TYPE);
             System.clearProperty(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_MATCH_REGEX);

@@ -190,23 +190,6 @@ public class X509AuthenticationUtil extends X509Util {
   }
 
   /**
-   * Determine the string to be used as the remote host session Id for
-   * authorization purposes. Associate this client identifier with a
-   * ServerCnxn that has been authenticated over SSL, and any ACLs that refer
-   * to the authenticated client.
-   *
-   * @param clientCert Authenticated X509Certificate associated with the
-   *                   remote host.
-   * @return Identifier string to be associated with the client.
-   *         The clientId can be any string matched and extracted using regex from Subject Distinguished Name or
-   *         Subject Alternative Name from x509 certificate.
-   *         The clientId string is intended to be an URI for client and map the client to certain domain.
-   */
-  public static String getClientId(X509Certificate clientCert) {
-    return getClientIdentity(clientCert).getId();
-  }
-
-  /**
    * Determine the certificate type and client identifier to be used as the remote host session Id
    * for authorization purposes.
    *
@@ -217,7 +200,7 @@ public class X509AuthenticationUtil extends X509Util {
    *         Subject Alternative Name from x509 certificate.
    *         The clientId string is intended to be an URI for client and map the client to certain domain.
    */
-  public static ClientIdentity getClientIdentity(X509Certificate clientCert) {
+  public static ClientIdentity getClientId(X509Certificate clientCert) {
     // SPIFFE identity extraction always runs, regardless of clientCertIdType configuration —
     // it is not a feature flag. Any URI SAN beginning with "spiffe://" is treated as a
     // candidate; trust in the issuing CA/trust-domain is established upstream by the TLS
@@ -366,31 +349,16 @@ public class X509AuthenticationUtil extends X509Util {
   }
 
   /**
-   * Extract the authenticated client Id from the specified server connection object.
-   * @param cnxn Server connection object that contains the certificate.
-   * @param trustManager X509 TrustManager for authentication.
-   * @return Identifier string to be associated with the client.
-   *         The clientId can be any string matched and extracted using regex from Subject Distinguished Name or
-   *         Subject Alternative Name from x509 certificate.
-   *         The clientId string is intended to be an URI for client and map the client to certain domain.
-   * @throws KeeperException.AuthFailedException Failed to authenticate the client certificate
-   */
-  public static String getClientId(ServerCnxn cnxn, X509TrustManager trustManager)
-      throws KeeperException.AuthFailedException {
-    return getClientIdentity(cnxn, trustManager).getId();
-  }
-
-  /**
    * Extract the authenticated certificate type and client Id from the specified server connection object.
    * @param cnxn Server connection object that contains the certificate.
    * @param trustManager X509 TrustManager for authentication.
    * @return Certificate type and client identifier to be associated with the client.
    * @throws KeeperException.AuthFailedException Failed to authenticate the client certificate
    */
-  public static ClientIdentity getClientIdentity(ServerCnxn cnxn, X509TrustManager trustManager)
+  public static ClientIdentity getClientId(ServerCnxn cnxn, X509TrustManager trustManager)
       throws KeeperException.AuthFailedException {
     X509Certificate clientCert = X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
-    return X509AuthenticationUtil.getClientIdentity(clientCert);
+    return X509AuthenticationUtil.getClientId(clientCert);
   }
 
   /**

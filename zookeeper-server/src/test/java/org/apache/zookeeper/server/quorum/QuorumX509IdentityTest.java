@@ -297,7 +297,7 @@ public final class QuorumX509IdentityTest extends ZKTestCase {
 
     private static MockServerCnxn connectionWithIdentity(String uri) throws Exception {
         X509Certificate certificate = SpiffeAuthTestUtil.buildClientCertWithUriSans(uri);
-        ClientIdentity identity = X509AuthenticationUtil.getClientIdentity(certificate);
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(certificate);
         MockServerCnxn cnxn = new MockServerCnxn();
         cnxn.setX509ClientIdentity(identity);
         cnxn.addAuthInfo(new Id("ip", "127.0.0.1"));

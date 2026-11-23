@@ -18,7 +18,6 @@
 
 package org.apache.zookeeper.server.auth;
 
-import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.Optional;
@@ -148,46 +147,21 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
 
     @Override
     public KeeperException.Code handleAuthentication(ServerCnxn cnxn, byte[] authData) {
-        X509Certificate[] certChain = (X509Certificate[]) cnxn.getClientCertificateChain();
-
-        if (certChain == null || certChain.length == 0) {
-            cnxn.setX509ClientIdentity(null);
-            return KeeperException.Code.AUTHFAILED;
-        }
-
-        if (trustManager == null) {
-            LOG.error("No trust manager available to authenticate session 0x{}", Long.toHexString(cnxn.getSessionId()));
-            cnxn.setX509ClientIdentity(null);
-            return KeeperException.Code.AUTHFAILED;
-        }
-
-        X509Certificate clientCert = certChain[0];
-
+        X509Certificate clientCert;
         try {
-            // Authenticate client certificate
-            trustManager.checkClientTrusted(certChain, clientCert.getPublicKey().getAlgorithm());
-        } catch (CertificateException ce) {
-            LOG.error("Failed to trust certificate for session 0x{}", Long.toHexString(cnxn.getSessionId()), ce);
+            clientCert = X509AuthenticationUtil.getAuthenticatedClientCert(cnxn, trustManager);
+        } catch (KeeperException.AuthFailedException e) {
             cnxn.setX509ClientIdentity(null);
             return KeeperException.Code.AUTHFAILED;
         }
 
-        String clientId = getClientId(clientCert);
-        ClientIdentity extractedIdentity = X509AuthenticationUtil.getClientIdentity(clientCert);
-        // A subclass override of getClientId may return an ID that does not correspond to the
-        // certificate type extracted here. Only keep typed identity context, which enables legacy
-        // compatibility matching, when the selected client ID is the extracted one.
-        ClientIdentity identity = extractedIdentity.getId().equals(clientId) ? extractedIdentity : null;
+        ClientIdentity identity = X509AuthenticationUtil.getClientId(clientCert);
         cnxn.setX509ClientIdentity(identity);
+        String clientId = identity.getId();
 
         String configuredSuperUser = System.getProperty(ZOOKEEPER_X509AUTHENTICATIONPROVIDER_SUPERUSER);
-        Optional<String> superUserId;
-        if (identity != null) {
-            superUserId = LegacyServicePrincipalMatcher.findMatchingSuperUserId(identity,
-                configuredSuperUser == null ? Collections.emptySet() : Collections.singleton(configuredSuperUser));
-        } else {
-            superUserId = clientId.equals(configuredSuperUser) ? Optional.of(clientId) : Optional.empty();
-        }
+        Optional<String> superUserId = LegacyServicePrincipalMatcher.findMatchingSuperUserId(identity,
+            configuredSuperUser == null ? Collections.emptySet() : Collections.singleton(configuredSuperUser));
         if (superUserId.isPresent()) {
             cnxn.addAuthInfo(new Id(X509AuthenticationUtil.SUPERUSER_AUTH_SCHEME, superUserId.get()));
             LOG.info("Authenticated Id '{}' as configured super user '{}'", clientId, superUserId.get());
@@ -198,20 +172,6 @@ public class X509AuthenticationProvider implements AuthenticationProvider {
 
         LOG.info("Authenticated Id '{}' for Scheme '{}'", authInfo.getId(), authInfo.getScheme());
         return KeeperException.Code.OK;
-    }
-
-    /**
-     * Determine the string to be used as the remote host session Id for
-     * authorization purposes. Associate this client identifier with a
-     * ServerCnxn that has been authenticated over SSL, and any ACLs that refer
-     * to the authenticated client.
-     *
-     * @param clientCert Authenticated X509Certificate associated with the
-     *                   remote host.
-     * @return Identifier string to be associated with the client.
-     */
-    protected String getClientId(X509Certificate clientCert) {
-        return X509AuthenticationUtil.getClientId(clientCert);
     }
 
     @Override
