@@ -301,7 +301,7 @@ public class SnapshotComparer {
       new FileSnap(null).deserialize(dataTree, new HashMap<Long, Integer>(), archive);
       checkSealIntegrity(stream, archive);
 
-      // An absent digest is valid for older snapshots; a partial digest is not.
+      // Distinguish an absent digest in older snapshots from a truncated digest.
       int next = input.read();
       if (next != -1) {
         input.unread(next);
@@ -318,7 +318,7 @@ public class SnapshotComparer {
   }
 
   private static void checkSealIntegrity(CheckedInputStream stream, InputArchive archive) throws IOException {
-    // SnapStream's seal checker is package-private.
+    // SnapStream's seal checker is package-private on this branch.
     long checksum = stream.getChecksum().getValue();
     long expected = archive.readLong("val");
     String path = archive.readString("path");
