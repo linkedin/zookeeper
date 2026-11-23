@@ -1271,6 +1271,22 @@ of servers -- that is, when deploying clusters of servers.
     connect and sync to a leader. Increased this value as needed, if
     the amount of data managed by ZooKeeper is large.
 
+* *leaderElection.skipStartupSnapshot* :
+    (Java system property: **zookeeper.leaderElection.skipStartupSnapshot**)
+    Defaults to **false**. When true, skips the final synchronous snapshot
+    in leader startup so a large data tree does not delay quorum formation.
+    Set this before starting the server, using the system property or
+    `leaderElection.skipStartupSnapshot=true` in `zoo.cfg`.
+    The value is read when the quorum peer is constructed, not dynamically
+    reloaded from configuration.
+
+    Database initialization and recovery, dead-session cleanup, transaction-log
+    durability, periodic snapshots, and snapshots required for follower
+    synchronization remain unchanged. Standalone startup still takes its
+    snapshot. Until another snapshot is taken, a restart may replay more
+    transactions and repeat dead-session cleanup; this option does not disable
+    snapshots globally or change backup/restore behavior.
+
 * *connectToLearnerMasterLimit* :
     (Java system property: zookeeper.**connectToLearnerMasterLimit**)
     Amount of time, in ticks (see [tickTime](#id_tickTime)), to allow followers to
