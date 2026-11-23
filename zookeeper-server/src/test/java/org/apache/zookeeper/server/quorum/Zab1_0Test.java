@@ -934,13 +934,17 @@ public class Zab1_0Test extends ZKTestCase {
             output.writeRecord(new QuorumPacket(Leader.ACKEPOCH, snapshotSync ? 0 : dataZxid, epoch, null), null);
             readPacketSkippingPing(input, packet);
             assertEquals(snapshotSync ? Leader.SNAP : Leader.DIFF, packet.getType());
+            // The synchronization zxid is in the packet header, not the serialized tree.
+            assertEquals(dataZxid, packet.getZxid());
             if (snapshotSync) {
                 ZKDatabase received = new ZKDatabase(null);
                 received.deserializeSnapshot(input);
                 assertEquals("BenWasHere", input.readString("signature"));
-                assertArrayEquals(data, received.getData("/policy", new Stat(), null));
+                Stat snapshotStat = new Stat();
+                assertArrayEquals(data, received.getData("/policy", snapshotStat, null));
                 assertEquals(ZooDefs.Ids.READ_ACL_UNSAFE, received.getACL("/policy", new Stat()));
-                assertEquals(dataZxid, received.getDataTreeLastProcessedZxid());
+                assertEquals(dataZxid, snapshotStat.getCzxid());
+                assertEquals(dataZxid, snapshotStat.getMzxid());
             }
             readPacketSkippingPing(input, packet);
             assertEquals(Leader.NEWLEADER, packet.getType());
