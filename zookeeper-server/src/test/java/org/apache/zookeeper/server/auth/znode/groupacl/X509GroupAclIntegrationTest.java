@@ -132,8 +132,8 @@ public class X509GroupAclIntegrationTest extends ZKTestCase {
             GeneralNames sans = new GeneralNames(new GeneralName[]{
                 new GeneralName(GeneralName.dNSName, "localhost"),
                 new GeneralName(GeneralName.uniformResourceIdentifier, "urn:example:" + name)});
-            X509Certificate cert = X509TestHelpers.newCert(
-                ca, caKey, new X500Name("CN=" + name), key.getPublic(), 86400000, sans);
+            X509Certificate cert = X509TestHelpers.newCertWithSans(
+                ca, caKey, new X500Name("CN=" + name), key.getPublic(), sans, 86400000);
             KeyStore store = KeyStore.getInstance("JKS");
             store.load(null, PASSWORD.toCharArray());
             store.setKeyEntry(name, key.getPrivate(), PASSWORD.toCharArray(), new Certificate[]{cert, ca});

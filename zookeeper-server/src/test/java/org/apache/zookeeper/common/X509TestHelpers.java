@@ -130,12 +130,25 @@ public class X509TestHelpers {
      */
     public static X509Certificate newCert(
             X509Certificate caCert, KeyPair caKeyPair, X500Name certSubject, PublicKey certPublicKey, long expirationMillis) throws IOException, OperatorCreationException, GeneralSecurityException {
-        return newCert(caCert, caKeyPair, certSubject, certPublicKey, expirationMillis, getLocalhostSubjectAltNames());
+        return newCertSignedBy(caCert, caKeyPair, certSubject, certPublicKey,
+                getLocalhostSubjectAltNames(), expirationMillis);
     }
 
-    public static X509Certificate newCert(
+    /**
+     * Variant of {@link #newCert} that installs the supplied SANs instead of the default
+     * localhost SANs. Used by tests that need certs with specific URI SANs (e.g., SPIFFE URIs).
+     */
+    public static X509Certificate newCertWithSans(
             X509Certificate caCert, KeyPair caKeyPair, X500Name certSubject, PublicKey certPublicKey,
-            long expirationMillis, GeneralNames subjectAltNames) throws IOException, OperatorCreationException, GeneralSecurityException {
+            GeneralNames sans, long expirationMillis)
+            throws IOException, OperatorCreationException, GeneralSecurityException {
+        return newCertSignedBy(caCert, caKeyPair, certSubject, certPublicKey, sans, expirationMillis);
+    }
+
+    private static X509Certificate newCertSignedBy(
+            X509Certificate caCert, KeyPair caKeyPair, X500Name certSubject, PublicKey certPublicKey,
+            GeneralNames sans, long expirationMillis)
+            throws IOException, OperatorCreationException, GeneralSecurityException {
         if (!caKeyPair.getPublic().equals(caCert.getPublicKey())) {
             throw new IllegalArgumentException("CA private key does not match the public key in the CA cert");
         }
@@ -148,7 +161,7 @@ public class X509TestHelpers {
                                                                             | KeyUsage.keyEncipherment));
         builder.addExtension(Extension.extendedKeyUsage, true, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth}));
 
-        builder.addExtension(Extension.subjectAlternativeName, false, subjectAltNames);
+        builder.addExtension(Extension.subjectAlternativeName, false, sans);
         return buildAndSignCertificate(caKeyPair.getPrivate(), builder);
     }
 

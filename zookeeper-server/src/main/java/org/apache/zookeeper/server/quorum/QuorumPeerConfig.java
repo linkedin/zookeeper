@@ -373,6 +373,10 @@ public class QuorumPeerConfig {
             } else if (key.equals(BackupSystemProperty.BACKUP_TIMETABLE_BACKUP_INTERVAL_MS)) {
                 backupConfigBuilder.setTimetableBackupIntervalInMs(Long.parseLong(value));
             } else if (key.equals(X509AuthenticationConfig.SET_X509_CLIENT_ID_AS_ACL)) {
+                // These X509AuthenticationConfig constants include the "zookeeper." prefix, so
+                // fully qualified zoo.cfg keys invoke the setters here. The usual unprefixed keys
+                // fall through to the default branch, which adds "zookeeper." and sets system
+                // properties read by the X509AuthenticationConfig getters.
                 X509AuthenticationConfig.getInstance().setX509ClientIdAsAclEnabled(value);
             } else if (key.equals(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_TYPE)) {
                 X509AuthenticationConfig.getInstance().setClientCertIdType(value);

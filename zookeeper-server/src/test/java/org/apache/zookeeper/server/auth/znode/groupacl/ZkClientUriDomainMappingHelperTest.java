@@ -18,6 +18,7 @@
 
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -37,10 +38,13 @@ import org.apache.zookeeper.test.ClientBase;
 import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@TestMethodOrder(MethodOrderer.Alphanumeric.class)
 public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
   private static final Logger LOG =
       LoggerFactory.getLogger(ZkClientUriDomainMappingHelperTest.class);
@@ -65,7 +69,8 @@ public class ZkClientUriDomainMappingHelperTest extends ZKTestCase {
   @BeforeEach
   public void setUp() throws IOException, InterruptedException, KeeperException {
     LOG.info("Starting Zk...");
-    zookeeperServer = new ZooKeeperServer(testBaseDir, testBaseDir, 3000);
+    File dataDir = ClientBase.createTmpDir();
+    zookeeperServer = new ZooKeeperServer(dataDir, dataDir, 3000);
     final int PORT = Integer.parseInt(HOSTPORT.split(":")[1]);
     serverCnxnFactory = ServerCnxnFactory.createFactory(PORT, -1);
     serverCnxnFactory.startup(zookeeperServer);
