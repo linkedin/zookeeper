@@ -18,6 +18,7 @@
 
 package org.apache.zookeeper.server.auth.znode.groupacl;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -75,7 +76,9 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
   private static final Logger LOG = LoggerFactory.getLogger(X509ZNodeGroupAclProvider.class);
   private final X509TrustManager trustManager;
   private final X509KeyManager keyManager;
-  private volatile ClientUriDomainMappingHelper uriDomainMappingHelper = null;
+  // Although using "volatile" keyword with double checked locking could prevent the undesired
+  //creation of multiple objects; not using here for the consideration of read performance
+  private ClientUriDomainMappingHelper uriDomainMappingHelper = null;
 
   public X509ZNodeGroupAclProvider() {
     ZKConfig config = new ZKConfig();
@@ -148,8 +151,11 @@ public class X509ZNodeGroupAclProvider extends ServerAuthenticationProvider {
 
   /**
    * Initialize a new ClientUriDomainMappingHelper instance lazily if it hasn't been instantiated for the ACL provider.
+   * Since it's lazy initialization suppressing spotbugs DC_DOUBLECHECK warning.
+   * Supressing IS2_INCONSISTENT_SYNC warning for uriDomainMappingHelper since it's guarded correctly by synchronized block.
    * @param zks
    */
+  @SuppressFBWarnings({"DC_DOUBLECHECK", "IS2_INCONSISTENT_SYNC"})
   private ClientUriDomainMappingHelper getUriDomainMappingHelper(ZooKeeperServer zks) {
     if (uriDomainMappingHelper == null) {
       synchronized (this) {

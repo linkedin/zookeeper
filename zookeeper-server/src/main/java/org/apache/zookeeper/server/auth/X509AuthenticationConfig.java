@@ -20,6 +20,7 @@ package org.apache.zookeeper.server.auth;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
@@ -33,12 +34,17 @@ import org.slf4j.LoggerFactory;
  */
 public class X509AuthenticationConfig {
   private static final Logger LOG = LoggerFactory.getLogger(X509AuthenticationConfig.class);
-  private static volatile X509AuthenticationConfig instance = null;
+  private static X509AuthenticationConfig instance = null;
   private static final String LOG_MSG_PREFIX = X509AuthenticationConfig.class.getName() + "::";
 
   private X509AuthenticationConfig() {
   }
 
+  /**
+   * X509AuthenticationConfig are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public static X509AuthenticationConfig getInstance() {
     if (instance == null) {
       synchronized (X509AuthenticationConfig.class) {
@@ -157,9 +163,11 @@ public class X509AuthenticationConfig {
   private String storeAuthedClientIdEnabled;
   private String allowedClientIdAsAclDomainsStr;
 
-  private volatile Set<String> openReadAccessPathPrefixes;
-  private volatile Set<String> crossDomainAccessDomains;
-  private volatile Set<String> znodeGroupAclSuperUserIds;
+  // Although using "volatile" keyword with double checked locking could prevent the undesired
+  //creation of multiple objects; not using here for the consideration of read performance
+  private Set<String> openReadAccessPathPrefixes;
+  private Set<String> crossDomainAccessDomains;
+  private Set<String> znodeGroupAclSuperUserIds;
   private volatile Set<String> allowedClientIdAsAclDomains;
   private final Object openReadAccessPathPrefixesLock = new Object();
   private final Object crossDomainAccessDomainsLock = new Object();
@@ -306,6 +314,7 @@ public class X509AuthenticationConfig {
         .parseBoolean(System.getProperty(SET_X509_CLIENT_ID_AS_ACL));
   }
 
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Set<String> getZnodeGroupAclSuperUserIds() {
     if (znodeGroupAclSuperUserIds == null) {
       synchronized (znodeGroupAclSuperUserIdsLock) {
@@ -317,6 +326,11 @@ public class X509AuthenticationConfig {
     return znodeGroupAclSuperUserIds;
   }
 
+  /**
+   * crossDomainAccessDomains are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Set<String> getZnodeGroupAclCrossDomainAccessDomains() {
     if (crossDomainAccessDomains == null) {
       synchronized (crossDomainAccessDomainsLock) {
@@ -328,6 +342,11 @@ public class X509AuthenticationConfig {
     return crossDomainAccessDomains;
   }
 
+  /**
+   * openReadAccessPathPrefixes are loaded lazily and hence spotbugs DC_DOUBLECHECK warning is supressed.
+   * @return
+   */
+  @SuppressFBWarnings("DC_DOUBLECHECK")
   public Set<String> getZnodeGroupAclOpenReadAccessPathPrefixes() {
     if (openReadAccessPathPrefixes == null) {
       synchronized (openReadAccessPathPrefixesLock) {
