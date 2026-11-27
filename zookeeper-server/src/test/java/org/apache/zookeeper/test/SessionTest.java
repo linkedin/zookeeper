@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -42,6 +43,7 @@ import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.server.ServerCnxnFactory;
+import org.apache.zookeeper.server.ServerStats;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -393,6 +395,47 @@ public class SessionTest extends ZKTestCase {
                 assertTrue(result);
             }
         }
+    }
+
+    @Test
+    public void testSessionAndConnectionCountMetrics() throws Exception {
+        final ServerStats serverStats = zs.serverStats();
+        waitFor("server-side connections from startup probes should close",
+            () -> serverFactory.getNumAliveConnections() == 0
+                && serverStats.getConnectionCloseCount() >= serverStats.getConnectionCreateCount(), 30);
+        serverStats.resetConnectionCounters();
+
+        final int clientCount = 5;
+        final int disconnectedCount = 2;
+        List<DisconnectableZooKeeper> connected = new ArrayList<>();
+        for (int i = 0; i < clientCount; i++) {
+            DisconnectableZooKeeper zk = createClient();
+            if (i < disconnectedCount) {
+                zk.disconnect();
+            } else {
+                connected.add(zk);
+            }
+        }
+        waitFor("disconnected clients should be counted as closed",
+            () -> serverStats.getConnectionCloseCount() >= disconnectedCount, 30);
+        assertCountMetrics(serverStats, clientCount, disconnectedCount);
+
+        for (ZooKeeper zk : connected) {
+            zk.close();
+        }
+        waitFor("closed clients should be counted as closed",
+            () -> serverStats.getConnectionCloseCount() >= clientCount, 30);
+        assertCountMetrics(serverStats, clientCount, clientCount);
+
+        serverStats.resetConnectionCounters();
+        assertCountMetrics(serverStats, 0, 0);
+    }
+
+    private static void assertCountMetrics(ServerStats serverStats, long created, long closed) {
+        assertEquals(created, serverStats.getConnectionCreateCount());
+        assertEquals(created, serverStats.getSessionCreateCount());
+        assertEquals(closed, serverStats.getConnectionCloseCount());
+        assertEquals(closed, serverStats.getSessionCloseCount());
     }
 
 }

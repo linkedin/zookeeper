@@ -765,6 +765,7 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory {
         if (!cnxns.remove(cnxn)) {
             return false;
         }
+        increaseConnectionCloseCount();
         cnxnExpiryQueue.remove(cnxn);
 
         removeCnxnFromSessionMap(cnxn);
@@ -816,6 +817,7 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory {
         set.add(cnxn);
 
         cnxns.add(cnxn);
+        increaseConnectionCreateCount();
         touchCnxn(cnxn);
     }
 
