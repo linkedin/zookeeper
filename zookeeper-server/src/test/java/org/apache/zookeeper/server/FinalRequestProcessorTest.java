@@ -20,6 +20,7 @@ package org.apache.zookeeper.server;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -40,9 +41,13 @@ import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.data.Stat;
+import org.apache.zookeeper.metrics.MetricsUtils;
 import org.apache.zookeeper.proto.GetACLRequest;
 import org.apache.zookeeper.proto.GetACLResponse;
 import org.apache.zookeeper.proto.ReplyHeader;
+import org.apache.zookeeper.server.DataTree.ProcessTxnResult;
+import org.apache.zookeeper.txn.ErrorTxn;
+import org.apache.zookeeper.txn.TxnHeader;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.invocation.InvocationOnMock;
@@ -55,6 +60,8 @@ public class FinalRequestProcessorTest {
     private final ReplyHeader[] replyHeaders = new ReplyHeader[1];
 
     private ServerCnxn cnxn;
+    private ZooKeeperServer zks;
+    private ZKDatabase db;
     private ByteBuffer bb;
     private FinalRequestProcessor processor;
 
@@ -63,8 +70,8 @@ public class FinalRequestProcessorTest {
         testACLs.clear();
         testACLs.addAll(Arrays.asList(new ACL(ZooDefs.Perms.ALL, new Id("digest", "user:secrethash")), new ACL(ZooDefs.Perms.ADMIN, new Id("digest", "adminuser:adminsecret")), new ACL(ZooDefs.Perms.READ, new Id("world", "anyone"))));
 
-        ZooKeeperServer zks = new ZooKeeperServer();
-        ZKDatabase db = mock(ZKDatabase.class);
+        zks = new ZooKeeperServer();
+        db = mock(ZKDatabase.class);
         String testPath = "/testPath";
         when(db.getNode(eq(testPath))).thenReturn(new DataNode());
         when(db.getACL(eq(testPath), any(Stat.class))).thenReturn(testACLs);
@@ -178,6 +185,51 @@ public class FinalRequestProcessorTest {
         // Verify ACLs in the response
         assertThat("Password hash mismatch in the response", rsp.getAcl().get(0).getId().getId(), equalTo("user:secrethash"));
         assertThat("Password hash mismatch in the response", rsp.getAcl().get(1).getId().getId(), equalTo("adminuser:adminsecret"));
+    }
+
+    @Test
+    public void testPingAndCreateSessionRecordLatencyOnce() {
+        for (int type : new int[] {ZooDefs.OpCode.ping, ZooDefs.OpCode.createSession}) {
+            long before = readLatencyCount();
+            Request r = new Request(cnxn, 0, 0, type, null, new ArrayList<Id>());
+            // A local session is created without a quorum transaction.
+            r.setLocalSession(true);
+
+            processor.processRequest(r);
+
+            assertEquals(before + 1, readLatencyCount(), Request.op2String(type));
+        }
+    }
+
+    @Test
+    public void testThrottledMultiIsNotCountedAsWrite() {
+        Request r = new Request(cnxn, 0, 0, ZooDefs.OpCode.multi, bb, new ArrayList<Id>());
+        r.setIsThrottled(true);
+
+        processor.processRequest(r);
+
+        assertThat(KeeperException.Code.get(replyHeaders[0].getErr()), equalTo(KeeperException.Code.THROTTLEDOP));
+        assertEquals(0, zks.serverStats().getWriteCount());
+    }
+
+    @Test
+    public void testFailedMultiWithoutResultsIsNotCountedAsWrite() {
+        ProcessTxnResult rc = new ProcessTxnResult();
+        rc.type = ZooDefs.OpCode.error;
+        rc.err = KeeperException.Code.SESSIONEXPIRED.intValue();
+        when(db.processTxn(any(TxnHeader.class), any(), any())).thenReturn(rc);
+        Request r = new Request(cnxn, 0, 0, ZooDefs.OpCode.multi, bb, new ArrayList<Id>());
+        r.setHdr(new TxnHeader(0, 0, 1, 0, ZooDefs.OpCode.error));
+        r.setTxn(new ErrorTxn(KeeperException.Code.SESSIONEXPIRED.intValue()));
+
+        processor.processRequest(r);
+
+        assertThat(KeeperException.Code.get(replyHeaders[0].getErr()), equalTo(KeeperException.Code.SESSIONEXPIRED));
+        assertEquals(0, zks.serverStats().getWriteCount());
+    }
+
+    private static long readLatencyCount() {
+        return (Long) MetricsUtils.currentServerMetrics().get("cnt_readlatency");
     }
 
     private void assertMasked(boolean masked) {

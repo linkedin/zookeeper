@@ -26,9 +26,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.Collections;
 import org.apache.zookeeper.server.ServerCnxn;
 import org.apache.zookeeper.server.ServerStats;
 import org.apache.zookeeper.server.ZooKeeperServer;
+import org.apache.zookeeper.server.admin.Commands;
 import org.apache.zookeeper.server.command.StatResetCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -106,6 +108,21 @@ public class StatResetCommandTest {
         assertEquals("Server stats reset.\n", output);
         verify(serverStats, times(1)).reset();
         verify(bufferStats, times(1)).reset();
+    }
+
+    @Test
+    public void testAdminStatResetWithLeader() {
+        LeaderZooKeeperServer leaderZks = mock(LeaderZooKeeperServer.class);
+        when(leaderZks.serverStats()).thenReturn(serverStats);
+        Leader leader = mock(Leader.class);
+        when(leaderZks.getLeader()).thenReturn(leader);
+        BufferStats proposalStats = mock(BufferStats.class);
+        when(leader.getProposalStats()).thenReturn(proposalStats);
+
+        new Commands.StatResetCommand().run(leaderZks, Collections.emptyMap());
+
+        verify(serverStats, times(1)).reset();
+        verify(proposalStats, times(1)).reset();
     }
 
 }

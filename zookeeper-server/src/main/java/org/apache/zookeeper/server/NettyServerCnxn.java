@@ -125,6 +125,7 @@ public class NettyServerCnxn extends ServerCnxn {
             }
             return;
         }
+        factory.increaseConnectionCloseCount();
 
         LOG.debug("close in progress for session id: 0x{}", Long.toHexString(sessionId));
 

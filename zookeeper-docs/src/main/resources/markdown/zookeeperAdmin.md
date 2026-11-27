@@ -2632,7 +2632,9 @@ Available commands include:
     Information on client connections to server.
     Note, depending on the number of client connections this operation may be expensive
     (i.e. impact server performance).
-    Returns "connections", a list of connection info objects.
+    Returns "connections", a list of connection info objects. Each object
+    includes "auth_info", the list of authenticated identities (scheme and id)
+    of the connection.
 
 * *hash*:
     Txn digests in the historical digest list.
@@ -2716,7 +2718,8 @@ Available commands include:
 
 * *stat_reset/srst* :
     Resets server statistics. This is a subset of the information returned
-    by *server_stats* and *stats*.
+    by *server_stats* and *stats*. On the leader, proposal statistics are
+    also reset.
     No new fields returned.
 
 * *observers/obsr* :
