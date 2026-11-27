@@ -88,28 +88,55 @@ feature is disabled by default, and has to be explicitly turned on via
 
 ### Specifying the client port
 
-A client port of a server is the port on which the server accepts
-client connection requests. Starting with 3.5.0 the
-_clientPort_ and _clientPortAddress_ configuration parameters should no longer be used. Instead,
-this information is now part of the server keyword specification, which
+A client port of a server is the port on which the server accepts plaintext (non-TLS) client connection requests
+and secure client port is the port on which the server accepts TLS client connection requests.
+
+Starting with 3.5.0 the
+_clientPort_ and _clientPortAddress_ configuration parameters should no longer be used in zoo.cfg.
+
+This fork also supports specifying the secure client address in the server entry.
+The _secureClientPort_ and _secureClientPortAddress_ settings in zoo.cfg remain
+supported and must agree with the dynamic secure address when both are present.
+
+Instead, this information is now part of the server keyword specification, which
 becomes as follows:
 
-    server.<positive id> = <address1>:<port1>:<port2>[:role];[<client port address>:]<client port>**
+    server.<positive id> = <address1>:<quorum port>:<leader election port>[:role];[[<client port address>:]<client port>][;[<secure client port address>:]<secure client port>]
 
-The client port specification is to the right of the semicolon. The
-client port address is optional, and if not specified it defaults to
-"0.0.0.0". As usual, role is also optional, it can be
-_participant_ or _observer_
-(_participant_ by default).
+- The client port specification is optional and is to the right of the
+  first semicolon. The secure client port specification is also optional and is to the right
+  of the second semicolon. A server joining through reconfiguration must specify at least
+  one client address. Configurations that obtain their client addresses from static
+  settings can omit them from the server entry. If the user intends to omit client
+  port specification and provide only secure client port specification (TLS-only server), a second
+  semicolon should still be specified to indicate an empty client port specification (see last
+  example below). In either spec, the port address is optional, and if not specified it defaults
+  to "0.0.0.0".
+- As usual, role is also optional, it can be _participant_ or _observer_ (_participant_ by default).
 
 Examples of legal server statements:
 
-    server.5 = 125.23.63.23:1234:1235;1236
-    server.5 = 125.23.63.23:1234:1235:participant;1236
-    server.5 = 125.23.63.23:1234:1235:observer;1236
-    server.5 = 125.23.63.23:1234:1235;125.23.63.24:1236
-    server.5 = 125.23.63.23:1234:1235:participant;125.23.63.23:1236
+    server.5 = 125.23.63.23:1234:1235;1236                                             (non-TLS server)
+    server.5 = 125.23.63.23:1234:1235;1236;1237                                        (non-TLS + TLS server)
+    server.5 = 125.23.63.23:1234:1235;;1237                                            (TLS-only server)
+    server.5 = 125.23.63.23:1234:1235:participant;1236                                 (non-TLS server)
+    server.5 = 125.23.63.23:1234:1235:observer;1236                                    (non-TLS server)
+    server.5 = 125.23.63.23:1234:1235;125.23.63.24:1236                                (non-TLS server)
+    server.5 = 125.23.63.23:1234:1235:participant;125.23.63.23:1236                    (non-TLS server)
+    server.5 = 125.23.63.23:1234:1235:participant;125.23.63.23:1236;125.23.63.23:1237  (non-TLS + TLS server)
+    server.5 = 125.23.63.23:1234:1235:participant;;125.23.63.23:1237                   (TLS-only server)
 
+**Compatibility:** Servers and tools that parse entries containing the secure
+section must support this extension. Stock 3.6.3 and 3.8.7 configuration parsers
+reject these forms. Retrieving configuration bytes is distinct from parsing them;
+ordinary clients supplied with an explicit connection string do not parse server
+entries, but still need the appropriate TLS support and configuration.
+
+**Reconfiguration limitation:** Creating a previously absent listener through an
+in-place reconfiguration can bind the port without attaching the active server.
+Clients then receive connection-loss errors until a subsequent role transition
+or restart initializes the listener. This inherited limitation does not apply
+to rebinding an existing listener.
 
 <a name="sc_multiaddress"></a>
 
