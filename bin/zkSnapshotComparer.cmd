@@ -20,5 +20,4 @@ call "%~dp0zkEnv.cmd"
 set ZOOMAIN=org.apache.zookeeper.server.SnapshotComparer
 call %JAVA% -cp "%CLASSPATH%" %ZOOMAIN% %*
 
-endlocal
-
+endlocal & exit /b %ERRORLEVEL%

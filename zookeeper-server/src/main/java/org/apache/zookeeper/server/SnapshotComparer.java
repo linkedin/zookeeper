@@ -19,6 +19,8 @@
 package org.apache.zookeeper.server;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.PushbackInputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,6 +29,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.Set;
 import java.util.zip.CheckedInputStream;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
@@ -36,6 +39,7 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.InputArchive;
+import org.apache.zookeeper.ZKUtil;
 import org.apache.zookeeper.server.persistence.FileSnap;
 import org.apache.zookeeper.server.persistence.SnapStream;
 import org.apache.zookeeper.util.ServiceUtils;
@@ -44,7 +48,8 @@ import org.apache.zookeeper.util.ServiceUtils;
  * SnapshotComparer is a tool that loads and compares two snapshots with configurable threshold and various filters, and outputs information about the delta.
  * The delta includes specific znode paths added, updated, deleted comparing one snapshot to another.
  * It's useful in use cases that involve snapshot analysis, such as offline data consistency checking, and data trending analysis (e.g. what's growing under which zNode path during when).
- * Only outputs information about permanent nodes, ignoring both sessions and ephemeral nodes.
+ * Includes ephemeral nodes, but does not compare sessions, payload contents, ACLs or other metadata.
+ * Equal sizes and counts do not establish identical contents or transaction-consistent state.
  */
 public class SnapshotComparer {
   private final Options options;
@@ -109,26 +114,47 @@ public class SnapshotComparer {
         "");
   }
 
-  public static void main(String[] args) throws Exception {
+  public static void main(String[] args) {
     SnapshotComparer app = new SnapshotComparer();
-    app.compareSnapshots(args);
+    try {
+      app.compareSnapshots(args);
+    } catch (IOException e) {
+      System.err.println("Unable to read snapshot: " + e.getMessage());
+      ServiceUtils.requestSystemExit(ExitCode.UNEXPECTED_ERROR.getValue());
+    }
   }
 
-  private void compareSnapshots(String[] args) throws Exception {
+  private void compareSnapshots(String[] args) throws IOException {
     CommandLine parsedOptions;
+    File left;
+    File right;
+    int byteThreshold;
+    int nodeThreshold;
     try {
       parsedOptions = new DefaultParser().parse(options, args);
-    } catch (ParseException e) {
+      if (!parsedOptions.getArgList().isEmpty()) {
+        throw new IllegalArgumentException("Unexpected arguments: " + parsedOptions.getArgList());
+      }
+      left = (File) parsedOptions.getParsedOptionValue(leftOption);
+      right = (File) parsedOptions.getParsedOptionValue(rightOption);
+      byteThreshold = Integer.parseInt(parsedOptions.getOptionValue(byteThresholdOption));
+      nodeThreshold = Integer.parseInt(parsedOptions.getOptionValue(nodeThresholdOption));
+      if (byteThreshold < 0 || nodeThreshold < 0) {
+        throw new IllegalArgumentException("Thresholds must be non-negative integers.");
+      }
+      for (File file : new File[]{left, right}) {
+        String error = ZKUtil.validateFileInput(file.toString());
+        if (error != null) {
+          throw new IllegalArgumentException(error);
+        }
+      }
+    } catch (ParseException | IllegalArgumentException e) {
       System.err.println(e.getMessage());
       usage();
       ServiceUtils.requestSystemExit(ExitCode.INVALID_INVOCATION.getValue());
       return;
     }
 
-    File left = (File) parsedOptions.getParsedOptionValue(leftOption);
-    File right = (File) parsedOptions.getParsedOptionValue(rightOption);
-    int byteThreshold = Integer.parseInt((String) parsedOptions.getParsedOptionValue(byteThresholdOption));
-    int nodeThreshold = Integer.parseInt((String) parsedOptions.getParsedOptionValue(nodeThresholdOption));
     boolean debug = parsedOptions.hasOption(debugOption);
     boolean interactive = parsedOptions.hasOption(interactiveOption);
     System.out.println("Successfully parsed options!");
@@ -172,15 +198,18 @@ public class SnapshotComparer {
         this.children = new ArrayList<TreeNode>();
       }
 
-      void populateChildren(String path, DataTree dataTree, TreeInfo treeInfo) throws Exception {
+      void populateChildren(String path, DataTree dataTree, TreeInfo treeInfo) {
         populateChildren(path, dataTree, treeInfo, 1);
       }
 
-      void populateChildren(String path, DataTree dataTree, TreeInfo treeInfo, int currentDepth) throws Exception {
-        List<String> childLabels = null;
-        childLabels = dataTree.getChildren(path, null, null);
+      void populateChildren(String path, DataTree dataTree, TreeInfo treeInfo, int currentDepth) {
+        DataNode node = dataTree.getNode(path);
+        Set<String> childLabels;
+        synchronized (node) {
+          childLabels = node.getChildren();
+        }
 
-        if (childLabels != null && !childLabels.isEmpty()) {
+        if (!childLabels.isEmpty()) {
           for (String childName : childLabels){
             String childPath = path + "/" + childName;
             DataNode childNode = dataTree.getNode(childPath);
@@ -211,13 +240,19 @@ public class SnapshotComparer {
     List<ArrayList<TreeNode>> nodesAtDepths = new ArrayList<ArrayList<TreeNode>>();
     Map<String, TreeNode> nodesByName = new HashMap<String, TreeNode>();
 
-    TreeInfo(File snapshot) throws Exception {
+    TreeInfo(File snapshot) throws IOException {
+      long beginning = System.nanoTime();
       DataTree dataTree = getSnapshot(snapshot);
+      System.out.println(String.format("Deserialized snapshot in %s in %f seconds",
+          snapshot.getName(), (System.nanoTime() - beginning) / 1_000_000_000.0));
 
       count = 0;
-      long beginning = System.nanoTime();
+      beginning = System.nanoTime();
       DataNode root = dataTree.getNode("");
-      long size = root.data == null ? 0 : root.data.length;
+      long size;
+      synchronized (root) {
+        size = root.data == null ? 0 : root.data.length;
+      }
       this.root = new TreeNode("", size);
       // Construct TreeInfo tree from DataTree
       this.root.populateChildren("", dataTree, this);
@@ -256,21 +291,40 @@ public class SnapshotComparer {
   /**
    * Parse a Zookeeper snapshot file to DataTree
    * @param file the snapshot file
-   * @throws Exception
+   * @throws IOException if the snapshot cannot be read or its seals are invalid
    */
-  private static DataTree getSnapshot(File file) throws Exception {
-    FileSnap fileSnap = new FileSnap(null);
-    DataTree dataTree = new DataTree();
-    Map<Long, Integer> sessions = new HashMap<Long, Integer>();
-    CheckedInputStream snapIS = SnapStream.getInputStream(file);
+  static DataTree getSnapshot(File file) throws IOException {
+    try (CheckedInputStream stream = SnapStream.getInputStream(file);
+         PushbackInputStream input = new PushbackInputStream(stream)) {
+      InputArchive archive = BinaryInputArchive.getArchive(input);
+      DataTree dataTree = new DataTree();
+      new FileSnap(null).deserialize(dataTree, new HashMap<Long, Integer>(), archive);
+      checkSealIntegrity(stream, archive);
 
-    long beginning = System.nanoTime();
-    InputArchive ia = BinaryInputArchive.getArchive(snapIS);
-    fileSnap.deserialize(dataTree, sessions, ia);
-    long end = System.nanoTime();
-    System.out.println(String.format("Deserialized snapshot in %s in %f seconds", file.getName(),
-        (((double) (end - beginning) / 1000000)) / 1000));
-    return dataTree;
+      // Distinguish an absent digest in older snapshots from a truncated digest.
+      int next = input.read();
+      if (next != -1) {
+        input.unread(next);
+        dataTree.new ZxidDigest().deserialize(archive);
+        checkSealIntegrity(stream, archive);
+        if (input.read() != -1) {
+          throw new IOException("Unexpected data after snapshot");
+        }
+      }
+      return dataTree;
+    } catch (IOException | NumberFormatException e) {
+      throw new IOException(file + ": " + e, e);
+    }
+  }
+
+  private static void checkSealIntegrity(CheckedInputStream stream, InputArchive archive) throws IOException {
+    // SnapStream's seal checker is package-private on this branch.
+    long checksum = stream.getChecksum().getValue();
+    long expected = archive.readLong("val");
+    String path = archive.readString("path");
+    if (checksum != expected || !"/".equals(path)) {
+      throw new IOException("CRC corruption or invalid snapshot seal");
+    }
   }
 
   private static void printThresholdInfo(int byteThreshold, int nodeThreshold) {
@@ -288,49 +342,55 @@ public class SnapshotComparer {
       }
     } else {
       // interactive mode
-      Scanner scanner = new Scanner(System.in);
-      int currentDepth = 0;
-      while (currentDepth < maxDepth) {
-        System.out.println(String.format("Current depth is %d", currentDepth));
-        System.out.println("- Press enter to move to print current depth layer;\n- Type a number to jump to and print all nodes at a given depth;\n- Enter an ABSOLUTE path to print the immediate subtree of a node. Path must start with '/'.");
-        String input = scanner.nextLine();
-        printThresholdInfo(byteThreshold, nodeThreshold);
-        if (input.isEmpty()) {
-          // input is Enter
-          System.out.println(String.format("Analysis for depth %d", currentDepth));
-          compareLine(left, right, currentDepth, byteThreshold, nodeThreshold, debug, interactive);
-          currentDepth++;
-        } else {
-          // input is a path
-          if (input.startsWith("/")){
-            System.out.println(String.format("Analysis for node %s", input));
-            compareSubtree(left, right, input, byteThreshold, nodeThreshold, debug, interactive);
+      try (Scanner scanner = new Scanner(System.in)) {
+        int currentDepth = 0;
+        while (currentDepth < maxDepth) {
+          System.out.println(String.format("Current depth is %d", currentDepth));
+          System.out.println("- Press enter to move to print current depth layer;\n- Type a number to jump to and print all nodes at a given depth;\n- Enter an ABSOLUTE path to print the immediate subtree of a node. Path must start with '/'.");
+          if (!scanner.hasNextLine()) {
+            System.out.println("End of input.");
+            return;
+          }
+          String input = scanner.nextLine();
+          printThresholdInfo(byteThreshold, nodeThreshold);
+          if (input.isEmpty()) {
+            // input is Enter
+            System.out.println(String.format("Analysis for depth %d", currentDepth));
+            compareLine(left, right, currentDepth, byteThreshold, nodeThreshold, debug, interactive);
+            currentDepth++;
           } else {
-            // input is a number
-            try {
-              int depth = Integer.parseInt(input);
-              if (depth < 0 || depth >= maxDepth) {
-                System.out.println(String.format("Depth must be in range [%d, %d]", 0, maxDepth - 1));
-                continue;
+            // input is a path
+            if (input.startsWith("/")){
+              System.out.println(String.format("Analysis for node %s", input));
+              compareSubtree(left, right, input, byteThreshold, nodeThreshold, debug, interactive);
+            } else {
+              // input is a number
+              try {
+                int depth = Integer.parseInt(input);
+                if (depth < 0 || depth >= maxDepth) {
+                  System.out.println(String.format("Depth must be in range [%d, %d]", 0, maxDepth - 1));
+                  continue;
+                }
+                currentDepth = depth;
+                System.out.println(String.format("Analysis for depth %d", currentDepth));
+                compareLine(left, right, currentDepth, byteThreshold, nodeThreshold, debug, interactive);
+              } catch (NumberFormatException ex) {
+                // input is invalid
+                System.out.println(String.format("Input %s is not valid. Depth must be in range [%d, %d]. Path must be an absolute path which starts with '/'.", input, 0, maxDepth - 1));
               }
-              currentDepth = depth;
-              System.out.println(String.format("Analysis for depth %d", currentDepth));
-              compareLine(left, right, currentDepth, byteThreshold, nodeThreshold, debug, interactive);
-            } catch (NumberFormatException ex) {
-              // input is invalid
-              System.out.println(String.format("Input %s is not valid. Depth must be in range [%d, %d]. Path must be an absolute path which starts with '/'.", input, 0, maxDepth - 1));
             }
           }
+          System.out.println("");
         }
-        System.out.println("");
       }
     }
     System.out.println("All layers compared.");
   }
 
   private static void compareSubtree(TreeInfo left, TreeInfo right, String path, int byteThreshold, int nodeThreshold, boolean debug, boolean interactive) {
-    TreeInfo.TreeNode leftRoot = left.nodesByName.get(path);
-    TreeInfo.TreeNode rightRoot = right.nodesByName.get(path);
+    String label = "/".equals(path) ? "" : path;
+    TreeInfo.TreeNode leftRoot = left.nodesByName.get(label);
+    TreeInfo.TreeNode rightRoot = right.nodesByName.get(label);
 
     List<TreeInfo.TreeNode> leftList = leftRoot == null ? new ArrayList<TreeInfo.TreeNode>() : leftRoot.children;
     List<TreeInfo.TreeNode> rightList = rightRoot == null ? new ArrayList<TreeInfo.TreeNode>() : rightRoot.children;

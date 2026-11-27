@@ -24,6 +24,7 @@ limitations under the License.
     * [zkTxnLogToolkit.sh](#zkTxnLogToolkit)
     * [zkSnapShotToolkit.sh](#zkSnapShotToolkit)
     * [zkSnapshotComparer.sh](#zkSnapshotComparer)
+    * [zkSnapshotRecursiveSummaryToolkit.sh](#zkSnapshotRecursiveSummaryToolkit)
 
 * [Benchmark](#Benchmark)
     * [YCSB](#YCSB)
@@ -228,11 +229,19 @@ The delta includes specific znode paths added, updated, deleted comparing one sn
 
 It's useful in use cases that involve snapshot analysis, such as offline data consistency checking, and data trending analysis (e.g. what's growing under which zNode path during when).
 
-This tool only outputs information about permanent nodes, ignoring both sessions and ephemeral nodes.
+This tool includes ephemeral znodes present in the snapshot, but does not report
+session records or compare payload contents, ACLs, versions or other metadata.
 
 It provides two tuning parameters to help filter out noise: 
 1. `--nodes` Threshold number of children added/removed; 
 2. `--bytes` Threshold number of bytes added/removed.
+
+Both thresholds are required, non-negative integers up to 2147483647. A path is
+printed when either absolute difference is **strictly greater** than its
+threshold. Deltas are **right minus left**. Subtree byte totals include the
+node's own payload; descendant counts exclude the node itself. Null data
+contributes zero bytes, so a zero-byte leaf present in only one snapshot is
+filtered even with both thresholds set to zero.
 
 #### Locate Snapshots
 Snapshots can be found in [Zookeeper Data Directory](zookeeperAdmin.html#The+Data+Directory) which configured in [conf/zoo.cfg](zookeeperStarted.html#sc_InstallingSingleMode) when set up Zookeeper server. 
@@ -430,6 +439,62 @@ All layers compared.
 
 Or use `^c` to exit interactive mode anytime.
 
+End of input also exits interactive mode. Entering `/` compares the root's
+immediate children; comparison lines retain the empty label for the root.
+
+<a name="zkSnapshotRecursiveSummaryToolkit"></a>
+
+### zkSnapshotRecursiveSummaryToolkit.sh
+
+Recursively summarize the payload sizes and descendant counts in one snapshot
+subtree:
+
+```bash
+bin/zkSnapshotRecursiveSummaryToolkit.sh snapshot.1 /app 1
+```
+
+Usage: `SnapshotRecursiveSummary <snapshot_file> <starting_node> <max_depth>`.
+The starting node must be an existing absolute znode path. The maximum depth is
+a non-negative integer: 0 prints every non-leaf node, 1 prints the starting
+node and its non-leaf children, 2 adds another level, and so on.
+**Depth limits output only, not traversal or totals.** Siblings are printed
+alphabetically.
+
+`children` counts all descendants, not just immediate children. `data` is the
+sum of payload bytes for the node itself and all descendants, including
+ephemeral nodes. Null data contributes zero bytes. Leaves contribute to their
+ancestors' totals but are not printed; selecting a leaf produces no summary
+entries.
+
+For example, if `/app` has 2 payload bytes, `/app/branch` has 3, and
+`/app/branch/leaf` has 5, the summary is:
+
+```text
+ /app
+   children: 2
+   data: 10
+-- /app/branch
+--   children: 1
+--   data: 8
+```
+
+#### Snapshot analysis limitations
+
+Both tools run offline and do not modify snapshot files. They support
+uncompressed, `.gz` and `.snappy` snapshots, including snapshots without a
+digest and mixed compression formats in the comparer. They validate snapshot
+seals and report unreadable or corrupt input rather than silently producing a
+successful analysis. Invalid arguments, file paths or summary starting paths
+exit with code 2; snapshot read failures exit with code 1. Windows launchers
+with the same names and a `.cmd` extension are included. The launchers use the
+existing `zkEnv` configuration.
+
+Neither tool compares payload contents, ACLs, versions or other znode metadata.
+**Equal sizes/counts do not prove identical contents.** Snapshots may be fuzzy:
+these tools do not replay transaction logs, reconstruct point-in-time state,
+or establish transaction-consistent equality. Both tools load the snapshot
+into memory. Recursive traversal visits the full selected subtree even when
+summary output depth is limited; very deep trees may exceed the JVM stack.
 
 <a name="Benchmark"></a>
 
