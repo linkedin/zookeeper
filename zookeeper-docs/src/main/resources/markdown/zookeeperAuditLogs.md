@@ -40,7 +40,13 @@ The audit log captures detailed information for the operations that are selected
 |znode | path of the znode
 |znode type | type of znode in case of creation operation
 |acl | String representation of znode ACL like cdrwa(create, delete,read, write, admin). This is logged only for setAcl operation
+|data_length | size in bytes of the data in a create or setData request, including failed requests and operations inside a successful multi. Null data is logged as 0. Logged only when data length auditing is enabled, see below.
 |result | result of the operation. Possible values are (success/failure/invoked). Result "invoked" is used for serverStop operation because stop is logged before ensuring that server actually stopped.
+
+Data length auditing is disabled by default. To log `data_length`, also configure audit.dataLength.enable=true in conf/zoo.cfg
+(or the system property `zookeeper.audit.dataLength.enable=true`). It takes effect only when audit logs are enabled and is read at server startup. Only the size is logged, never the data itself.
+
+    session=0x19344730000   user=192.168.1.2,zkcli@HADOOP.COM  ip=192.168.1.2    operation=setData   znode=/a    data_length=2048    result=success
 
 Below are sample audit logs for all operations, where client is connected from 192.168.1.2, client principal is zkcli@HADOOP.COM, server principal is zookeeper/192.168.1.3@HADOOP.COM
 
