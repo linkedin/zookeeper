@@ -131,6 +131,7 @@ public class X509GroupAclIntegrationTest extends ZKTestCase {
             KeyPair key = X509TestHelpers.generateRSAKeyPair();
             GeneralNames sans = new GeneralNames(new GeneralName[]{
                 new GeneralName(GeneralName.dNSName, "localhost"),
+                new GeneralName(GeneralName.iPAddress, "127.0.0.1"),
                 new GeneralName(GeneralName.uniformResourceIdentifier, "urn:example:" + name)});
             X509Certificate cert = X509TestHelpers.newCertWithSans(
                 ca, caKey, new X500Name("CN=" + name), key.getPublic(), sans, 86400000);
@@ -169,7 +170,7 @@ public class X509GroupAclIntegrationTest extends ZKTestCase {
         tlsFactory = (NettyServerCnxnFactory) ServerCnxnFactory.createFactory();
         tlsFactory.configure(new InetSocketAddress("127.0.0.1", PortAssignment.unique()), 20, -1, !unified);
         tlsFactory.startup(server, false);
-        tlsAddress = "localhost:" + tlsFactory.getLocalPort();
+        tlsAddress = "127.0.0.1:" + tlsFactory.getLocalPort();
     }
 
     private ZooKeeper connect(String name, Watcher watcher) throws Exception {

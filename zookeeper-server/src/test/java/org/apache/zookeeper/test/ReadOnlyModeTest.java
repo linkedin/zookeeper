@@ -184,6 +184,7 @@ public class ReadOnlyModeTest extends ZKTestCase {
         }
         assertTrue(success, "Did not succeed in connecting in 30s");
         assertFalse(watcher.readOnlyConnected, "The connection should not be read-only yet");
+        zk.close();
 
         // kill peer and wait no more than 5 seconds for read-only server
         // to be started (which should take one tickTime (2 seconds))
@@ -191,6 +192,7 @@ public class ReadOnlyModeTest extends ZKTestCase {
 
         // Re-connect the client (in case we were connected to the shut down
         // server and the local session was not persisted).
+        watcher = new CountdownWatcher();
         zk = new ZooKeeper(qu.getConnString(), CONNECTION_TIMEOUT, watcher, true);
         long start = Time.currentElapsedTime();
         while (!(zk.getState() == States.CONNECTEDREADONLY)) {
