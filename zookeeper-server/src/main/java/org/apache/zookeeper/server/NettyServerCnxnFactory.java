@@ -72,6 +72,7 @@ import org.apache.zookeeper.common.X509Exception;
 import org.apache.zookeeper.common.X509Exception.SSLContextException;
 import org.apache.zookeeper.server.NettyServerCnxn.HandshakeState;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
+import org.apache.zookeeper.server.auth.ServerAuthenticationProvider;
 import org.apache.zookeeper.server.auth.X509AuthenticationProvider;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
 import org.slf4j.Logger;
@@ -445,7 +446,10 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
 
                     String authProviderProp = System.getProperty(x509Util.getSslAuthProviderProperty(), "x509");
 
-                    X509AuthenticationProvider authProvider = (X509AuthenticationProvider) ProviderRegistry.getProvider(authProviderProp);
+                    // All implementations of the AuthenticationProvider interface should be supported here. Currently
+                    // any custom implementation of X509AuthenticationProvider or ServerAuthenticationProvider is
+                    // supported with backward compatability.
+                    ServerAuthenticationProvider authProvider = ProviderRegistry.getServerProvider(authProviderProp);
 
                     if (authProvider == null) {
                         LOG.error("X509 Auth provider not found: {}", authProviderProp);
@@ -453,7 +457,8 @@ public class NettyServerCnxnFactory extends ServerCnxnFactory {
                         return;
                     }
 
-                    KeeperException.Code code = authProvider.handleAuthentication(cnxn, null);
+                    KeeperException.Code code = authProvider.handleAuthentication(
+                        new ServerAuthenticationProvider.ServerObjs(zkServer, cnxn), null);
                     if (KeeperException.Code.OK != code) {
                         zkServer.serverStats().incrementAuthFailedCount();
                         LOG.error("Authentication failed for session 0x{}", Long.toHexString(cnxn.getSessionId()));
