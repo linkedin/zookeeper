@@ -42,6 +42,7 @@ import org.apache.zookeeper.OpResult.ErrorResult;
 import org.apache.zookeeper.OpResult.GetChildrenResult;
 import org.apache.zookeeper.OpResult.GetDataResult;
 import org.apache.zookeeper.OpResult.SetDataResult;
+import org.apache.zookeeper.PaginationNextPage;
 import org.apache.zookeeper.Watcher.WatcherType;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.OpCode;
@@ -63,6 +64,8 @@ import org.apache.zookeeper.proto.GetAllChildrenNumberRequest;
 import org.apache.zookeeper.proto.GetAllChildrenNumberResponse;
 import org.apache.zookeeper.proto.GetChildren2Request;
 import org.apache.zookeeper.proto.GetChildren2Response;
+import org.apache.zookeeper.proto.GetChildrenPaginatedRequest;
+import org.apache.zookeeper.proto.GetChildrenPaginatedResponse;
 import org.apache.zookeeper.proto.GetChildrenRequest;
 import org.apache.zookeeper.proto.GetChildrenResponse;
 import org.apache.zookeeper.proto.GetDataRequest;
@@ -580,6 +583,35 @@ public class FinalRequestProcessor implements RequestProcessor {
                     }
                 }
                 rsp = new GetEphemeralsResponse(ephemerals);
+                break;
+            }
+            case OpCode.getChildrenPaginated: {
+                lastOp = "GETC";
+                GetChildrenPaginatedRequest getChildrenPaginatedRequest = new GetChildrenPaginatedRequest();
+                ByteBufferInputStream.byteBuffer2Record(request.request,
+                        getChildrenPaginatedRequest);
+                Stat stat = new Stat();
+                path = getChildrenPaginatedRequest.getPath();
+                DataNode n = zks.getZKDatabase().getNode(path);
+                if (n == null) {
+                    throw new KeeperException.NoNodeException();
+                }
+                zks.checkACL(
+                        request.cnxn,
+                        zks.getZKDatabase().aclForNode(n),
+                        ZooDefs.Perms.READ,
+                        request.authInfo, path,
+                        null);
+                final int maxReturned = getChildrenPaginatedRequest.getMaxReturned();
+                final PaginationNextPage nextPage = new PaginationNextPage();
+                List<String> list = zks.getZKDatabase().getPaginatedChildren(
+                        getChildrenPaginatedRequest.getPath(), stat,
+                        getChildrenPaginatedRequest.getWatch() ? cnxn : null,
+                        maxReturned,
+                        getChildrenPaginatedRequest.getMinCzxid(),
+                        getChildrenPaginatedRequest.getCzxidOffset(),
+                        nextPage);
+                rsp = new GetChildrenPaginatedResponse(list, stat, nextPage.getMinCzxid(), nextPage.getMinCzxidOffset());
                 break;
             }
             }
