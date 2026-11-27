@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -84,6 +85,7 @@ public class X509GroupAclIntegrationTest extends ZKTestCase {
     private final Map<String, String> savedProperties = new HashMap<>();
     private final List<ZooKeeper> clients = new ArrayList<>();
     private final Map<String, Path> keyStores = new HashMap<>();
+    private final Map<String, String> clientUris = new LinkedHashMap<>();
     private final Map<ZooKeeper, LinkedBlockingQueue<Watcher.Event.KeeperState>> states = new HashMap<>();
     private ClientX509Util x509;
     private ZooKeeperServer server;
@@ -128,10 +130,14 @@ public class X509GroupAclIntegrationTest extends ZKTestCase {
             trust.store(out, PASSWORD.toCharArray());
         }
         for (String name : new String[]{"server", "alice", "bob", "super"}) {
+            clientUris.putIfAbsent(name, "urn:example:" + name);
+        }
+        for (Map.Entry<String, String> entry : clientUris.entrySet()) {
+            String name = entry.getKey();
             KeyPair key = X509TestHelpers.generateRSAKeyPair();
             GeneralNames sans = new GeneralNames(new GeneralName[]{
                 new GeneralName(GeneralName.dNSName, "localhost"),
-                new GeneralName(GeneralName.uniformResourceIdentifier, "urn:example:" + name)});
+                new GeneralName(GeneralName.uniformResourceIdentifier, entry.getValue())});
             X509Certificate cert = X509TestHelpers.newCertWithSans(
                 ca, caKey, new X500Name("CN=" + name), key.getPublic(), sans, 86400000);
             KeyStore store = KeyStore.getInstance("JKS");
@@ -336,6 +342,59 @@ public class X509GroupAclIntegrationTest extends ZKTestCase {
         assertEquals(ZooDefs.Ids.OPEN_ACL_UNSAFE, alice.getACL("/open", null));
         alice.create("/creator", null, ZooDefs.Ids.CREATOR_ALL_ACL, CreateMode.PERSISTENT);
         assertEquals(acl("teamA"), alice.getACL("/creator", null));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testSpiffeCreatorAclIsPersistedInLegacyFormWithOneWayCompatibility(boolean unified)
+        throws Exception {
+        // Extract legacy service principals while keeping the fixture's urn:example identities.
+        property(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_REGEX,
+            "^(?:urn:li:)?((?:[a-z]+Principal\\([^;%:]+)|urn:example:[^;]+)");
+        property(X509AuthenticationConfig.SSL_X509_CLIENT_CERT_ID_SAN_EXTRACT_MATCHER_GROUP_INDEX, "1");
+        clientUris.put("spiffe-kafka", "spiffe://example.org/v2/application/example-mp/kafka");
+        clientUris.put("spiffe-other", "spiffe://example.org/v2/application/example-mp/other");
+        clientUris.put("legacy-kafka", "urn:li:servicePrincipal(kafka;region1;instance1)");
+        clientUris.put("legacy-other", "urn:li:servicePrincipal(other;region1;instance1)");
+        start(unified, true);
+        ZooKeeper spiffeKafka = connect("spiffe-kafka");
+        ZooKeeper spiffeOther = connect("spiffe-other");
+        ZooKeeper legacyKafka = connect("legacy-kafka");
+        ZooKeeper legacyOther = connect("legacy-other");
+        ZooKeeper superUser = connect("super");
+
+        // SPIFFE creators persist the legacy service-principal form instead of their full SPIFFE ID.
+        spiffeKafka.create("/spiffe-created", new byte[]{1}, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        assertEquals(acl("servicePrincipal(kafka"), spiffeKafka.getACL("/spiffe-created", null));
+        spiffeKafka.setData("/spiffe-created", new byte[]{2}, -1);
+        spiffeKafka.setACL("/spiffe-created", ZooDefs.Ids.OPEN_ACL_UNSAFE, -1);
+        assertEquals(acl("servicePrincipal(kafka"), legacyKafka.getACL("/spiffe-created", null));
+        assertArrayEquals(new byte[]{2}, legacyKafka.getData("/spiffe-created", false, null));
+        assertThrows(KeeperException.NoAuthException.class, () -> spiffeOther.getData("/spiffe-created", false, null));
+        assertThrows(KeeperException.NoAuthException.class,
+            () -> spiffeOther.setData("/spiffe-created", new byte[]{3}, -1));
+        assertThrows(KeeperException.NoAuthException.class, () -> legacyOther.getData("/spiffe-created", false, null));
+
+        // Legacy creators keep their original ID, which an eligible SPIFFE application can use.
+        legacyKafka.create("/legacy-created", new byte[]{4}, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        assertEquals(acl("servicePrincipal(kafka"), legacyKafka.getACL("/legacy-created", null));
+        spiffeKafka.setData("/legacy-created", new byte[]{5}, -1);
+        assertArrayEquals(new byte[]{5}, legacyKafka.getData("/legacy-created", false, null));
+        assertThrows(KeeperException.NoAuthException.class, () -> spiffeOther.getData("/legacy-created", false, null));
+
+        // SPIFFE-only and bare-name ACLs set explicitly by a superuser keep one-way semantics.
+        superUser.create("/spiffe-only", new byte[]{6}, acl("application/example-mp/kafka"), CreateMode.PERSISTENT);
+        superUser.create("/bare-legacy", new byte[]{7}, acl("kafka"), CreateMode.PERSISTENT);
+        assertEquals(acl("application/example-mp/kafka"), superUser.getACL("/spiffe-only", null));
+        assertEquals(acl("kafka"), superUser.getACL("/bare-legacy", null));
+        assertArrayEquals(new byte[]{6}, spiffeKafka.getData("/spiffe-only", false, null));
+        assertThrows(KeeperException.NoAuthException.class, () -> legacyKafka.getData("/spiffe-only", false, null));
+        assertThrows(KeeperException.NoAuthException.class,
+            () -> legacyKafka.setData("/spiffe-only", new byte[]{8}, -1));
+        assertThrows(KeeperException.NoAuthException.class, () -> spiffeOther.getData("/spiffe-only", false, null));
+        assertArrayEquals(new byte[]{7}, spiffeKafka.getData("/bare-legacy", false, null));
+        assertThrows(KeeperException.NoAuthException.class, () -> legacyKafka.getData("/bare-legacy", false, null));
+        assertThrows(KeeperException.NoAuthException.class, () -> spiffeOther.getData("/bare-legacy", false, null));
     }
 
     @AfterEach
