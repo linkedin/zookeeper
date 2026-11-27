@@ -766,6 +766,15 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     protected volatile int initLimit;
 
     /**
+     * Whether to skip the final synchronous snapshot in leader startup.
+     * Defaults to false; database recovery and learner snapshots are unaffected.
+     */
+    public static final String SKIP_LEADER_STARTUP_SNAPSHOT =
+        "zookeeper.leaderElection.skipStartupSnapshot";
+    private volatile boolean skipLeaderStartupSnapshot =
+        Boolean.getBoolean(SKIP_LEADER_STARTUP_SNAPSHOT);
+
+    /**
      * The number of ticks that can pass between sending a request and getting
      * an acknowledgment
      */
@@ -1896,6 +1905,14 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     public void setInitLimit(int initLimit) {
         LOG.info("initLimit set to {}", initLimit);
         this.initLimit = initLimit;
+    }
+
+    public boolean isSkipLeaderStartupSnapshot() {
+        return skipLeaderStartupSnapshot;
+    }
+
+    public void setSkipLeaderStartupSnapshot(boolean skip) {
+        this.skipLeaderStartupSnapshot = skip;
     }
 
     /**

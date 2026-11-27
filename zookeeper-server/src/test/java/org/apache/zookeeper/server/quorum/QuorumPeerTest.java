@@ -27,12 +27,22 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 import org.apache.zookeeper.PortAssignment;
 import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.test.ClientBase;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
+@Execution(ExecutionMode.SAME_THREAD)
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class QuorumPeerTest {
 
     private int electionAlg = 3;
@@ -105,6 +115,54 @@ public class QuorumPeerTest {
         peer.setId(localPeerId);
         peer.setCurrentVote(null);
         assertFalse(peer.isLeader(localPeerId));
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {"<unset>,false", "true,true", "TrUe,true", "false,false", "yes,false", "' true ',false", "'',false"},
+               nullValues = "<unset>")
+    public void testSkipLeaderStartupSnapshotConfiguration(String value, boolean expected) throws Exception {
+        String prior = System.getProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+        try {
+            restoreStartupSnapshotProperty(value);
+            QuorumPeer peer = new QuorumPeer();
+            assertEquals(expected, peer.isSkipLeaderStartupSnapshot());
+
+            System.setProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT, Boolean.toString(!expected));
+            assertEquals(expected, peer.isSkipLeaderStartupSnapshot(), "Existing peers retain their startup configuration");
+            assertEquals(!expected, new QuorumPeer().isSkipLeaderStartupSnapshot());
+
+            peer.setSkipLeaderStartupSnapshot(!expected);
+            assertEquals(!expected, peer.isSkipLeaderStartupSnapshot(), "An explicit setter overrides the startup value");
+            peer.setSkipLeaderStartupSnapshot(expected);
+            assertEquals(expected, peer.isSkipLeaderStartupSnapshot());
+        } finally {
+            restoreStartupSnapshotProperty(prior);
+        }
+    }
+
+    @Test
+    public void testStartupSnapshotPropertyFromQuorumConfiguration(@TempDir File directory) throws Exception {
+        String prior = System.getProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+        try {
+            System.clearProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+            Properties properties = new Properties();
+            properties.setProperty("dataDir", directory.getAbsolutePath());
+            properties.setProperty("tickTime", "2000");
+            properties.setProperty("leaderElection.skipStartupSnapshot", "true");
+            new QuorumPeerConfig().parseProperties(properties);
+            assertEquals("true", System.getProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT));
+            assertTrue(new QuorumPeer().isSkipLeaderStartupSnapshot());
+        } finally {
+            restoreStartupSnapshotProperty(prior);
+        }
+    }
+
+    private static void restoreStartupSnapshotProperty(String value) {
+        if (value == null) {
+            System.clearProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT);
+        } else {
+            System.setProperty(QuorumPeer.SKIP_LEADER_STARTUP_SNAPSHOT, value);
+        }
     }
 
 }
