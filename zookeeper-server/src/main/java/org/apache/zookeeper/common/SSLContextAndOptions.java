@@ -71,7 +71,7 @@ public class SSLContextAndOptions {
         this.enabledProtocols = getEnabledProtocols(requireNonNull(config), sslContext);
         String[] ciphers = getCipherSuites(config);
         this.cipherSuites = ciphers;
-        this.cipherSuitesAsList = Collections.unmodifiableList(Arrays.asList(ciphers));
+        this.cipherSuitesAsList = ciphers == null ? null : Collections.unmodifiableList(Arrays.asList(ciphers));
         this.clientAuth = getClientAuth(config);
         this.handshakeDetectionTimeoutMillis = getHandshakeDetectionTimeoutMillis(config);
         this.config = config;
@@ -210,7 +210,8 @@ public class SSLContextAndOptions {
     private String[] getEnabledProtocols(final ZKConfig config, final SSLContext sslContext) {
         String enabledProtocolsInput = config.getProperty(x509Util.getSslEnabledProtocolsProperty());
         if (enabledProtocolsInput == null) {
-            return new String[]{sslContext.getProtocol()};
+            // Selecting a context does not pin a single enabled protocol.
+            return sslContext.getDefaultSSLParameters().getProtocols();
         }
         return enabledProtocolsInput.split(",");
     }
@@ -218,7 +219,7 @@ public class SSLContextAndOptions {
     private String[] getCipherSuites(final ZKConfig config) {
         String cipherSuitesInput = config.getProperty(x509Util.getSslCipherSuitesProperty());
         if (cipherSuitesInput == null) {
-            return X509Util.getDefaultCipherSuites();
+            return null;
         } else {
             return cipherSuitesInput.split(",");
         }
