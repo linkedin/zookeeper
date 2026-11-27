@@ -235,6 +235,9 @@ public class RequestThrottlerTest extends ZKTestCase {
         // wait for more than one STALL_TIME to reduce timeout before wakeup
         assertTrue(entered.await(STALL_TIME + 5000, TimeUnit.MILLISECONDS));
 
+        // The consumer can enter pRequest before the producer records the enqueue metric.
+        WaitForCondition allRequestsQueued = () -> getCounterMetric("prep_processor_request_queued") == TOTAL_REQUESTS;
+        waitFor("requests not all queued", allRequestsQueued, 5);
         Map<String, Object> metrics = MetricsUtils.currentServerMetrics();
         assertEquals(TOTAL_REQUESTS, (long) metrics.get("prep_processor_request_queued"));
     }
