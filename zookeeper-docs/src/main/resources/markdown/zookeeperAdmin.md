@@ -1153,6 +1153,28 @@ property, when available, is noted below.
     **New in 3.6.0:**
     The size threshold after which a request is considered a large request. If it is -1, then all requests are considered small, effectively turning off large request throttling. The default is -1.
 
+* *ephemeralNodes.total.byte.limit* :
+  (Java system property: **zookeeper.ephemeralNodes.total.byte.limit**)
+  This property set a limit on the amount of ephemeral nodes that can be created in one session. The limit is the number 
+  of bytes it takes to store the serialized path strings for all the session's ephemeral nodes. 
+  This limit should always be under the jute maxbuffer, as exceeding will cause the server to crash when the connection is closed 
+  and a transaction to delete all the ephemeral nodes for that session are deleted. This limit will be ignored if not explicitly set.
+
+  This is a best-effort check against committed state: concurrent requests and
+  creates within one multi operation can exceed the configured value. Snapshot
+  loading does not rebuild the byte totals, so this is not a strict bound across
+  recovery or snapshot synchronization.
+
+  **Client compatibility:** Exceeding an enabled limit returns the custom error code
+  `-128` (`TOTALEPHEMERALLIMITEXCEEDED`). Before enabling it, use clients that recognize
+  this code; an Apache ZooKeeper version number alone does not establish support.
+  The published fork client `com.linkedin.zookeeper:zookeeper:3.8.4-0` recognizes
+  this error code; this alone does not qualify other aspects of client compatibility.
+  The default value, `-1`, disables this limit. Keep it disabled when incompatible
+  clients are present. Older fork servers return `-125` for the same restriction,
+  which newer clients interpret as `QUOTAEXCEEDED`; mixed-version rollouts must
+  also account for this ambiguity.
+
 * *outstandingHandshake.limit*
     (Java system property only: **zookeeper.netty.server.outstandingHandshake.limit**)
     The maximum in-flight TLS handshake connections could have in ZooKeeper,

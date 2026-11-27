@@ -117,6 +117,18 @@ public class DataTreeTest extends ZKTestCase {
     }
 
     @Test
+    public void testEphemeralByteSizeNotTrackedWhenLimitDisabled() throws Exception {
+        assertEquals(-1, ZooKeeperServer.getEphemeralNodesTotalByteLimit());
+        DataTree dataTree = new DataTree();
+        long session = 1000;
+        createEphemeralNode(session, dataTree, 1);
+        assertEquals(1, dataTree.getEphemerals(session).size());
+        assertEquals(0, dataTree.getTotalEphemeralsByteSize(session));
+        dataTree.deleteNode("/test0", 2);
+        assertEquals(0, dataTree.getTotalEphemeralsByteSize(session));
+    }
+
+    @Test
     @Timeout(value = 60)
     public void testRootWatchTriggered() throws Exception {
         DataTree dt = new DataTree();
