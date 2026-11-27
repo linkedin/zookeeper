@@ -23,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import io.netty.buffer.UnpooledByteBufAllocator;
+import io.netty.handler.ssl.IdentityCipherSuiteFilter;
+import io.netty.handler.ssl.JdkSslContext;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -31,6 +34,7 @@ import java.net.Socket;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
 import java.security.Security;
+import java.util.Arrays;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -43,6 +47,7 @@ import java.util.function.Supplier;
 import javax.net.ssl.HandshakeCompletedEvent;
 import javax.net.ssl.HandshakeCompletedListener;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
@@ -83,6 +88,7 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
         System.clearProperty(x509Util.getSslCrlEnabledProperty());
         System.clearProperty(x509Util.getCipherSuitesProperty());
         System.clearProperty(x509Util.getSslProtocolProperty());
+        System.clearProperty(x509Util.getSslEnabledProtocolsProperty());
         System.clearProperty(x509Util.getSslHandshakeDetectionTimeoutMillisProperty());
         System.clearProperty("com.sun.net.ssl.checkRevocation");
         System.clearProperty("com.sun.security.enableCRLDP");
@@ -102,6 +108,13 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
         init(caKeyType, certKeyType, keyPassword, paramIndex);
         SSLContext sslContext = x509Util.getDefaultSSLContext();
         assertEquals(X509Util.DEFAULT_PROTOCOL, sslContext.getProtocol());
+        boolean supportsTls13 = Arrays.asList(SSLContext.getDefault().getSupportedSSLParameters().getProtocols())
+            .contains(X509Util.TLS_1_3);
+        assertEquals(supportsTls13 ? X509Util.TLS_1_3 : X509Util.TLS_1_2, sslContext.getProtocol());
+        try (SSLSocket socket = x509Util.createSSLSocket()) {
+            assertArrayEquals(sslContext.getDefaultSSLParameters().getProtocols(), socket.getEnabledProtocols());
+            assertArrayEquals(sslContext.getDefaultSSLParameters().getCipherSuites(), socket.getEnabledCipherSuites());
+        }
     }
 
     @ParameterizedTest
@@ -115,6 +128,9 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
         System.setProperty(x509Util.getSslProtocolProperty(), protocol);
         SSLContext sslContext = x509Util.getDefaultSSLContext();
         assertEquals(protocol, sslContext.getProtocol());
+        try (SSLSocket socket = x509Util.createSSLSocket()) {
+            assertArrayEquals(sslContext.getDefaultSSLParameters().getProtocols(), socket.getEnabledProtocols());
+        }
     }
 
     @ParameterizedTest
@@ -756,13 +772,15 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
     }
 
     // This test makes sure that client-initiated TLS renegotiation does not
-    // succeed. We explicitly disable it at the top of X509Util.java.
+    // succeed with TLSv1.2. TLSv1.3 does not support renegotiation.
     @ParameterizedTest
     @MethodSource("data")
+    @Timeout(value = 30)
     public void testClientRenegotiationFails(
             X509KeyType caKeyType, X509KeyType certKeyType, String keyPassword, Integer paramIndex)
             throws Throwable {
         init(caKeyType, certKeyType, keyPassword, paramIndex);
+        System.setProperty(x509Util.getSslEnabledProtocolsProperty(), X509Util.TLS_1_2);
         assertThrows(SSLHandshakeException.class, () -> {
             int port = PortAssignment.unique();
             ExecutorService workerPool = Executors.newCachedThreadPool();
@@ -805,7 +823,7 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
                 clientSocket.getOutputStream().write(1);
                 // The exception is thrown on the server side, we need to unwrap it
                 try {
-                    serverSocket = acceptFuture.get();
+                    serverSocket = acceptFuture.get(10, TimeUnit.SECONDS);
                 } catch (ExecutionException e) {
                     throw e.getCause();
                 }
@@ -824,68 +842,137 @@ public class X509UtilTest extends BaseX509ParameterizedTestCase {
 
     @ParameterizedTest
     @MethodSource("data")
-    public void testGetDefaultCipherSuitesJava8(
+    public void testCreateSSLContextWithoutCipherSuites(
             X509KeyType caKeyType, X509KeyType certKeyType, String keyPassword, Integer paramIndex)
             throws Exception {
         init(caKeyType, certKeyType, keyPassword, paramIndex);
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("1.8");
-        // Java 8 default should have the CBC suites first
-        assertTrue(cipherSuites[0].contains("CBC"));
+        try (X509Util clientUtil = new ClientX509Util(); X509Util quorumUtil = new QuorumX509Util()) {
+            for (X509Util util : new X509Util[]{clientUtil, quorumUtil}) {
+                for (boolean fips : new boolean[]{false, true}) {
+                    ZKConfig config = new ZKConfig();
+                    config.setProperty(util.getFipsModeProperty(), Boolean.toString(fips));
+                    SSLContextAndOptions options = util.createSSLContextAndOptions(config);
+                    SSLContext context = options.getSSLContext();
+                    String[] protocols = context.getDefaultSSLParameters().getProtocols();
+                    String[] ciphers = context.getDefaultSSLParameters().getCipherSuites();
+                    try (SSLSocket socket = options.createSSLSocket();
+                         SSLServerSocket serverSocket = options.createSSLServerSocket()) {
+                        assertArrayEquals(protocols, socket.getEnabledProtocols());
+                        assertArrayEquals(protocols, serverSocket.getEnabledProtocols());
+                        assertArrayEquals(ciphers, socket.getEnabledCipherSuites());
+                        assertArrayEquals(ciphers, serverSocket.getEnabledCipherSuites());
+                        assertTrue(serverSocket.getNeedClientAuth());
+                    }
+                    SSLEngine clientEngine = context.createSSLEngine("localhost", 443);
+                    clientEngine.setUseClientMode(true);
+                    assertArrayEquals(protocols, clientEngine.getEnabledProtocols());
+                    assertArrayEquals(ciphers, clientEngine.getEnabledCipherSuites());
+                    SSLEngine nettyEngine = options.createNettyJdkSslContext(context)
+                        .newEngine(UnpooledByteBufAllocator.DEFAULT);
+                    SSLEngine expectedEngine = new JdkSslContext(
+                        context, false, null, IdentityCipherSuiteFilter.INSTANCE, null,
+                        io.netty.handler.ssl.ClientAuth.REQUIRE, protocols, false)
+                        .newEngine(UnpooledByteBufAllocator.DEFAULT);
+                    assertArrayEquals(protocols, nettyEngine.getEnabledProtocols());
+                    assertArrayEquals(expectedEngine.getEnabledCipherSuites(), nettyEngine.getEnabledCipherSuites());
+                    assertTrue(nettyEngine.getNeedClientAuth());
+                    assertEquals(fips && util instanceof QuorumX509Util ? "HTTPS" : null,
+                        nettyEngine.getSSLParameters().getEndpointIdentificationAlgorithm());
+                }
+            }
+        }
     }
 
     @ParameterizedTest
     @MethodSource("data")
-    public void testGetDefaultCipherSuitesJava9(
+    public void testExplicitProtocolsAndCipherSuites(
             X509KeyType caKeyType, X509KeyType certKeyType, String keyPassword, Integer paramIndex)
             throws Exception {
         init(caKeyType, certKeyType, keyPassword, paramIndex);
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("9");
-        // Java 9+ default should have the GCM suites first
-        assertTrue(cipherSuites[0].contains("GCM"));
+        String[] protocols = {X509Util.TLS_1_2};
+        String[] ciphers = {"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"};
+        try (X509Util clientUtil = new ClientX509Util(); X509Util quorumUtil = new QuorumX509Util()) {
+            for (X509Util util : new X509Util[]{clientUtil, quorumUtil}) {
+                ZKConfig config = new ZKConfig();
+                config.setProperty(util.getSslEnabledProtocolsProperty(), String.join(",", protocols));
+                config.setProperty(util.getSslCipherSuitesProperty(), String.join(",", ciphers));
+                SSLContextAndOptions options = util.createSSLContextAndOptions(config);
+                try (SSLSocket socket = options.createSSLSocket();
+                     SSLServerSocket serverSocket = options.createSSLServerSocket()) {
+                    assertArrayEquals(protocols, socket.getEnabledProtocols());
+                    assertArrayEquals(ciphers, socket.getEnabledCipherSuites());
+                    assertArrayEquals(protocols, serverSocket.getEnabledProtocols());
+                    assertArrayEquals(ciphers, serverSocket.getEnabledCipherSuites());
+                }
+                SSLEngine engine = options.createNettyJdkSslContext(options.getSSLContext())
+                    .newEngine(UnpooledByteBufAllocator.DEFAULT);
+                assertArrayEquals(protocols, engine.getEnabledProtocols());
+                assertArrayEquals(ciphers, engine.getEnabledCipherSuites());
+            }
+        }
     }
 
     @ParameterizedTest
     @MethodSource("data")
-    public void testGetDefaultCipherSuitesJava10(
+    public void testInvalidProtocolsAndCipherSuites(
             X509KeyType caKeyType, X509KeyType certKeyType, String keyPassword, Integer paramIndex)
             throws Exception {
         init(caKeyType, certKeyType, keyPassword, paramIndex);
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("10");
-        // Java 9+ default should have the GCM suites first
-        assertTrue(cipherSuites[0].contains("GCM"));
+        for (String property : new String[]{x509Util.getSslEnabledProtocolsProperty(), x509Util.getSslCipherSuitesProperty()}) {
+            for (String value : new String[]{"", "not-supported"}) {
+                ZKConfig config = new ZKConfig();
+                config.setProperty(property, value);
+                SSLContextAndOptions options = x509Util.createSSLContextAndOptions(config);
+                assertThrows(IllegalArgumentException.class, options::createSSLSocket);
+                assertThrows(IllegalArgumentException.class, options::createSSLServerSocket);
+                assertThrows(IllegalArgumentException.class, () ->
+                    options.createNettyJdkSslContext(options.getSSLContext()).newEngine(UnpooledByteBufAllocator.DEFAULT));
+            }
+        }
     }
 
     @ParameterizedTest
     @MethodSource("data")
-    public void testGetDefaultCipherSuitesJava11(
+    @Timeout(value = 30)
+    public void testDefaultProtocolNegotiation(
             X509KeyType caKeyType, X509KeyType certKeyType, String keyPassword, Integer paramIndex)
             throws Exception {
         init(caKeyType, certKeyType, keyPassword, paramIndex);
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("11");
-        // Java 9+ default should have the GCM suites first
-        assertTrue(cipherSuites[0].contains("GCM"));
-    }
-
-    @ParameterizedTest
-    @MethodSource("data")
-    public void testGetDefaultCipherSuitesUnknownVersion(
-            X509KeyType caKeyType, X509KeyType certKeyType, String keyPassword, Integer paramIndex)
-            throws Exception {
-        init(caKeyType, certKeyType, keyPassword, paramIndex);
-        String[] cipherSuites = X509Util.getDefaultCipherSuitesForJavaVersion("notaversion");
-        // If version can't be parsed, use the more conservative Java 8 default
-        assertTrue(cipherSuites[0].contains("CBC"));
-    }
-
-    @ParameterizedTest
-    @MethodSource("data")
-    public void testGetDefaultCipherSuitesNullVersion(
-            X509KeyType caKeyType, X509KeyType certKeyType, String keyPassword, Integer paramIndex)
-            throws Exception {
-        init(caKeyType, certKeyType, keyPassword, paramIndex);
-        assertThrows(NullPointerException.class, () -> {
-            X509Util.getDefaultCipherSuitesForJavaVersion(null);
-        });
+        for (boolean pinTls12 : new boolean[]{false, true}) {
+            ZKConfig serverConfig = new ZKConfig();
+            if (pinTls12) {
+                serverConfig.setProperty(x509Util.getSslEnabledProtocolsProperty(), X509Util.TLS_1_2);
+            }
+            SSLContextAndOptions options = x509Util.createSSLContextAndOptions(serverConfig);
+            ExecutorService worker = Executors.newSingleThreadExecutor();
+            try (SSLServerSocket listener = options.createSSLServerSocket();
+                 SSLSocket client = x509Util.createSSLSocket()) {
+                listener.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0));
+                listener.setSoTimeout(5000);
+                Future<String[]> serverSession = worker.submit(() -> {
+                    try (SSLSocket server = (SSLSocket) listener.accept()) {
+                        server.setSoTimeout(5000);
+                        server.startHandshake();
+                        assertEquals(1, server.getInputStream().read());
+                        return new String[]{server.getSession().getProtocol(), server.getSession().getCipherSuite()};
+                    }
+                });
+                client.setSoTimeout(5000);
+                client.connect(listener.getLocalSocketAddress(), 5000);
+                client.startHandshake();
+                client.getOutputStream().write(1);
+                String protocol = client.getSession().getProtocol();
+                String cipher = client.getSession().getCipherSuite();
+                String expectedProtocol = pinTls12 ? X509Util.TLS_1_2
+                    : options.getSSLContext().getDefaultSSLParameters().getProtocols()[0];
+                assertEquals(expectedProtocol, protocol);
+                assertTrue(Arrays.asList(client.getEnabledCipherSuites()).contains(cipher));
+                assertArrayEquals(new String[]{protocol, cipher}, serverSession.get(10, TimeUnit.SECONDS));
+            } finally {
+                worker.shutdownNow();
+                assertTrue(worker.awaitTermination(5, TimeUnit.SECONDS));
+            }
+        }
     }
 
     // Warning: this will reset the x509Util
